@@ -1,0 +1,36 @@
+# Release chain: a pushed v* tag is the publish confirmation point.
+# Defenses below are lessons from real incidents (dsh-websearch session-38):
+# - registry pinned twice (setup-node + --registry) so a contributor's local
+#   mirror default cannot hijack the publish;
+# - the tarball argument carries "./" so npm cannot parse it as a GitHub
+#   shorthand spec;
+# - release create falls back to upload so a re-run after a half-created
+#   release still works.
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run build
+      - run: npm pack --pack-destination dist-artifacts
+      - run: gh release create "$GITHUB_REF_NAME" --generate-notes dist-artifacts/*.tgz || gh release upload "$GITHUB_REF_NAME" dist-artifacts/*.tgz --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npm publish ./dist-artifacts/dsh-subagent-plus-*.tgz --registry https://registry.npmjs.org --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,4 @@
+# Bundle layer for the dsh-subagent-plus plugin.
+- insert:
+    - id: dsh-subagent-plus
+      name: dsh-subagent-plus
