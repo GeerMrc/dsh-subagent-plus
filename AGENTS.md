@@ -30,7 +30,7 @@
 
 - Node ≥22.19：agent shell 一律 nvm 绝对路径前缀（`~/.nvm/versions/node/v22.x/bin`）。
 - 隔离 E2E：专用 profile + 专用端口 + 临时工作区，测后全清理（流程见 [docs/e2e-manual.md](docs/e2e-manual.md)）；生产 `~/.dsh/profiles/desktop` 改动必须先备份。
-- 生产 profile 依赖指向本地 `dist-artifacts/`：仓库移动/清理/重 clone 后会断供——重跑 pack 并重装。
+- 生产 profile 依赖优先走 npm 版本号；临时验证本地构建时才指向 `dist-artifacts/` 的 tarball（file:），仓库移动/清理后断供——重跑 pack 并重装。
 - npm 首发前 `npm view <name>` 实测裸名可用性；被拒时走双名模式（见 dont-do）。
 
 ## 收尾六件套（每个交付批次）

@@ -576,13 +576,29 @@ describe('review P1-2/P1-3: inert disable and pinned attribution', () => {
   })
 })
 
-describe('registration cache invalidation (E1)', () => {
-  it('survives an adapters-updated event and keeps routing children', async () => {
-    const ctx = await spreadContext(spreadConfig({ strategy: 'pinned', provider: 'sz', model: 'Qwen3.8-27B-FP8' }))
+/** Minimal llm face over a mutable route set: routeRegistered consults
+ *  listProviders/listModels, and adapters-updated shrinks the set. */
+function llmWith(getRoutes: () => { provider: string; model: string }[]): object {
+  return {
+    listProviders: () => getRoutes().map(route => ({ id: route.provider })),
+    listModels: async (provider: string) => getRoutes().filter(route => route.provider === provider).map(route => ({ id: route.model })),
+  }
+}
+
+describe('registration cache invalidation (E1, discriminating)', () => {
+  it('re-checks a memoized route after adapters change and skips a gone route', async () => {
+    let routes = [{ provider: 'sz', model: 'Qwen3.8-27B-FP8' }, { provider: 'hh', model: 'Qwen3.8-27B-FP8' }]
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('subagentModelSelection', allowList(sz, hh))
+    ctx.provide('llm', llmWith(() => routes))
+    await ctx.plugin(plugin, spreadConfig({ strategy: 'priority', priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: '' }] }))
+    // First child pins onto sz (priority head) — and memoizes its registration.
     await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
-    // The host broadcasts this whenever the adapter set changes; the plugin
-    // forgets its memoized registrations and re-checks on the next request.
+    // The adapter set loses sz; without invalidation the memo would keep
+    // "sz registered" and the next child would pin onto the gone route.
+    routes = routes.filter(route => route.provider !== 'sz')
     ctx.emit('llm/adapters-updated')
-    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
   })
 })

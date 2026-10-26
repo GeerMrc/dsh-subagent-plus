@@ -21,7 +21,7 @@
 
 上游发布新版本后执行三步检测：① bump devDependencies 到新版本 → ② `pnpm run typecheck` → ③ `pnpm test`（含真实 cordis waterfall 冒烟）。任一步失败即契约漂移，按报错修对应半边；再跑一次隔离 E2E（docs/e2e-manual.md）。
 
-## §6 发布链失败恢复
+## §6 发布链失败恢复（§4–§5 预留）
 
 | 中断态 | 恢复 |
 |---|---|
