@@ -27,7 +27,9 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
-      - run: npm pack --pack-destination dist-artifacts
+      # dist-artifacts/ is gitignored; npm pack requires the destination to
+      # exist (ENOENT on fresh checkout — dsh-websearch session-38 incident B).
+      - run: mkdir -p dist-artifacts && npm pack --pack-destination dist-artifacts
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes dist-artifacts/*.tgz || gh release upload "$GITHUB_REF_NAME" dist-artifacts/*.tgz --clobber
         env:
           GH_TOKEN: ${{ github.token }}
