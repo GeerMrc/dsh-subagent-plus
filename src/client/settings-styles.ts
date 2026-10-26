@@ -130,20 +130,6 @@ export const cardHeaderRowStyle = {
   gap: 8,
 } as const
 
-export const iconButtonStyle = {
-  width: 24,
-  height: 24,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  border: 'none',
-  borderRadius: 8,
-  background: 'transparent',
-  color: 'var(--dsw-alias-label-tertiary)',
-  cursor: 'pointer',
-  padding: 0,
-} as const
-
 export const listRowStyle = {
   display: 'grid',
   gridTemplateColumns: 'auto minmax(0, 1fr) auto',

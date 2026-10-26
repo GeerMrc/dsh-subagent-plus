@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.2 (2026-10-26)
+
+- fix(review): the E1 regression test actually discriminates now — a mock
+  llm lets the registration cache memoize, the adapter set drops the pinned
+  provider, and after `llm/adapters-updated` the next child moves to the
+  surviving route instead of pinning onto the gone one (the previous test
+  passed even with the fix reverted).
+- chore: iconButtonStyle dead export removed; ci.yml pinned to
+  `contents: read`; AGENTS.md local-dev note reflects the npm-based
+  production dependency; archived doc reference annotated; upgrade handbook
+  section numbering closed.
+
 ## v0.0.1 (2026-10-26) — first public release
 
 Public-release baseline of the standalone DeepSeek Harness plugin
@@ -190,7 +202,7 @@ below for reference — the v0.0.1 tree is content-identical to the internal
   once per child and `[model reassigned: route X is cooling down (CODE); …]`
   after a failover; notices are de-duplicated per child.
 - docs: `docs/strategy.md` (decision matrix, recipes, known limits),
-  `docs/v0.1.5-strategy-plan.md` (approved execution plan).
+  `docs/v0.1.5-strategy-plan.md (archived)` (approved execution plan).
 
 ## 0.1.4 (2026-10-25)
 

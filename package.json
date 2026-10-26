@@ -1,6 +1,6 @@
 {
   "name": "dsh-subagent-plus",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Route every delegated child agent by strategy: pin one LLM route, or spread children over candidate routes (round-robin / random / priority) with health-aware failover, a fallback route, and a settings page",
   "license": "MIT",
   "type": "module",
