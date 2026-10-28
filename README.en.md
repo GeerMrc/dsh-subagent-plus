@@ -18,6 +18,7 @@ A standalone cordis plugin for [DeepSeek Harness](https://github.com/deepseek-ai
 | Read-only badge | Beside the child window's composer: `provider/model · effort` (two-segment coloring, full text on hover) |
 | Child-window identity | Inside the sibling-switcher popup, the row of the child you have open tints amber (layered on the official bold marker) |
 | Settings page | Settings → Subagent Boost: strategy / list (≤5) / fallback / advanced, fully graphical; saves hot-apply (no restart, no runtime-state reset) |
+| Official-page takeover | While enabled, the official "Subagents" settings page is hidden; its runtime-limits and model-selection cards are edited from this plugin's settings page through the same keys (single source of truth); disabling/uninstalling fully restores the official page with values intact |
 | Coverage | `subagent` delegations, Agent Teams teammates, delegations inside resumed sessions; top-level agents and (by default) fork children unaffected |
 
 ## Install from scratch (three steps)
@@ -63,15 +64,24 @@ Everything is editable on the settings page; the equivalent profile-patch layer:
 
 Full semantics: [docs/strategy.md](docs/strategy.md) and [docs/settings.md](docs/settings.md).
 
+## Takeover semantics (v0.3.0+)
+
+- **Installed and enabled = takeover**: the official "Subagents" settings page (a pure edit surface) is hidden; its **runtime limits** (max recursion depth / parallel cap — still enforced by the official subagent runtime at delegation time; this plugin does not re-implement them) and the **official allowlist** ("allow the Agent to choose models for subagents" — feeding per-call explicit picks, pinned-route auto-adoption, and the empty-list fallback pool) are edited from the "Official subagent settings (taken over)" card on this plugin's settings page **through the same keys**: what you write is the official namespace value.
+- **Disable / uninstall = restore**: the official page returns immediately (hmr hot-applies, no restart) with the values intact. Existing child agents return to official resolution from their **next request**; in-flight requests are unaffected.
+- **Transparency & escape hatch**: the takeover is visible in the plugin page's overrides list; a user-layer patch `{id: ui-settings-subagent, disabled: false}` restores the official page at any time.
+- Only the edit surface is hidden: the `subagent` runtime row and the `subagent-model-selection-settings` service row are never touched (official presets hard-depend on the latter; disabling it removes the delegation tool itself).
+
 ## Toggle & uninstall
 
 - **Plugin page switch**: Settings → Plugins → dsh-subagent-plus (writes `disabled: true` and hot-reloads).
-- **Soft off**: the settings-page master switch or `enabled: false` (hooks fully inert; routing is byte-identical to official).
-- **Uninstall**: remove on the plugin page — official subagent behavior resumes unchanged; this plugin is a layer on top, official behavior was never modified.
+- **Soft off**: the settings-page master switch or `enabled: false` (hooks fully inert; routing is byte-identical to official; note this does NOT restore the official settings page — use the plugin-page switch or uninstall for that).
+- **Uninstall**: remove on the plugin page — the official "Subagents" settings page and official routing both return.
 
-## Known limitations (summary)
+## Known behaviour & limitations (summary)
 
 Full list in [docs/strategy.md](docs/strategy.md) §5: strategy/list changes affect the next decision point only; sticky failures end the current child (later assignments avoid the route); the health table and rotation cursor are process-local (reset on restart, shared across windows); remote web sessions persist saves for the current session only; lean compositions without the settings/remote services fail the whole client half (badge included) loudly.
+
+**Deliberate deviation from official semantics (v0.3.0+)**: when a child's route is changed, the `maxTokens` inherited from the parent is **dropped** (official per-call model selection retains it) — the inherited budget is sized for the parent's model and can overflow the new model's limit, and the official runtime performs no clamping; once dropped, the runtime materialises the new model's default. Consequently an explicitly configured parent output budget does **not** propagate to rerouted children.
 
 ## Naming conventions (first-party standalone plugins)
 

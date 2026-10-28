@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
+import { TakeoverCard, type TakeoverControllers } from './takeover-card.tsx'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
@@ -65,7 +66,7 @@ const routeValue = (route: RouteOption): string => `${route.provider}\0${route.m
 
 /** Short closed-box label (the browser-plus translate pattern): the select
  *  stays compact; the full route rides the hover tooltip and the option title. */
-const routeShort = (route: { providerName: string; modelName: string }): string =>
+export const routeShort = (route: { providerName: string; modelName: string }): string =>
   `${route.providerName} · ${route.modelName}`
 
 /** Full route text for hover tooltips and option titles. */
@@ -194,7 +195,7 @@ function EffortSelect(props: {
   return stale ? <span title={props.value} style={{ display: 'inline-flex' }}>{select}</span> : select
 }
 
-function Switch({ checked, onChange, label, title }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string }) {
+export function Switch({ checked, onChange, label, title }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string }) {
   return (
     <button
       type="button"
@@ -212,24 +213,25 @@ function Switch({ checked, onChange, label, title }: { checked: boolean; onChang
 }
 
 /** Presentation component; every action is a controller call, every string a locale key. */
-export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController }) {
-  const { t, controller } = props
+export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; official: TakeoverControllers }) {
+  const { t, controller, official } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
   return (
     <div data-dsmp-settings style={rootStyle}>
       <style>{settingsCss}</style>
       {state.status === 'unavailable'
         ? <p style={invalidStyle}>{t('status.unavailable')}</p>
-        : state.valueInvalid
-          ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
-          : state.draft === undefined
-            ? <p style={hintStyle}>…</p>
-          : (
-              <>
-                {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
-                <Editor state={state} controller={controller} t={t} />
-              </>
-              )}
+        : (
+          <>
+            {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
+            {state.valueInvalid
+              ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
+              : state.draft === undefined
+                ? <p style={hintStyle}>…</p>
+                : <Editor state={state} controller={controller} t={t} />}
+            <TakeoverCard t={t} limits={official.limits} allowlist={official.allowlist} routes={state.routes} />
+          </>
+          )}
     </div>
   )
 }
@@ -484,9 +486,9 @@ function routeFromValue(state: SettingsUiState, value: string): RouteOption | nu
   return state.routes.find(route => route.provider === provider && route.model === model) ?? null
 }
 
-/** Bind factory closing over the controller, mirroring the badge registration. */
-export function bindSettingsSection(controller: SettingsSectionController) {
+/** Bind factory closing over the controllers, mirroring the badge registration. */
+export function bindSettingsSection(controller: SettingsSectionController, official: TakeoverControllers) {
   return function BoundSettingsSection(props: PropsLocale<typeof NS>) {
-    return <SettingsSection {...props} controller={controller} />
+    return <SettingsSection {...props} controller={controller} official={official} />
   }
 }

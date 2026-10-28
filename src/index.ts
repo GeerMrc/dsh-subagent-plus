@@ -418,12 +418,19 @@ function applyOverride(resolved: LlmCallConfig, override: PinOverride): LlmCallC
     // fails loudly when the provider resolves the effort for this request.
     return { ...resolved, reasoningEffort: override.reasoningEffort as ReasoningEffortId }
   }
+  // A route change drops BOTH inherited per-request knobs: the effort (the
+  // official delegation precedent) and the maxTokens — the inherited budget is
+  // sized for the parent's model and the runtime materialises the selected
+  // model's own default only when the field is absent. Dropping maxTokens is
+  // a documented deviation from official delegation semantics (README known
+  // behaviour): an explicitly configured parent budget does not propagate to a
+  // rerouted child.
+  const { reasoningEffort: _droppedEffort, maxTokens: _droppedTokens, ...rest } = resolved
   if (override.reasoningEffort === undefined) {
-    const { reasoningEffort: _dropped, ...rest } = resolved
     return { ...rest, provider: override.provider, model: override.model }
   }
   return {
-    ...resolved,
+    ...rest,
     provider: override.provider,
     model: override.model,
     reasoningEffort: override.reasoningEffort as ReasoningEffortId,

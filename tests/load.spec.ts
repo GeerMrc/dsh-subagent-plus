@@ -20,7 +20,7 @@ function fakeAgent(view: AgentLike): Agent {
   return view as Agent
 }
 
-async function loadedContext(): Promise<Context> {
+async function loadedContext(overrides: Record<string, unknown> = {}): Promise<Context> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(plugin, {
@@ -39,6 +39,7 @@ async function loadedContext(): Promise<Context> {
     fallbackProvider: '',
     fallbackModel: '',
     fallbackReasoningEffort: '',
+    ...overrides,
   })
   return ctx
 }
@@ -80,6 +81,28 @@ describe('plugin load through cordis', () => {
       provider: 'sz',
       model: 'Qwen3.8-27B-FP8',
     })
+  })
+
+  it('drops the parent-sized maxTokens when the route changes (T6 known deviation)', async () => {
+    const ctx = await loadedContext()
+    const resolved = await ctx.waterfall(
+      'agent/request',
+      { agent: childAgent, turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ ...seed, maxTokens: 131072 }),
+    )
+    // The inherited budget is sized for the parent's model; dropping it lets
+    // the runtime materialise the pinned model's own defaultMaxTokens.
+    expect(resolved).toEqual({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+  })
+
+  it('keeps maxTokens on an effort-only override of the same route', async () => {
+    const ctx = await loadedContext({ reasoningEffort: 'high' })
+    const resolved = await ctx.waterfall(
+      'agent/request',
+      { agent: childAgent, turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'medium' as ReasoningEffortId, maxTokens: 9999 }),
+    )
+    expect(resolved).toEqual({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'high' as ReasoningEffortId, maxTokens: 9999 })
   })
 
   it('leaves top-level requests untouched', async () => {
