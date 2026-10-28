@@ -19,12 +19,15 @@
 
 ## 发版流程
 
+> **人工实测门（2026-10-29 用户指令，最高优先级）**：任何推送远端（main/tag/分支）或发布新版本之前，必须先由**用户本人完成本地实测验证**（web 端/桌面端实际跑过新功能与回归路径）并**明确同意**。技术四门与独立复查通过≠可发布；未经同意一律停在本地。
+
 1. 发版门：`pnpm run typecheck` + `pnpm test` + `pnpm run build` + `pnpm run pack:artifact` 全绿（CI 同款）。
-2. CHANGELOG 顶部加版本条目（日期标题、诚实标注含未达项）。
-3. bump `package.json` version → 提交 → 打**附注 tag** `v<x.y.z>`（message 含定档说明：本轮内容与版本线理由）。
-4. 推送 main → **单独推送 tag**（首批 workflow 落库与 tag 不同批，避免 GitHub 不触发）。
-5. tag 推送 = 发布确认点：release workflow 自动 build → GitHub Release（附 tgz）→ npm publish。
-6. 发布链失败恢复见 [docs/upgrade.md](docs/upgrade.md) §6。
+2. **人工实测门**：把 tarball 交给用户装进本地实测环境（临时 profile 或桌面端），用户确认功能与回归通过并明示"同意发布"。
+3. CHANGELOG 顶部加版本条目（日期标题、诚实标注含未达项）。
+4. bump `package.json` version → 提交 → 打**附注 tag** `v<x.y.z>`（message 含定档说明：本轮内容与版本线理由）。
+5. 推送 main → **单独推送 tag**（首批 workflow 落库与 tag 不同批，避免 GitHub 不触发）。
+6. tag 推送 = 发布确认点：release workflow 自动 build → GitHub Release（附 tgz）→ npm publish。
+7. 发布链失败恢复见 [docs/upgrade.md](docs/upgrade.md) §6。
 
 ## 本地开发纪律
 
