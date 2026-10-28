@@ -1,4 +1,14 @@
 # Bundle layer for the dsh-subagent-plus plugin.
+#
+# Takeover (v0.3.0): while this bundle is enabled, the official subagent
+# settings page (a pure edit surface) is hidden — its two cards are absorbed
+# into this plugin's own settings page through the same config namespaces.
+# Disabling or uninstalling this bundle removes the whole layer, so the
+# official page returns with its configuration intact. The model-selection
+# settings service row is intentionally NOT touched: every shipped web preset
+# hard-depends on it.
+- id: ui-settings-subagent
+  disabled: true
 - insert:
     - id: dsh-subagent-plus
       name: dsh-subagent-plus
