@@ -5,7 +5,7 @@
 - feat(takeover): 启用期间官方「子智能体」设置页（纯编辑面）经 bundle patch
   隐藏；禁用/卸载即整层移除、官方页面立即回归（hmr），配置值保留。弃用
   plugins.item 同 id 遮蔽方案（插件页清单层不去重，会双卡 + React key 冲突；
-  依据与取舍见 docs/decisions/0001）。
+  依据与取舍见 docs/decisions/2026-10-29-takeover-surface.md，ADR 0001）。
 - feat(takeover): 本插件设置页新增「官方子智能体设置（已接管）」卡：运行限制
   （maxDepth/maxActiveSubagents）与官方授权清单（enabled/allowedModels）两
   section 经 configForms **同键读写**官方命名空间——不复制运行时，单一事实

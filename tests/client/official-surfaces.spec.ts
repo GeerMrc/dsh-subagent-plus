@@ -206,6 +206,18 @@ describe('OfficialLimitsController (T2 same-key writes into the official namespa
     expect(controller.snapshot().conflict).toBe(true)
     expect(controller.snapshot().saved).toBe(false)
   })
+
+  it('blocks a diverged draft from saving while another field parses invalid', async () => {
+    // Discriminates the state.invalid gate: without it this save would emit
+    // the maxDepth op — the invalid flag is the only thing holding it back.
+    const { controller, form } = limitsHarness({ maxDepth: 1, maxActiveSubagents: 8 })
+    controller.setMaxDepth('3')
+    controller.setMaxActiveSubagents('abc')
+    expect(controller.snapshot().invalid).toBe(true)
+    expect(controller.snapshot().draft).toEqual({ maxDepth: 3, maxActiveSubagents: 8 })
+    await controller.save()
+    expect(form.mutateCalls).toEqual([])
+  })
 })
 
 describe('OfficialAllowlistController (T3 same-key writes, stored routes preserved)', () => {

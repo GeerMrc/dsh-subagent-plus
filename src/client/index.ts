@@ -26,7 +26,6 @@ import type { CatalogGroup } from './settings-controller.js'
 import { PinBadge } from './badge.tsx'
 import { en, NS, zh } from './locales.ts'
 import {
-  NamespaceFormController,
   OfficialAllowlistController,
   OfficialLimitsController,
   type OfficialAllowlistValue,
