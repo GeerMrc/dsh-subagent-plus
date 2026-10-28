@@ -198,6 +198,10 @@ export class NamespaceFormController<Value extends object> {
     if (value !== undefined) {
       patch.draft = this.#options.copy(value)
       patch.conflict = false
+    } else {
+      // Not served (or unrecognizable): no editable draft may survive, or a
+      // flapping namespace would keep offering stale edits (T7).
+      patch.draft = undefined
     }
     this.#patch(patch)
   }

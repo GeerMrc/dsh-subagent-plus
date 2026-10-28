@@ -50,6 +50,22 @@ class FakeNsForm implements NamespaceFormPort {
   }
 
   failNextMutate(): void { this.#failNext = true }
+
+  /** Flip the served status and notify, as the host form does. */
+  setStatus(status: string): void {
+    this.status = status
+    this.#notify()
+  }
+
+  /** Replace the committed value and notify, as a foreign write does. */
+  setValue(value: unknown): void {
+    this.value = value
+    this.#notify()
+  }
+
+  #notify(): void {
+    for (const listener of this.#listeners) listener()
+  }
 }
 
 /** A concrete controller over a tiny value shape for the generic contract tests. */
@@ -230,5 +246,54 @@ describe('OfficialAllowlistController (T3 same-key writes, stored routes preserv
     await controller.save()
     expect(form.mutateCalls).toEqual([])
     expect((form.value as { allowedModels: unknown[] }).allowedModels).toEqual([{ provider: 'gone', model: 'old-model' }])
+  })
+})
+
+describe('T7 per-namespace availability (independent sections)', () => {
+  function takeoverHarness(): { limits: OfficialLimitsController; limitsForm: FakeNsForm; allowlist: OfficialAllowlistController; allowlistForm: FakeNsForm } {
+    const limitsForm = new FakeNsForm({ maxDepth: 1, maxActiveSubagents: 8 })
+    const allowlistForm = new FakeNsForm({ enabled: true, allowedModels: [] })
+    const limits = new OfficialLimitsController(limitsForm)
+    const allowlist = new OfficialAllowlistController(allowlistForm)
+    limits.init()
+    allowlist.init()
+    return { limits, limitsForm, allowlist, allowlistForm }
+  }
+
+  it('one namespace going unavailable flips only its own section; the other keeps editing and saving', async () => {
+    const { limits, limitsForm, allowlist, allowlistForm } = takeoverHarness()
+    limitsForm.setStatus('unavailable')
+    expect(limits.snapshot().status).toBe('unavailable')
+    expect(allowlist.snapshot().status).toBe('ready')
+    // The served section still edits and lands its write in the official ns.
+    allowlist.setEnabled(false)
+    await allowlist.save()
+    expect((allowlistForm.value as { enabled: boolean }).enabled).toBe(false)
+    // The unserved section's save is inert.
+    limits.setMaxDepth('4')
+    limitsForm.setValue({ maxDepth: 1, maxActiveSubagents: 8 })
+    expect(limits.snapshot().status).toBe('unavailable')
+  })
+
+  it('both namespaces unavailable leaves both sections unavailable (the card keeps rendering)', () => {
+    const { limits, limitsForm, allowlist, allowlistForm } = takeoverHarness()
+    limitsForm.setStatus('unavailable')
+    allowlistForm.setStatus('unavailable')
+    expect(limits.snapshot().status).toBe('unavailable')
+    expect(allowlist.snapshot().status).toBe('unavailable')
+    expect(limits.snapshot().draft).toBeUndefined()
+    expect(allowlist.snapshot().draft).toBeUndefined()
+  })
+
+  it('a namespace returning to service reloads the committed value as the fresh draft', () => {
+    const { limits, limitsForm } = takeoverHarness()
+    limitsForm.setStatus('unavailable')
+    expect(limits.snapshot().status).toBe('unavailable')
+    limitsForm.setValue({ maxDepth: 3, maxActiveSubagents: 2 })
+    limitsForm.setStatus('ready')
+    const state = limits.snapshot()
+    expect(state.status).toBe('ready')
+    expect(state.value).toEqual({ maxDepth: 3, maxActiveSubagents: 2 })
+    expect(state.draft).toEqual({ maxDepth: 3, maxActiveSubagents: 2 })
   })
 })
