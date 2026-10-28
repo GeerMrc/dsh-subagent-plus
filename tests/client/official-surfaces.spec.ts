@@ -1,0 +1,136 @@
+import { describe, expect, it } from 'vitest'
+import {
+  isAllowlistValue,
+  isLimitsValue,
+  NamespaceFormController,
+  type FieldSetOp,
+  type NamespaceFormPort,
+} from '../../src/client/official-surfaces.js'
+
+/** Generic in-memory form port mirroring the host's revision-fenced contract. */
+class FakeNsForm implements NamespaceFormPort {
+  value: unknown
+  status = 'ready'
+  revision = 1
+  readonly mutateCalls: { ops: FieldSetOp[]; expectedRevision?: number }[] = []
+  #failNext = false
+  #listeners = new Set<() => void>()
+
+  constructor(value: unknown) {
+    this.value = value
+  }
+
+  getSnapshot(): { status: string; value?: unknown; revision?: number } {
+    return { status: this.status, value: this.value, revision: this.revision }
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
+  }
+
+  async mutate(ops: readonly FieldSetOp[], expectedRevision?: number): Promise<boolean> {
+    this.mutateCalls.push({ ops: [...ops], expectedRevision })
+    if (this.#failNext) {
+      this.#failNext = false
+      return false
+    }
+    const record = this.value as Record<string, unknown> | undefined
+    for (const op of ops) {
+      if (op.op === 'set' && op.path.length === 1 && record !== undefined) {
+        Object.assign(record, { [op.path[0] ?? '']: op.value })
+      }
+    }
+    this.revision += 1
+    for (const listener of this.#listeners) listener()
+    return true
+  }
+
+  failNextMutate(): void { this.#failNext = true }
+}
+
+/** A concrete controller over a tiny value shape for the generic contract tests. */
+interface ProbeValue { enabled: boolean; count: number }
+class ProbeController extends NamespaceFormController<ProbeValue> {
+  setCount = (count: number): void => { this.edit(draft => { draft.count = count }) }
+}
+
+function probeController(value: ProbeValue): { controller: ProbeController; form: FakeNsForm } {
+  const form = new FakeNsForm(value)
+  const controller = new ProbeController(form, {
+    guard: (candidate): candidate is ProbeValue =>
+      typeof candidate === 'object' && candidate !== null && typeof (candidate as ProbeValue).enabled === 'boolean',
+    copy: source => ({ ...source }),
+    blocked: () => false,
+  })
+  controller.init()
+  return { controller, form }
+}
+
+describe('NamespaceFormController (generic takeover contract)', () => {
+  it('mirrors the committed value into the draft when ready', () => {
+    const { controller } = probeController({ enabled: true, count: 2 })
+    const state = controller.snapshot()
+    expect(state.status).toBe('ready')
+    expect(state.value).toEqual({ enabled: true, count: 2 })
+    expect(state.draft).toEqual({ enabled: true, count: 2 })
+  })
+
+  it('marks unavailable when the host does not serve the namespace', () => {
+    const form = new FakeNsForm({ enabled: true, count: 2 })
+    form.status = 'unavailable'
+    const controller = new ProbeController(form, {
+      guard: (candidate): candidate is ProbeValue => typeof (candidate as ProbeValue).enabled === 'boolean',
+      copy: source => ({ ...source }), blocked: () => false,
+    })
+    controller.init()
+    expect(controller.snapshot().status).toBe('unavailable')
+  })
+
+  it('flags valueInvalid when a ready snapshot is not a recognizable value', () => {
+    const form = new FakeNsForm({ something: 'else' })
+    const controller = new ProbeController(form, {
+      guard: (candidate): candidate is ProbeValue => typeof (candidate as ProbeValue).enabled === 'boolean',
+      copy: source => ({ ...source }), blocked: () => false,
+    })
+    controller.init()
+    expect(controller.snapshot().valueInvalid).toBe(true)
+  })
+
+  it('saves only changed fields atomically behind the revision fence and lands them in the official namespace', async () => {
+    const { controller, form } = probeController({ enabled: true, count: 2 })
+    controller.setCount(5)
+    await controller.save()
+    expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['count'], value: 5 }], expectedRevision: 1 }])
+    expect((form.value as ProbeValue).count).toBe(5)
+    expect(controller.snapshot().saved).toBe(true)
+  })
+
+  it('blocks saving while the draft is invalid and surfaces the revision-fence conflict', async () => {
+    const form = new FakeNsForm({ enabled: true, count: 2 })
+    let invalid = false
+    const controller = new ProbeController(form, {
+      guard: (candidate): candidate is ProbeValue => typeof (candidate as ProbeValue).enabled === 'boolean',
+      copy: source => ({ ...source }),
+      blocked: () => invalid,
+    })
+    controller.init()
+    controller.setCount(0)
+    invalid = true
+    await controller.save()
+    expect(form.mutateCalls).toEqual([])
+    invalid = false
+    form.failNextMutate()
+    await controller.save()
+    expect(controller.snapshot().conflict).toBe(true)
+  })
+})
+
+describe('official value guards', () => {
+  it('recognizes limits and allowlist shapes', () => {
+    expect(isLimitsValue({ maxDepth: 1, maxActiveSubagents: 8 })).toBe(true)
+    expect(isLimitsValue({ maxDepth: 1 })).toBe(false)
+    expect(isAllowlistValue({ enabled: true, allowedModels: [{ provider: 'sz', model: 'm' }] })).toBe(true)
+    expect(isAllowlistValue({ enabled: true })).toBe(false)
+  })
+})

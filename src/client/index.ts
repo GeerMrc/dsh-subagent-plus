@@ -25,6 +25,16 @@ import type { PinConfig } from '../config.js'
 import type { CatalogGroup } from './settings-controller.js'
 import { PinBadge } from './badge.tsx'
 import { en, NS, zh } from './locales.ts'
+import {
+  copyAllowlist,
+  copyLimits,
+  isAllowlistValue,
+  isLimitsValue,
+  NamespaceFormController,
+  type OfficialAllowlistValue,
+  type OfficialLimitsValue,
+} from './official-surfaces.ts'
+import type { TakeoverControllers } from './takeover-card.tsx'
 import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.ts'
 import { bindSettingsSection } from './settings-section.tsx'
 import { PAGE_STYLE_CSS } from './settings-styles.ts'
@@ -91,21 +101,41 @@ export function apply(ctx: Context): void {
     },
   }
   const controller = new SettingsSectionController(form, catalog)
-  ctx.effect(() => () => { controller.dispose() }, 'dsh-subagent-plus: settings form subscription')
+  // Takeover surfaces (v0.3.0): the two official subagent namespaces this
+  // page absorbs while the official settings page row is disabled by the
+  // bundle patch. Same-key reads and writes through the shared config form —
+  // disabling this plugin restores the official page with these values.
+  const official: TakeoverControllers = {
+    limits: new NamespaceFormController<OfficialLimitsValue>(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent')), {
+      guard: isLimitsValue,
+      copy: copyLimits,
+      blocked: () => false,
+    }),
+    allowlist: new NamespaceFormController<OfficialAllowlistValue>(asFormPort(ctx.configForms.get<OfficialAllowlistValue>('subagent-model-selection-settings')), {
+      guard: isAllowlistValue,
+      copy: copyAllowlist,
+      blocked: () => false,
+    }),
+  }
+  ctx.effect(() => () => { controller.dispose(); official.limits.dispose(); official.allowlist.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
   // The catalogue is not part of the settings document: adapters come and go,
   // and a commit elsewhere can change which routes exist.
   ctx.effect(() => ctx.remote.$on('llm/adapters-updated', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: adapter invalidations')
   ctx.effect(() => ctx.remote.$on('settings/document-updated', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: settings invalidations')
   ctx.effect(() => ctx.on('connection/reset', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: connection generation')
-  // The section stays mounted only while the host serves this namespace.
+  // The section stays mounted only while the host serves this namespace. The
+  // official-surface controllers bind alongside: their own availability is
+  // per-namespace (T7), independent of this plugin's namespace.
   ctx.effect(() => ctx.configForms.whileServed([NS], () => {
     controller.init()
+    official.limits.init()
+    official.allowlist.init()
     return ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: NS,
       order: 17,
       label: () => t('nav'),
       locale: NS,
-    }, bindSettingsSection(controller)))
+    }, bindSettingsSection(controller, official)))
   }), 'dsh-subagent-plus: settings section')
 }
