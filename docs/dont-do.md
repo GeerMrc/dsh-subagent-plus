@@ -23,3 +23,11 @@
 - **首推 workflow 与 tag 同批不触发**（GitHub 限制）：先推 main 再推 tag。
 - **npm 裸名被反抢注政策拒**（与既有包过近）：走 scope 分发 + 裸名 tarball 双名模式（参照 dsh-websearch `scripts/pack.mjs`）；banner id/patch 行/name 导出保持裸名。
 - **`npm publish` 裸参数被解析为 GitHub spec**：必须 `./` 前缀 + 显式 `--registry https://registry.npmjs.org`。
+
+## E2E 与宿主组合（v0.3.0 接管轮沉淀）
+
+- **patch 行的 config 是整对象覆写，不是逐字段合并**：后层只写 `modelSelectionSettings: false` 会抹掉前层的 `provider`/`toolName`（激活报 `$.provider missing`）。跨层改 config 必须携带完整目标 config。
+- **standing `tool-subagent` 行不认 preset 作用域选项**：`modelSelectionSettings: true` 只在 preset 内合法；headless 组合给 standing 行配上它直接激活失败，模型退化走 fork/workflow 委派——测试组合要按 base bundle 语义配置。
+- **源码启动的宿主对 `setBundleEnabled` 不热重组**（写 manifest + pnpm 移除都执行了，运行中组合不变）：E2E 里"禁用即官方回归"的断言必须按"重启后回归"设计；生产桌面的 hmr 即时性需实机另验。
+- **UI 断言字符串先核单复数**：官方插件页条目是 "View Subagent"（单数）——正则按复数写导致 E3a 假阴性，差点误判"官方页未回归"。
+- **web-app 专属行在 headless 组合里不存在**：`subagent-model-selection-settings` 行由 web-app bundle 插入；headless E2E 需要它时用 `--patch` overlay `insert` 补行（profile 层的 config 行无法配置"更晚层才插入"的行）。
