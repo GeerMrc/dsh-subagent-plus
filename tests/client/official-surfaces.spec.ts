@@ -3,6 +3,7 @@ import {
   isAllowlistValue,
   isLimitsValue,
   NamespaceFormController,
+  OfficialAllowlistController,
   OfficialLimitsController,
   parseLimitText,
   type FieldSetOp,
@@ -188,5 +189,46 @@ describe('OfficialLimitsController (T2 same-key writes into the official namespa
     await controller.save()
     expect(controller.snapshot().conflict).toBe(true)
     expect(controller.snapshot().saved).toBe(false)
+  })
+})
+
+describe('OfficialAllowlistController (T3 same-key writes, stored routes preserved)', () => {
+  function allowlistHarness(initial: { enabled: boolean; allowedModels: { provider: string; model: string }[] }): { controller: OfficialAllowlistController; form: FakeNsForm } {
+    const form = new FakeNsForm({ enabled: initial.enabled, allowedModels: initial.allowedModels.map(route => ({ ...route })) })
+    const controller = new OfficialAllowlistController(form)
+    controller.init()
+    return { controller, form }
+  }
+
+  it('toggles route membership and the enabled flag, writing whole-key ops', async () => {
+    const { controller, form } = allowlistHarness({ enabled: true, allowedModels: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8' }] })
+    controller.toggleRoute({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
+    await controller.save()
+    expect(form.mutateCalls).toEqual([{
+      ops: [{ op: 'set', path: ['allowedModels'], value: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8' },
+        { provider: 'hh', model: 'Qwen3.8-27B-FP8' },
+      ] }],
+      expectedRevision: 1,
+    }])
+    controller.toggleRoute({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
+    controller.setEnabled(false)
+    await controller.save()
+    expect((form.value as { enabled: boolean }).enabled).toBe(false)
+    expect((form.value as { allowedModels: unknown[] }).allowedModels).toEqual([{ provider: 'sz', model: 'Qwen3.8-27B-FP8' }])
+  })
+
+  it('never duplicates a route and preserves stored routes the catalogue lost', async () => {
+    const { controller, form } = allowlistHarness({ enabled: true, allowedModels: [{ provider: 'gone', model: 'old-model' }] })
+    controller.toggleRoute({ provider: 'gone', model: 'old-model' })
+    expect(controller.snapshot().draft?.allowedModels).toEqual([])
+    controller.toggleRoute({ provider: 'gone', model: 'old-model' })
+    // Back to exactly one entry — the toggle contract cannot manufacture duplicates.
+    expect(controller.snapshot().draft?.allowedModels).toEqual([{ provider: 'gone', model: 'old-model' }])
+    // Net-zero edits are not a diff: the draft equals the committed value, so
+    // save is a no-op and the stored (catalogue-lost) route survives verbatim.
+    await controller.save()
+    expect(form.mutateCalls).toEqual([])
+    expect((form.value as { allowedModels: unknown[] }).allowedModels).toEqual([{ provider: 'gone', model: 'old-model' }])
   })
 })

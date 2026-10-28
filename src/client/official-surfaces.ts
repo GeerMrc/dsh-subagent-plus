@@ -268,3 +268,30 @@ export class OfficialLimitsController extends NamespaceFormController<OfficialLi
     this.setInvalid(this.#depthInvalid || this.#activeInvalid)
   }
 }
+
+/**
+ * The official model-selection allowlist as an editable section: the enabled
+ * switch plus a route checklist writing the official
+ * `subagent-model-selection-settings` namespace keys verbatim. Stored routes
+ * that have left the catalogue stay checked and visible (marked unavailable)
+ * so a catalogue hiccup never silently drops an authorized route.
+ */
+export class OfficialAllowlistController extends NamespaceFormController<OfficialAllowlistValue> {
+  constructor(form: SettingsFormPort) {
+    super(form, { guard: isAllowlistValue, copy: copyAllowlist, blocked: () => false })
+  }
+
+  /** Toggle the official enabled flag. */
+  setEnabled = (enabled: boolean): void => {
+    this.edit(draft => { draft.enabled = enabled })
+  }
+
+  /** Toggle one route's membership; adding an existing route is a no-op. */
+  toggleRoute = (route: AllowedModelRouteView): void => {
+    this.edit(draft => {
+      const index = draft.allowedModels.findIndex(entry => entry.provider === route.provider && entry.model === route.model)
+      if (index >= 0) draft.allowedModels.splice(index, 1)
+      else draft.allowedModels.push({ provider: route.provider, model: route.model })
+    })
+  }
+}

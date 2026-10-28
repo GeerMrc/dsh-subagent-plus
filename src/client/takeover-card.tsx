@@ -15,12 +15,13 @@ import { QuestionIcon } from './host-icons.tsx'
 import { NS } from './locales.ts'
 import type { RouteOption } from './settings-controller.ts'
 import type {
-  NamespaceFormController,
   NamespaceFormState,
+  OfficialAllowlistController,
   OfficialAllowlistValue,
   OfficialLimitsController,
   OfficialLimitsValue,
 } from './official-surfaces.ts'
+import { routeShort, Switch } from './settings-section.tsx'
 import {
   cardHeadingStyle,
   cardHeaderRowStyle,
@@ -112,7 +113,7 @@ function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: Pro
 /** The two official controllers the card edits, shared with the client entry's wiring. */
 export interface TakeoverControllers {
   limits: OfficialLimitsController
-  allowlist: NamespaceFormController<OfficialAllowlistValue>
+  allowlist: OfficialAllowlistController
 }
 
 /** Presentation component; every action is a controller call, every string a locale key. */
@@ -217,7 +218,59 @@ function LimitsBody(props: {
   )
 }
 
-/** See {@link LimitsBody}. */
-function AllowlistBody(props: { state: NamespaceFormState<OfficialAllowlistValue>; controller: NamespaceFormController<OfficialAllowlistValue>; routes: readonly RouteOption[]; t: PropsLocale<typeof NS>['t'] }) {
-  return <p style={hintStyle}>…</p>
+/** The official allowlist: the enabled switch plus a route checklist. Stored
+ *  routes that left the catalogue stay checked and tagged so a catalogue
+ *  hiccup never silently deauthorizes a route. */
+function AllowlistBody(props: {
+  state: NamespaceFormState<OfficialAllowlistValue>
+  controller: Pick<OfficialAllowlistController, 'setEnabled' | 'toggleRoute'>
+  routes: readonly RouteOption[]
+  t: PropsLocale<typeof NS>['t']
+}) {
+  const { draft } = props.state
+  if (draft === undefined) return null
+  const checked = (route: { provider: string; model: string }): boolean =>
+    draft.allowedModels.some(entry => entry.provider === route.provider && entry.model === route.model)
+  const storedMissing = draft.allowedModels.filter(entry =>
+    !props.routes.some(route => route.provider === entry.provider && route.model === entry.model))
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={cardHeadingStyle}>{props.t('takeover.allowlistEnabled')}</span>
+        <Info label={props.t('takeover.allowlistEnabledHelp')} text={props.t('takeover.allowlistEnabledHelp')} />
+        <span style={{ flex: 1 }} />
+        <Switch
+          checked={draft.enabled}
+          onChange={props.controller.setEnabled}
+          label={props.t('takeover.allowlistEnabled')}
+          title={props.t('takeover.allowlistEnabledHelp')}
+        />
+      </div>
+      {props.routes.map(route => (
+        <label key={`${route.provider}\0${route.model}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, lineHeight: 1.5, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={checked(route)}
+            onChange={() => { props.controller.toggleRoute({ provider: route.provider, model: route.model }) }}
+            aria-label={`${props.t('takeover.allowlistTitle')} ${route.provider}/${route.model}`}
+          />
+          <span>{routeShort(route)}</span>
+        </label>
+      ))}
+      {storedMissing.map(entry => (
+        <label key={`${entry.provider}\0${entry.model}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, lineHeight: 1.5, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked
+            onChange={() => { props.controller.toggleRoute(entry) }}
+            aria-label={`${props.t('takeover.allowlistTitle')} ${entry.provider}/${entry.model}`}
+          />
+          <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
+            {`${entry.provider}/${entry.model}${props.t('takeover.allowlistUnavailable')}`}
+          </span>
+        </label>
+      ))}
+      {draft.allowedModels.length === 0 ? <p style={hintStyle}>{props.t('takeover.allowlistEmpty')}</p> : null}
+    </div>
+  )
 }

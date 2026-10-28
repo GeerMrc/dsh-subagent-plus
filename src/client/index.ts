@@ -26,9 +26,8 @@ import type { CatalogGroup } from './settings-controller.js'
 import { PinBadge } from './badge.tsx'
 import { en, NS, zh } from './locales.ts'
 import {
-  copyAllowlist,
-  isAllowlistValue,
   NamespaceFormController,
+  OfficialAllowlistController,
   OfficialLimitsController,
   type OfficialAllowlistValue,
   type OfficialLimitsValue,
@@ -106,11 +105,7 @@ export function apply(ctx: Context): void {
   // disabling this plugin restores the official page with these values.
   const official: TakeoverControllers = {
     limits: new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent'))),
-    allowlist: new NamespaceFormController<OfficialAllowlistValue>(asFormPort(ctx.configForms.get<OfficialAllowlistValue>('subagent-model-selection-settings')), {
-      guard: isAllowlistValue,
-      copy: copyAllowlist,
-      blocked: () => false,
-    }),
+    allowlist: new OfficialAllowlistController(asFormPort(ctx.configForms.get<OfficialAllowlistValue>('subagent-model-selection-settings'))),
   }
   ctx.effect(() => () => { controller.dispose(); official.limits.dispose(); official.allowlist.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
   // The catalogue is not part of the settings document: adapters come and go,
