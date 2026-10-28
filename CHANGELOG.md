@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
+
+- feat(takeover): 启用期间官方「子智能体」设置页（纯编辑面）经 bundle patch
+  隐藏；禁用/卸载即整层移除、官方页面立即回归（hmr），配置值保留。弃用
+  plugins.item 同 id 遮蔽方案（插件页清单层不去重，会双卡 + React key 冲突；
+  依据与取舍见 docs/decisions/0001）。
+- feat(takeover): 本插件设置页新增「官方子智能体设置（已接管）」卡：运行限制
+  （maxDepth/maxActiveSubagents）与官方授权清单（enabled/allowedModels）两
+  section 经 configForms **同键读写**官方命名空间——不复制运行时，单一事实
+  源；授权清单语义重标注（逐次显式指派 / autoRoute 采纳 / 回落池）。
+- feat(takeover): 任一官方命名空间失活仅对应 section 转 unavailable，接管卡
+  不消失（T7）；失活时清除 stale draft（T7 测试发现的真缺陷）。
+- fix(pin): 路由变更时丢弃继承的 maxTokens（**有意偏离官方语义**，README 已知
+  行为）：继承预算按父模型容量设定，跨模型携带会溢出新模型上限且官方 runtime
+  无 clamp；丢弃后 runtime 按新模型物化默认输出预算。effort-only 覆盖保留
+  maxTokens。
+- docs: README 双语接管语义章节/已知行为、docs/settings.md 页面结构与行为要
+  点、ADR 0001（接管机制取舍、maxTokens 偏离声明、0.0.2→0.3.0 跳号理由）。
+- 未达项/留待：插件页"不出现重复卡"与 fiber 生效/回归链路的真机断言归隔离
+  E2E Flow E（发布前执行）；DOM 渲染级测试仍为既有技术债。
+
 ## v0.0.2 (2026-10-26)
 
 - fix(review): the E1 regression test actually discriminates now — a mock
