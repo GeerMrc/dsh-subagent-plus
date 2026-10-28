@@ -18,6 +18,7 @@ import type {
   NamespaceFormController,
   NamespaceFormState,
   OfficialAllowlistValue,
+  OfficialLimitsController,
   OfficialLimitsValue,
 } from './official-surfaces.ts'
 import {
@@ -25,6 +26,7 @@ import {
   cardHeaderRowStyle,
   cardStyle,
   hintStyle,
+  inputStyle,
   invalidStyle,
   saveButtonStyle,
   statusTextStyle,
@@ -109,7 +111,7 @@ function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: Pro
 
 /** The two official controllers the card edits, shared with the client entry's wiring. */
 export interface TakeoverControllers {
-  limits: NamespaceFormController<OfficialLimitsValue>
+  limits: OfficialLimitsController
   allowlist: NamespaceFormController<OfficialAllowlistValue>
 }
 
@@ -129,13 +131,18 @@ export function TakeoverCard(props: PropsLocale<typeof NS> & TakeoverControllers
         <SectionHeader title={t('takeover.limitsTitle')} help={t('takeover.limitsHelp')} />
         <NsStatusLine state={limits} t={t} />
         {limits.status === 'ready' && !limits.valueInvalid && limits.draft !== undefined
-          ? <LimitsBody state={limits} controller={props.limits} t={t} />
+          ? (
+            <>
+              <LimitsBody state={limits} controller={props.limits} t={t} />
+              {limits.invalid ? <p style={invalidStyle}>{t('takeover.limitsInvalid')}</p> : null}
+            </>
+            )
           : null}
         {limits.status === 'ready' && !limits.valueInvalid && limits.draft !== undefined
           ? (
             <SectionFooter
               clean={limits.value !== undefined && JSON.stringify(limits.value) === JSON.stringify(limits.draft)}
-              blocked={limitsBlock(limits)}
+              blocked={limits.invalid}
               saving={limits.saving}
               saved={limits.saved}
               saveFailed={limits.saveFailed}
@@ -172,17 +179,45 @@ export function TakeoverCard(props: PropsLocale<typeof NS> & TakeoverControllers
   )
 }
 
-/** Placeholder bodies; the interactive controls land with W-04/W-05. */
-function LimitsBody(props: { state: NamespaceFormState<OfficialLimitsValue>; controller: NamespaceFormController<OfficialLimitsValue>; t: PropsLocale<typeof NS>['t'] }) {
-  return <p style={hintStyle}>…</p>
+/** The runtime-limits rows: two parsed numeric inputs writing the official keys. */
+function LimitsBody(props: {
+  state: NamespaceFormState<OfficialLimitsValue>
+  controller: Pick<OfficialLimitsController, 'setMaxDepth' | 'setMaxActiveSubagents'>
+  t: PropsLocale<typeof NS>['t']
+}) {
+  const { draft } = props.state
+  if (draft === undefined) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={cardHeadingStyle}>{props.t('takeover.maxDepth')}</span>
+        <span style={{ flex: 1 }} />
+        <input
+          className={`dsmp-input${props.state.invalid ? ' dsmp-invalid' : ''}`}
+          style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
+          type="number" min={0} step={1} inputMode="numeric"
+          value={String(draft.maxDepth)}
+          aria-label={props.t('takeover.maxDepth')}
+          onChange={event => { props.controller.setMaxDepth(event.target.value) }}
+        />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={cardHeadingStyle}>{props.t('takeover.maxActive')}</span>
+        <span style={{ flex: 1 }} />
+        <input
+          className={`dsmp-input${props.state.invalid ? ' dsmp-invalid' : ''}`}
+          style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
+          type="number" min={1} step={1} inputMode="numeric"
+          value={String(draft.maxActiveSubagents)}
+          aria-label={props.t('takeover.maxActive')}
+          onChange={event => { props.controller.setMaxActiveSubagents(event.target.value) }}
+        />
+      </div>
+    </div>
+  )
 }
 
 /** See {@link LimitsBody}. */
 function AllowlistBody(props: { state: NamespaceFormState<OfficialAllowlistValue>; controller: NamespaceFormController<OfficialAllowlistValue>; routes: readonly RouteOption[]; t: PropsLocale<typeof NS>['t'] }) {
   return <p style={hintStyle}>…</p>
-}
-
-/** Whether the limits draft is blocked from saving; interactive rows land with W-04. */
-function limitsBlock(state: NamespaceFormState<OfficialLimitsValue>): boolean {
-  return false
 }

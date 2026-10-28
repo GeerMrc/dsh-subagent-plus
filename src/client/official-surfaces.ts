@@ -86,6 +86,9 @@ export interface NamespaceFormState<Value> {
   valueInvalid: boolean
   /** The local edit; diverges from `value` until save or reset. */
   draft: Value | undefined
+  /** Section-input parse failure (mirrors the plugin form's cooldown flag):
+   *  blocks saving and renders the section's invalid hint. */
+  invalid: boolean
 }
 
 /** Structural options one namespace controller needs. */
@@ -118,7 +121,7 @@ export class NamespaceFormController<Value extends object> {
   constructor(form: SettingsFormPort, options: NamespaceFormOptions<Value>) {
     this.#form = form
     this.#options = options
-    this.#state = { status: 'loading', conflict: false, saving: false, saved: false, saveFailed: false, value: undefined, valueInvalid: false, draft: undefined }
+    this.#state = { status: 'loading', conflict: false, saving: false, saved: false, saveFailed: false, value: undefined, valueInvalid: false, draft: undefined, invalid: false }
   }
 
   /** Subscribe to snapshot replacements (useSyncExternalStore contract). */
@@ -149,11 +152,12 @@ export class NamespaceFormController<Value extends object> {
     this.#patch({ draft: this.#state.value === undefined ? undefined : this.#options.copy(this.#state.value) })
   }
 
-  /** Commit every changed field behind the revision fence; `blocked` gates the write. */
+  /** Commit every changed field behind the revision fence; `blocked` and the
+   *  section's invalid flag gate the write. */
   save = async (): Promise<void> => {
     const { value, draft } = this.#state
     if (value === undefined || draft === undefined || this.#state.saving) return
-    if (this.#options.blocked(draft)) return
+    if (this.#options.blocked(draft) || this.#state.invalid) return
     const ops = namespaceFieldOps(value, draft)
     if (ops.length === 0) return
     this.#patch({ saving: true, saved: false, saveFailed: false, conflict: false })
@@ -176,6 +180,11 @@ export class NamespaceFormController<Value extends object> {
     if (draft === undefined) return
     mutate(draft)
     this.#patch({ saved: false, saveFailed: false })
+  }
+
+  /** Publish the section's input-validity flag through the shared notify pipeline. */
+  protected setInvalid(invalid: boolean): void {
+    this.#patch({ invalid })
   }
 
   #sync = (): void => {
@@ -207,4 +216,55 @@ function namespaceFieldOps<Value extends object>(committed: Value, draft: Value)
     ops.push({ op: 'set', path: [key], value: draft[key] })
   }
   return ops
+}
+
+/**
+ * Parse one official limit from input text: a plain non-negative decimal
+ * integer within the schema's domain (`maxDepth` ≥ 0, `maxActiveSubagents`
+ * ≥ 1, both capped at `Number.MAX_SAFE_INTEGER`).
+ * @param text - the raw input text.
+ * @param min - the inclusive lower bound of the official schema.
+ * @returns the parsed integer, or undefined for out-of-domain text.
+ */
+export function parseLimitText(text: string, min: number): number | undefined {
+  const trimmed = text.trim()
+  if (!/^\d+$/.test(trimmed)) return undefined
+  const parsed = Number(trimmed)
+  if (parsed < min || parsed > Number.MAX_SAFE_INTEGER) return undefined
+  return parsed
+}
+
+/**
+ * The official runtime limits as an editable section: two parsed numeric
+ * inputs writing the official `subagent` namespace keys verbatim. An invalid
+ * parse keeps the previous number in the draft and flags the section invalid
+ * (blocking save) until a valid parse arrives.
+ */
+export class OfficialLimitsController extends NamespaceFormController<OfficialLimitsValue> {
+  #depthInvalid = false
+  #activeInvalid = false
+
+  constructor(form: SettingsFormPort) {
+    super(form, { guard: isLimitsValue, copy: copyLimits, blocked: () => false })
+  }
+
+  /** Parse and set `maxDepth` (≥ 0); an invalid parse only flags the section. */
+  setMaxDepth = (text: string): void => {
+    const parsed = parseLimitText(text, 0)
+    this.#depthInvalid = parsed === undefined
+    this.#publishValidity()
+    if (parsed !== undefined) this.edit(draft => { draft.maxDepth = parsed })
+  }
+
+  /** Parse and set `maxActiveSubagents` (≥ 1); an invalid parse only flags the section. */
+  setMaxActiveSubagents = (text: string): void => {
+    const parsed = parseLimitText(text, 1)
+    this.#activeInvalid = parsed === undefined
+    this.#publishValidity()
+    if (parsed !== undefined) this.edit(draft => { draft.maxActiveSubagents = parsed })
+  }
+
+  #publishValidity = (): void => {
+    this.setInvalid(this.#depthInvalid || this.#activeInvalid)
+  }
 }

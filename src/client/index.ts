@@ -27,10 +27,9 @@ import { PinBadge } from './badge.tsx'
 import { en, NS, zh } from './locales.ts'
 import {
   copyAllowlist,
-  copyLimits,
   isAllowlistValue,
-  isLimitsValue,
   NamespaceFormController,
+  OfficialLimitsController,
   type OfficialAllowlistValue,
   type OfficialLimitsValue,
 } from './official-surfaces.ts'
@@ -106,11 +105,7 @@ export function apply(ctx: Context): void {
   // bundle patch. Same-key reads and writes through the shared config form —
   // disabling this plugin restores the official page with these values.
   const official: TakeoverControllers = {
-    limits: new NamespaceFormController<OfficialLimitsValue>(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent')), {
-      guard: isLimitsValue,
-      copy: copyLimits,
-      blocked: () => false,
-    }),
+    limits: new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent'))),
     allowlist: new NamespaceFormController<OfficialAllowlistValue>(asFormPort(ctx.configForms.get<OfficialAllowlistValue>('subagent-model-selection-settings')), {
       guard: isAllowlistValue,
       copy: copyAllowlist,

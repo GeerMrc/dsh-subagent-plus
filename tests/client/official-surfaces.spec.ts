@@ -3,6 +3,8 @@ import {
   isAllowlistValue,
   isLimitsValue,
   NamespaceFormController,
+  OfficialLimitsController,
+  parseLimitText,
   type FieldSetOp,
   type NamespaceFormPort,
 } from '../../src/client/official-surfaces.js'
@@ -132,5 +134,59 @@ describe('official value guards', () => {
     expect(isLimitsValue({ maxDepth: 1 })).toBe(false)
     expect(isAllowlistValue({ enabled: true, allowedModels: [{ provider: 'sz', model: 'm' }] })).toBe(true)
     expect(isAllowlistValue({ enabled: true })).toBe(false)
+  })
+})
+
+describe('parseLimitText', () => {
+  it('accepts in-domain integers and rejects everything else', () => {
+    expect(parseLimitText(' 3 ', 0)).toBe(3)
+    expect(parseLimitText('1', 1)).toBe(1)
+    expect(parseLimitText('0', 0)).toBe(0)
+    expect(parseLimitText('0', 1)).toBeUndefined()
+    expect(parseLimitText('-1', 0)).toBeUndefined()
+    expect(parseLimitText('abc', 0)).toBeUndefined()
+    expect(parseLimitText('1.5', 0)).toBeUndefined()
+    expect(parseLimitText('9007199254740992', 0)).toBeUndefined()
+  })
+})
+
+describe('OfficialLimitsController (T2 same-key writes into the official namespace)', () => {
+  function limitsHarness(initial: { maxDepth: number; maxActiveSubagents: number }): { controller: OfficialLimitsController; form: FakeNsForm } {
+    const form = new FakeNsForm({ ...initial })
+    const controller = new OfficialLimitsController(form)
+    controller.init()
+    return { controller, form }
+  }
+
+  it('writes only the changed official keys on save', async () => {
+    const { controller, form } = limitsHarness({ maxDepth: 1, maxActiveSubagents: 8 })
+    controller.setMaxDepth('3')
+    await controller.save()
+    expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['maxDepth'], value: 3 }], expectedRevision: 1 }])
+    expect(controller.snapshot().saved).toBe(true)
+  })
+
+  it('flags an invalid parse, keeps the previous number, and blocks the save', async () => {
+    const { controller, form } = limitsHarness({ maxDepth: 1, maxActiveSubagents: 8 })
+    controller.setMaxActiveSubagents('0')
+    expect(controller.snapshot().invalid).toBe(true)
+    expect(controller.snapshot().draft).toEqual({ maxDepth: 1, maxActiveSubagents: 8 })
+    await controller.save()
+    expect(form.mutateCalls).toEqual([])
+    // A valid parse clears the flag and the save goes through.
+    controller.setMaxActiveSubagents('2')
+    expect(controller.snapshot().invalid).toBe(false)
+    await controller.save()
+    expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['maxActiveSubagents'], value: 2 }], expectedRevision: 1 }])
+    expect((form.value as { maxActiveSubagents: number }).maxActiveSubagents).toBe(2)
+  })
+
+  it('surfaces the revision-fence conflict from the official form', async () => {
+    const { controller, form } = limitsHarness({ maxDepth: 1, maxActiveSubagents: 8 })
+    controller.setMaxDepth('2')
+    form.failNextMutate()
+    await controller.save()
+    expect(controller.snapshot().conflict).toBe(true)
+    expect(controller.snapshot().saved).toBe(false)
   })
 })
