@@ -534,7 +534,7 @@ function EditorBelow({ state, controller, t }: EditorProps) {
                 <span style={{ flex: 1 }} />
                 <input
                   className={`dsmp-input${state.cooldownInvalid ? ' dsmp-invalid' : ''}`}
-                  style={{ ...inputStyle, width: 120, fontVariantNumeric: 'tabular-nums' }}
+                  style={{ ...inputStyle, width: 88, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
                   defaultValue={String(draft.cooldownMs)}
                   inputMode="numeric"
                   aria-label={t('advanced.cooldownMs')}

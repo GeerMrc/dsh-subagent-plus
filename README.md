@@ -34,7 +34,7 @@ dsh plugin --profile desktop add /path/to/dsh-subagent-plus/dist-artifacts/dsh-s
 dsh --profile desktop --dump-config | grep dsh-subagent-plus
 ```
 
-重启桌面端 → 设置 → 子Agent增强：默认"钉定 + 自动采纳官方清单第一条"，开箱即用。
+重启桌面端 → 设置 → 子Agent增强：默认"钉定 + 自动采纳官方清单第一条"——仅当官方清单有存量条目时开箱即用；全新环境官方清单为空，请先在钉定路由或候选清单中选择模型（页面会显示官方清单只读状态行）。
 
 ### 其他分发方式
 

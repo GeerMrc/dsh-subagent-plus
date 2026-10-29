@@ -118,7 +118,7 @@ function LimitInputRow(props: {
       <span style={{ flex: 1 }} />
       <input
         className={`dsmp-input${props.invalid ? ' dsmp-invalid' : ''}`}
-        style={{ ...inputStyle, width: 88, fontVariantNumeric: 'tabular-nums' }}
+        style={{ ...inputStyle, width: 64, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
         type="number" min={props.min} step={1} inputMode="numeric"
         value={props.value}
         aria-label={props.label}

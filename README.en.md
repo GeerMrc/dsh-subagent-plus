@@ -34,7 +34,7 @@ dsh plugin --profile desktop add /path/to/dsh-subagent-plus/dist-artifacts/dsh-s
 dsh --profile desktop --dump-config | grep dsh-subagent-plus
 ```
 
-Restart the desktop app → Settings → Subagent Boost: the default "pinned + auto-adopt the official allowlist's first entry" works out of the box.
+Restart the desktop app → Settings → Subagent Boost: the default "pinned + auto-adopt the official allowlist's first entry" works out of the box only when the official allowlist carries existing entries; on a fresh setup the allowlist is empty — pick a model in the pinned route or candidate list first (the page shows a read-only official-list status line).
 
 ### Other distribution channels
 

@@ -14,8 +14,8 @@
  *
  * Routes apply on the `agent/request` waterfall after deeper listeners, so an
  * explicit per-call selection made by the delegating model is also
- * overridden unless `respectExplicit` is on — this plugin is a deliberate
- * assignment, not an allowlist. A spread strategy decides once per child on
+ * overridden; a spread strategy honours it when `respectExplicit` is on
+ * (the pinned strategy is a deliberate forced assignment, not an allowlist). A spread strategy decides once per child on
  * its first request and keeps that route for the child's lifetime; only a
  * route entering cooldown moves the child to the next healthy candidate, and
  * the configured fallback route answers when no candidate is usable.

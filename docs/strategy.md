@@ -1,4 +1,4 @@
-# 子 Agent 多模型路由策略 / Child-agent multi-route strategy（v0.1.5）
+# 子 Agent 多模型路由策略 / Child-agent multi-route strategy（v0.0.3）
 
 本文件是 `strategy` 配置的完整语义说明。不写 `strategy` 字段时插件行为与 v0.1.4 逐字节一致。
 
@@ -13,7 +13,7 @@
 | 勾 N 条 | `strategy: round-robin` | 每委派一个子 Agent 按清单顺序领一条（进程级游标），领到即**终身粘住**；下一个子 Agent 领下一条 |
 | 勾 N 条 | `strategy: random` | 每个子 Agent 从不放回牌组随机领一条并粘住；清单变化自动重洗 |
 | 勾 N 条 | `strategy: priority` + `priority: [...]` | 默认全跑第一条健康路由；某路由故障进入冷却 → 后续子 Agent 自动降级到下一条；冷却期满自动恢复 |
-| 勾 N 条 | 任意策略 + `respectExplicit: true` | 主 Agent 委派时显式指派的路由被尊重；策略只分配"没指派"的子 Agent |
+| 勾 N 条 | 轮询/随机/优先级 + `respectExplicit: true` | 主 Agent 委派时显式指派的路由被尊重；策略只分配"没指派"的子 Agent（钉定策略不吃此开关——它是强制指派） |
 | 勾 N 条 → 运行中改为空 | spread 策略且无 `priority` | 不分配，透传继承（一次 warn） |
 | 任意 | `subagent_fork` 子 Agent | 不受影响（`pinForkChildren` 默认 false；官方 KV cache 约束） |
 
