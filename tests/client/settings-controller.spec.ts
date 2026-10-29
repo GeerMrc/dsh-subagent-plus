@@ -167,23 +167,20 @@ describe('SettingsSectionController', () => {
     controller.setStrategy('round-robin')
     controller.addRoute(szRoute)
     controller.setFallbackRoute(hhRoute)
-    await controller.save()
+    await expect(controller.save()).resolves.toBe('saved')
     expect(form.mutateCalls).toHaveLength(1)
     expect(form.mutateCalls[0]?.expectedRevision).toBe(1)
     const paths = form.mutateCalls[0]?.ops.map(op => op.path.join('.')).sort()
     expect(paths).toEqual(['fallbackModel', 'fallbackProvider', 'priority', 'strategy'])
     expect(controller.snapshot().value?.strategy).toBe('round-robin')
     expect(controller.snapshot().draft).toEqual(controller.snapshot().value)
-    expect(controller.snapshot().saved).toBe(true)
   })
 
   it('marks a conflict and reloads when the revision fence rejects the write', async () => {
     const { controller, form } = await harness()
     controller.setStrategy('random')
     form.failNextMutate()
-    await controller.save()
-    expect(controller.snapshot().conflict).toBe(true)
-    expect(controller.snapshot().saved).toBe(false)
+    await expect(controller.save()).resolves.toBe('conflict')
     // The next save carries the reloaded revision.
     controller.setStrategy('priority')
     controller.snapshot() // no-op read
@@ -240,21 +237,14 @@ describe('SettingsSectionController', () => {
 })
 
 describe('save transport failures (review P1-1)', () => {
-  it('releases the saving state and surfaces saveFailed when mutate rejects', async () => {
+  it('reports failed when mutate rejects and saves once the transport recovers', async () => {
     const { controller, form } = await harness()
     controller.setStrategy('random')
     const original = form.mutate.bind(form)
     form.mutate = async () => { throw new Error('transport down') }
-    await controller.save()
-    expect(controller.snapshot().saving).toBe(false)
-    expect(controller.snapshot().saveFailed).toBe(true)
+    await expect(controller.save()).resolves.toBe('failed')
     form.mutate = original
-    await controller.save()
-    expect(controller.snapshot().saved).toBe(true)
-    // Editing retires the one-shot feedback.
-    controller.setStrategy('priority')
-    expect(controller.snapshot().saved).toBe(false)
-    expect(controller.snapshot().saveFailed).toBe(false)
+    await expect(controller.save()).resolves.toBe('saved')
   })
 })
 

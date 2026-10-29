@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { UnifiedSaveController, type SaveOutcome, type SaveParticipant } from '../../src/client/unified-save.js'
-import { OfficialLimitsController, type FieldSetOp, type NamespaceFormPort } from '../../src/client/official-surfaces.js'
-import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from '../../src/client/settings-controller.js'
+import { OfficialLimitsController } from '../../src/client/official-surfaces.js'
+import { SettingsSectionController, type CatalogPort, type FieldSetOp, type SettingsFormPort } from '../../src/client/settings-controller.js'
 import type { PinConfig } from '../../src/config.js'
 
 /** In-memory form port mirroring the host's revision-fenced contract. */
@@ -201,7 +201,6 @@ describe('UnifiedSaveController', () => {
     ])
     limitsForm.failNextMutate()
     await controller.save()
-    expect(limits.snapshot().conflict).toBe(true)
     // The fence reloaded the committed value into the draft (stale edit dropped).
     expect(limits.snapshot().draft).toEqual({ maxDepth: 1, maxActiveSubagents: 8 })
     // The own namespace was never attempted after the conflict.

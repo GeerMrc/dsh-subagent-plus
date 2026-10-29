@@ -23,8 +23,6 @@
 import type { SaveOutcome } from './unified-save.js'
 import type { FieldSetOp, SettingsFormPort } from './settings-controller.js'
 
-export type { FieldSetOp, SettingsFormPort as NamespaceFormPort }
-
 /** Official `subagent` namespace value as this page edits it. */
 export interface OfficialLimitsValue {
   /** Maximum delegation depth; integer ≥ 0, official default 1. */
@@ -45,17 +43,14 @@ function copyLimits(source: OfficialLimitsValue): OfficialLimitsValue {
   return { ...source }
 }
 
-/** Per-namespace render state: one status machine per official namespace. */
+/** Per-namespace render state: one status machine per official namespace.
+ *  Save failure/conflict feedback is the unified footer's domain; this state
+ *  keeps only the `saved` chip the section header renders. */
 export interface NamespaceFormState<Value> {
   /** `unavailable` flips only this section (T7); the card keeps rendering. */
   status: 'loading' | 'ready' | 'unavailable'
-  /** The last save hit the revision fence; the form reloaded the newer value. */
-  conflict: boolean
-  saving: boolean
   /** One-shot success feedback flag, cleared by the next action. */
   saved: boolean
-  /** One-shot failure feedback flag, cleared by the next action. */
-  saveFailed: boolean
   /** The committed value, when ready and recognizable. */
   value: Value | undefined
   /** Ready but unrecognizable (hand-edited patch) — editor hidden, line shown. */
@@ -89,6 +84,9 @@ export class NamespaceFormController<Value extends object> {
   #state: NamespaceFormState<Value>
   #unsubscribe: (() => void) | undefined
   #disposed = false
+  /** Re-entry guard for save(); the footer's `saving` is the unified
+   *  controller's state, not this controller's. */
+  #saving = false
 
   /**
    * @param form - the shared config form for the official namespace.
@@ -97,7 +95,7 @@ export class NamespaceFormController<Value extends object> {
   constructor(form: SettingsFormPort, options: NamespaceFormOptions<Value>) {
     this.#form = form
     this.#options = options
-    this.#state = { status: 'loading', conflict: false, saving: false, saved: false, saveFailed: false, value: undefined, valueInvalid: false, draft: undefined, invalid: false }
+    this.#state = { status: 'loading', saved: false, value: undefined, valueInvalid: false, draft: undefined, invalid: false }
   }
 
   /** Subscribe to snapshot replacements (useSyncExternalStore contract). */
@@ -134,22 +132,24 @@ export class NamespaceFormController<Value extends object> {
   save = async (): Promise<SaveOutcome> => {
     const { value, draft } = this.#state
     if (value === undefined || draft === undefined) return 'unavailable'
-    if (this.#state.saving) return 'clean'
+    if (this.#saving) return 'clean'
     if (this.#options.blocked(draft) || this.#state.invalid) return 'blocked'
     const ops = namespaceFieldOps(value, draft)
     if (ops.length === 0) return 'clean'
-    this.#patch({ saving: true, saved: false, saveFailed: false, conflict: false })
+    this.#saving = true
+    this.#patch({ saved: false })
     let accepted: boolean
     try {
       accepted = await this.#form.mutate(ops, this.#form.getSnapshot().revision)
     } catch {
       if (this.#disposed) return 'failed'
-      this.#patch({ saving: false, saveFailed: true })
+      this.#saving = false
       return 'failed'
     }
+    this.#saving = false
     if (this.#disposed) return accepted ? 'saved' : 'conflict'
     this.#sync()
-    this.#patch(accepted ? { saving: false, saved: true } : { saving: false, conflict: true })
+    if (accepted) this.#patch({ saved: true })
     return accepted ? 'saved' : 'conflict'
   }
 
@@ -158,7 +158,7 @@ export class NamespaceFormController<Value extends object> {
     const draft = this.#state.draft
     if (draft === undefined) return
     mutate(draft)
-    this.#patch({ saved: false, saveFailed: false })
+    this.#patch({ saved: false })
   }
 
   /** Publish the section's input-validity flag through the shared notify pipeline. */
@@ -180,7 +180,6 @@ export class NamespaceFormController<Value extends object> {
     }
     if (value !== undefined) {
       patch.draft = this.#options.copy(value)
-      patch.conflict = false
       // The reloaded draft is the committed value, so no invalid input
       // survives the flap: input-validity flags from before it would keep
       // the section blocked (red inputs, save gated) with nothing to fix.

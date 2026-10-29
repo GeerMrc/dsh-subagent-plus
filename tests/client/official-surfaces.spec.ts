@@ -5,12 +5,11 @@ import {
   OfficialAllowlistStatus,
   OfficialLimitsController,
   parseLimitText,
-  type FieldSetOp,
-  type NamespaceFormPort,
 } from '../../src/client/official-surfaces.js'
+import type { FieldSetOp, SettingsFormPort } from '../../src/client/settings-controller.js'
 
 /** Generic in-memory form port mirroring the host's revision-fenced contract. */
-class FakeNsForm implements NamespaceFormPort {
+class FakeNsForm implements SettingsFormPort {
   value: unknown
   status = 'ready'
   revision = 1
@@ -118,7 +117,7 @@ describe('NamespaceFormController (generic takeover contract)', () => {
   it('saves only changed fields atomically behind the revision fence and lands them in the official namespace', async () => {
     const { controller, form } = probeController({ enabled: true, count: 2 })
     controller.setCount(5)
-    await controller.save()
+    await expect(controller.save()).resolves.toBe('saved')
     expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['count'], value: 5 }], expectedRevision: 1 }])
     expect((form.value as ProbeValue).count).toBe(5)
     expect(controller.snapshot().saved).toBe(true)
@@ -139,8 +138,7 @@ describe('NamespaceFormController (generic takeover contract)', () => {
     expect(form.mutateCalls).toEqual([])
     invalid = false
     form.failNextMutate()
-    await controller.save()
-    expect(controller.snapshot().conflict).toBe(true)
+    await expect(controller.save()).resolves.toBe('conflict')
   })
 })
 
@@ -199,8 +197,7 @@ describe('OfficialLimitsController (T2 same-key writes into the official namespa
     const { controller, form } = limitsHarness({ maxDepth: 1, maxActiveSubagents: 8 })
     controller.setMaxDepth('2')
     form.failNextMutate()
-    await controller.save()
-    expect(controller.snapshot().conflict).toBe(true)
+    await expect(controller.save()).resolves.toBe('conflict')
     expect(controller.snapshot().saved).toBe(false)
   })
 

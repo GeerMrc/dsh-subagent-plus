@@ -20,7 +20,7 @@ import type { SaveOutcome } from './unified-save.js'
 export const MAX_ROUTES = 5
 
 /** Cooldown upper bound: 24h — beyond it a route is effectively frozen forever. */
-export const MAX_COOLDOWN_MS = 86_400_000
+const MAX_COOLDOWN_MS = 86_400_000
 
 /** One reasoning effort a model supports, from the catalogue. */
 export interface EffortOption {
@@ -79,17 +79,12 @@ export interface SettingsFormPort {
   mutate(ops: readonly FieldSetOp[], expectedRevision?: number): Promise<boolean>
 }
 
-/** Render-ready state for the section component. */
+/** Render-ready state for the section component. Save outcome feedback
+ *  (saved/failed/conflict) is the unified footer's domain; this controller
+ *  only reports it through the save() return value. */
 export interface SettingsUiState {
   /** `unavailable` hides the editor (the host does not serve the namespace). */
   status: 'loading' | 'ready' | 'unavailable'
-  /** The last save hit the revision fence; the form reloaded the newer value. */
-  conflict: boolean
-  saving: boolean
-  /** One-shot success feedback flag, cleared by the next action. */
-  saved: boolean
-  /** One-shot failure feedback flag, cleared by the next action. */
-  saveFailed: boolean
   /** The committed value, when ready. */
   value: PinConfig | undefined
   /** The form is ready but its value is not a recognizable plugin config
@@ -210,7 +205,7 @@ export class SettingsSectionController {
     this.#form = form
     this.#catalog = catalog
     this.#state = {
-      status: 'loading', conflict: false, saving: false, saved: false, saveFailed: false,
+      status: 'loading',
       value: undefined, valueInvalid: false, draft: undefined, structural: [], degraded: [], cooldownInvalid: false,
       routes: [], addableRoutes: [], atLimit: false, catalogFailed: false,
     }
@@ -261,6 +256,9 @@ export class SettingsSectionController {
   }
 
   #catalogInFlight = false
+  /** Re-entry guard for save(); the footer's `saving` is the unified
+   *  controller's state, not this controller's. */
+  #saving = false
 
   /** Discard the draft and mirror the committed value again. */
   reset = (): void => {
@@ -272,24 +270,24 @@ export class SettingsSectionController {
   save = async (): Promise<SaveOutcome> => {
     const { value, draft } = this.#state
     if (value === undefined || draft === undefined) return 'unavailable'
-    if (this.#state.saving) return 'clean'
+    if (this.#saving) return 'clean'
     if (this.#state.structural.length > 0 || this.#state.degraded.length > 0 || this.#state.cooldownInvalid) return 'blocked'
     const ops = fieldOps(value, draft)
     if (ops.length === 0) return 'clean'
-    this.#patch({ saving: true, saved: false, saveFailed: false, conflict: false })
+    this.#saving = true
     let accepted: boolean
     try {
       // The form's contract: transport failures reject — a rejected save must
-      // release the button and surface `saveFailed`, never strand `saving`.
+      // report 'failed', never strand the in-flight guard.
       accepted = await this.#form.mutate(ops, this.#form.getSnapshot().revision)
     } catch {
       if (this.#disposed) return 'failed'
-      this.#patch({ saving: false, saveFailed: true })
+      this.#saving = false
       return 'failed'
     }
+    this.#saving = false
     if (this.#disposed) return accepted ? 'saved' : 'conflict'
     this.#sync()
-    this.#patch(accepted ? { saving: false, saved: true } : { saving: false, conflict: true })
     return accepted ? 'saved' : 'conflict'
   }
 
@@ -365,8 +363,7 @@ export class SettingsSectionController {
     edit(draft)
     // Rebuild the state object: useSyncExternalStore skips notifications when
     // the snapshot identity is unchanged, so in-place mutation hides edits.
-    // Editing also retires the one-shot save feedback.
-    this.#patch({ saved: false, saveFailed: false })
+    this.#patch({})
   }
 
   #sync = (): void => {
@@ -379,7 +376,6 @@ export class SettingsSectionController {
     }
     if (value !== undefined) {
       patch.draft = copyConfig(value)
-      patch.conflict = false
       // The reloaded draft is the committed value, so the cooldown parse
       // flag from before a namespace flap must not keep the save blocked.
       patch.cooldownInvalid = false
