@@ -81,11 +81,11 @@ Full semantics: [docs/strategy.md](docs/strategy.md) and [docs/settings.md](docs
 
 ## Upgrade & version line (v0.3.1)
 
-- npm carries **0.3.0** (published 2026-10-28 by a tag push minutes before the mandatory user real-test gate existed; `latest` was moved back to 0.0.2). The line continues at **0.3.1**; `tests/manifest.spec.ts` enforces the published floor. Upgrading from 0.0.2 changes no config fields — only the header switch's meaning moves (the former soft switch now lives in Advanced) and every stored value stays compatible.
+- npm carries **0.3.0** (published 2026-10-28 by a tag push minutes before the mandatory user real-test gate existed; `latest` was moved back to 0.0.2). The line continues at **0.3.1**; `tests/manifest.spec.ts` enforces the published floor. Upgrading from 0.0.2 changes no config fields — the header switch's meaning moves (the former soft switch now lives in Advanced), the official "Subagents" settings page becomes hidden by the takeover, and every stored value stays compatible.
 
 ## Known behaviour & limitations (summary)
 
-Full list in [docs/strategy.md](docs/strategy.md) §5: strategy/list changes affect the next decision point only; sticky failures end the current child (later assignments avoid the route); the health table and rotation cursor are process-local (reset on restart, shared across windows); remote web sessions persist saves for the current session only; lean compositions without the settings/remote services fail the whole client half (badge included) loudly.
+Full list in [docs/strategy.md](docs/strategy.md) §5: strategy/list changes affect the next decision point only; sticky failures end the current child (later assignments avoid the route); the health table and rotation cursor are process-local (reset on restart, shared across windows); remote (non-loopback) web sessions cannot reach the settings namespaces at all (the official memory persistence skips the mirror — sections turn unavailable) while the takeover switch keeps working; lean compositions without the settings/remote services fail the whole client half (badge included) loudly.
 
 **Deliberate deviation from official semantics (v0.3.0+)**: when a child's route is changed, the `maxTokens` inherited from the parent is **dropped** (official per-call model selection retains it) — the inherited budget is sized for the parent's model and can overflow the new model's limit, and the official runtime performs no clamping; once dropped, the runtime materialises the new model's default. Consequently an explicitly configured parent output budget does **not** propagate to rerouted children.
 
