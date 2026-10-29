@@ -31,7 +31,7 @@ export interface PinConfig {
   showNotice: boolean
   /** Selection strategy; `pinned` keeps the v0.1.x single-route behaviour. */
   strategy: Strategy
-  /** Ordered candidate routes for spread strategies (at most 5); empty uses the official allowed-model list. */
+  /** Ordered candidate routes for spread strategies (at most 5) — the sole routing source; an empty list assigns nothing. */
   priority: PriorityEntryView[]
   /** Whether a route the delegating model chose explicitly is left untouched by a spread strategy. */
   respectExplicit: boolean

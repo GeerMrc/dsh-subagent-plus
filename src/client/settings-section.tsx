@@ -1,7 +1,8 @@
 /**
- * The plugin's settings section: one header switch (takeover, default on),
- * one model card whose bottom row carries the assignment strategy, a fallback
- * card, and an advanced fold. Every edit lands in a local draft and one Save
+ * The plugin's settings section: one model card whose bottom row carries the
+ * assignment strategy, a fallback row, and an advanced fold (no in-page
+ * switches — ADR 0005: the Plugins page toggle is the only off entrance).
+ * Every edit lands in a local draft and one Save
  * commits the changed fields atomically behind the shared config form's
  * revision fence.
  *

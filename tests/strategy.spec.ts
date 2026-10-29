@@ -145,9 +145,7 @@ describe('validateStrategyConfig: empty list is a legitimate not-assigned state 
 })
 
 describe('candidateRoutes (S-01)', () => {
-  const spread = { kind: 'spread', strategy: 'round-robin', source: 'official', ignoredRoute: false } as const
-
-  it('maps priority entries and drops empty effort', () => {
+    it('maps priority entries and drops empty effort', () => {
     const config = {
       ...base,
       strategy: 'round-robin' as const,

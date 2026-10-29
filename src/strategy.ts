@@ -79,7 +79,7 @@ export function resolveStrategyPlan(config: StrategyConfigView): StrategyPlan {
 export interface ValidationReport {
   /** Refuse-to-load problems: an over-long `priority`, half-filled entries, repeated routes. */
   structural: string[]
-  /** Cross-field combinations that load but behave as if unset: an empty `priority` list under the `priority` strategy, a half-filled or duplicate fallback. */
+  /** Cross-field combinations that load but behave as if unset: a half-filled or duplicate fallback. */
   degraded: string[]
 }
 

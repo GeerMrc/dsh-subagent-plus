@@ -159,7 +159,7 @@ export const en: Record<LocaleKey, string> = {
   'status.valueInvalid': 'The stored configuration is unreadable (possibly hand-edited); check the dsh-subagent-plus entry in the profile patch and retry.',
   'status.catalogFailed': 'The model catalogue failed to load; model pickers are empty for now and retry on adapter or settings updates.',
   'strategy.label': 'Assignment strategy',
-  'strategy.help': 'Pinned = one fixed route for every child; round-robin = children take the list in order (a→b→c→a…); random = each child draws randomly; priority = first healthy route, degrading down the list on failures. Each child keeps its route for its lifetime.',
+  'strategy.help': 'Pinned = one fixed route for every child; round-robin = children take the list in order (a→b→c→a…); random = each child draws randomly; priority = first healthy route, degrading down the list on failures. Round-robin/random/priority candidates come from the list below; each child keeps its route for its lifetime.',
   'strategy.pinned': 'Pinned (single model)',
   'strategy.round-robin': 'Round-robin (in order)',
   'strategy.random': 'Random',

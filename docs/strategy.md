@@ -37,7 +37,6 @@
 - id: dsh-subagent-plus
   name: dsh-subagent-plus
   config:
-    enabled: true
     strategy: round-robin     # 候选 = priority 列表（存储顺序）
     cooldownMs: 120000
     showNotice: true

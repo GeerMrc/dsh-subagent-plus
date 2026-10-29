@@ -8,10 +8,9 @@
  * written here is exactly what the official page would have written;
  * disabling this plugin restores the official page with the values intact.
  *
- * The official model-selection allowlist has no editing face here (ADR 0003):
- * the candidate list is the plugin's complete replacement for it, and the
- * host half keeps only the read-only bridges (auto-adoption of its first
- * entry, the empty-candidate fallback pool).
+ * The official model-selection allowlist is neither edited nor read here
+ * (ADR 0005): the candidate list is the plugin's complete and sole routing
+ * source.
  *
  * The controller never disappears with the namespace (T7): a namespace the
  * host stops serving flips only its own section to `unavailable` while the
