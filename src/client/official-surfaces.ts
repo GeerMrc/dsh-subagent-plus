@@ -24,7 +24,6 @@ import type { SaveOutcome } from './unified-save.js'
 import type { FieldSetOp, SettingsFormPort } from './settings-controller.js'
 
 export type { FieldSetOp, SettingsFormPort as NamespaceFormPort }
-export type { SaveOutcome }
 
 /** Official `subagent` namespace value as this page edits it. */
 export interface OfficialLimitsValue {
@@ -42,7 +41,7 @@ export function isLimitsValue(value: unknown): value is OfficialLimitsValue {
 }
 
 /** Deep-copy the limits value (flat fields). */
-export function copyLimits(source: OfficialLimitsValue): OfficialLimitsValue {
+function copyLimits(source: OfficialLimitsValue): OfficialLimitsValue {
   return { ...source }
 }
 
@@ -69,7 +68,7 @@ export interface NamespaceFormState<Value> {
 }
 
 /** Structural options one namespace controller needs. */
-export interface NamespaceFormOptions<Value> {
+interface NamespaceFormOptions<Value> {
   /** Narrow an untyped snapshot onto the namespace value shape. */
   guard(value: unknown): value is Value
   /** Deep-copy a committed value into an independent draft. */

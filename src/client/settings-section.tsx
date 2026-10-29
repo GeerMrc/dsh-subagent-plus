@@ -198,7 +198,7 @@ function EffortSelect(props: {
   return stale ? <span title={props.value} style={{ display: 'inline-flex' }}>{select}</span> : select
 }
 
-/** The confirm bar's bordered box, mirroring the banner's treatment. */
+/** The confirm bar's bordered box (the page's one boxed notice while confirming). */
 const confirmBarStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',

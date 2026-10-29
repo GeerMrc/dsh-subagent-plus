@@ -28,7 +28,7 @@ export type SaveOutcome =
 
 /** One namespace participating in the unified save, in dispatch order. */
 export interface SaveParticipant {
-  /** Footer-facing section key: 'limits' | 'allowlist' | 'self'. */
+  /** Footer-facing section key: 'limits' | 'self'. */
   key: string
   /** One save attempt; never throws (outcomes carry the failure modes). */
   save(): Promise<SaveOutcome>
