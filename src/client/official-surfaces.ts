@@ -283,6 +283,8 @@ export interface OfficialAllowlistStatusState {
   status: 'loading' | 'ready' | 'unavailable'
   /** Ready but unrecognizable shape — the line renders nothing. */
   valueInvalid: boolean
+  /** The official switch; both bridges skip the list while it is off. */
+  enabled: boolean
   /** Entries in the official list; 0 when empty or unrecognizable. */
   count: number
   /** The first entry, exactly what auto-adoption would pick. */
@@ -304,7 +306,7 @@ export class OfficialAllowlistStatus {
 
   constructor(form: SettingsFormPort) {
     this.#form = form
-    this.#state = { status: 'loading', valueInvalid: false, count: 0, first: undefined }
+    this.#state = { status: 'loading', valueInvalid: false, enabled: false, count: 0, first: undefined }
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -335,6 +337,7 @@ export class OfficialAllowlistStatus {
     this.#state = {
       status,
       valueInvalid: snapshot.status === 'ready' && value === undefined,
+      enabled: value?.enabled ?? false,
       count: list.length,
       first: list[0] !== undefined ? { provider: list[0].provider, model: list[0].model } : undefined,
     }

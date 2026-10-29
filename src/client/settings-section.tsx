@@ -510,6 +510,9 @@ function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStat
  *  this line is its only window, empty state included). */
 function OfficialListLine({ state, t }: { state: OfficialAllowlistStatusState; t: PropsLocale<typeof NS>['t'] }) {
   if (state.status !== 'ready' || state.valueInvalid) return null
+  if (!state.enabled) {
+    return <p style={hintStyle}>{t('takeover.officialListDisabled').replace('{n}', String(state.count))}</p>
+  }
   if (state.count === 0 || state.first === undefined) {
     return <p style={hintStyle}>{t('takeover.officialListEmpty')}</p>
   }

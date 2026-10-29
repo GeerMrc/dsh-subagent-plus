@@ -310,6 +310,23 @@ describe('OfficialAllowlistStatus (read-only view of the hidden official list)',
     expect(status.snapshot()).toMatchObject({ status: 'ready', count: 0, first: undefined })
   })
 
+  it('exposes the committed enabled flag alongside a non-empty disabled list', () => {
+    // Both bridges skip a disabled list: the line must not claim auto-adoption
+    // just because stored entries exist.
+    const { status } = statusHarness({ enabled: false, allowedModels: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8' },
+    ] })
+    expect(status.snapshot()).toMatchObject({ status: 'ready', enabled: false, count: 2, first: { provider: 'sz', model: 'Qwen3.8-27B-FP8' } })
+  })
+
+  it('follows a live enabled flip', () => {
+    const { status, form } = statusHarness({ enabled: true, allowedModels: [{ provider: 'sz', model: 'm' }] })
+    expect(status.snapshot().enabled).toBe(true)
+    form.setValue({ enabled: false, allowedModels: [{ provider: 'sz', model: 'm' }] })
+    expect(status.snapshot().enabled).toBe(false)
+  })
+
   it('follows live updates and flips to unavailable with the namespace', () => {
     const { status, form } = statusHarness({ enabled: true, allowedModels: [{ provider: 'sz', model: 'm' }] })
     form.setValue({ enabled: true, allowedModels: [] })
