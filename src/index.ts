@@ -109,13 +109,12 @@ interface SpreadDecision {
 type Decision = { kind: 'explicit'; route: PinRoute } | SpreadDecision
 
 export function apply(ctx: Context, entry: PinConfigRuntime): void {
-  // Structural problems refuse to load (softened when disabled: the hooks
-  // stay inert, so the plugin loads anyway); cross-field combinations that a
+  // Structural problems refuse to load; cross-field combinations that a
   // settings page could persist degrade with a warning instead of throwing —
   // throwing on load would brick the plugin on the next Host restart.
   const boot = materializeConfig(entry)
   const bootReport = validateStrategyConfig(boot)
-  if (boot.enabled && bootReport.structural.length > 0) {
+  if (bootReport.structural.length > 0) {
     throw new Error(bootReport.structural.join('; '))
   }
   const warnedDegraded = new Set<string>()
@@ -290,7 +289,6 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const config = live.current()
     if (!config.pinForkChildren && isForkedChild(agent)) return resolved
     const plan = resolveStrategyPlan(config)
-    if (plan.kind === 'off') return resolved
     if (plan.kind === 'pinned') {
       const pin = resolvePin(config)
       if (pin !== undefined) {
@@ -334,9 +332,6 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
 
   ctx.on('agent/request-error', async (payload, next): Promise<RequestErrorAction> => {
     const config = live.current()
-    // Fully inert while disabled: official-routing traffic must not pollute
-    // the health table the next enablement would consult.
-    if (!config.enabled) return next()
     const routed = resolveStrategyPlan(config).kind === 'spread' || fallbackRouteOf(config) !== undefined
     if (routed && config.cooldownMs > 0) recordFailure(config, payload.agent, payload.provider, payload.failure)
     return next()
@@ -345,7 +340,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   ctx.on('agent/pre-step', async (payload, next): Promise<PreStepDecision> => {
     const decision = await next()
     const config = live.current()
-    if (!config.enabled || !config.showNotice) return decision
+    if (!config.showNotice) return decision
     if (decision.kind === 'reject' || payload.signal.aborted) return decision
     // The loop skips an empty first step and an emptied offered continuation.
     if (decision.messages.length === 0 && (payload.step === 1 || payload.messages.length > 0)) {
@@ -356,7 +351,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (!config.pinForkChildren && isForkedChild(agent)) return decision
     const plan = resolveStrategyPlan(config)
     if (plan.kind !== 'spread') {
-      const pin = plan.kind === 'off' ? undefined : resolvePin(config)
+      const pin = resolvePin(config)
       let text: string | undefined
       let target: PinRoute | undefined
       if (pin !== undefined) {

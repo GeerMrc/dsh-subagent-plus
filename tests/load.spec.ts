@@ -24,7 +24,6 @@ async function loadedContext(overrides: Record<string, unknown> = {}): Promise<C
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(plugin, {
-    enabled: true,
     provider: 'sz',
     model: 'Qwen3.8-27B-FP8',
     reasoningEffort: '',
@@ -126,6 +125,14 @@ describe('plugin load through cordis', () => {
   })
 })
 
+describe('legacy residue (R7 binary takeover)', () => {
+  it('routes children even when a legacy enabled:false key persists in the config', async () => {
+    const residue = { enabled: false }
+    const ctx = await loadedContext(residue)
+    await expect(dispatch(ctx, childAgent)).resolves.toEqual({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+  })
+})
+
 describe('visible pinned-model notice', () => {  it('adds one transcript notice to a child agent, naming the pinned route', async () => {
     const ctx = await loadedContext()
     const decision = await dispatchPreStep(ctx, childAgent)
@@ -156,7 +163,6 @@ describe('visible pinned-model notice', () => {  it('adds one transcript notice 
 
 describe('pinned notice vs registration', () => {
   const unregisteredPinConfig: plugin.PinConfig = {
-    enabled: true,
     provider: 'sz',
     model: 'Qwen3.8-27B-FP8',
     reasoningEffort: '',
@@ -215,7 +221,6 @@ const officialSettings = {
 }
 
 const autoRouteConfig: plugin.PinConfig = {
-  enabled: true,
   provider: '',
   model: '',
   reasoningEffort: '',
@@ -267,7 +272,6 @@ const hh = { provider: 'hh', model: 'Qwen3.8-27B-FP8' }
 
 function spreadConfig(overrides: Partial<plugin.PinConfig>): plugin.PinConfig {
   return {
-    enabled: true,
     provider: '',
     model: '',
     reasoningEffort: '',
@@ -502,13 +506,14 @@ describe('configuration gates (structural fail-loud, cross-field degrade)', () =
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
   })
 
-  it('keeps degrading softly when disabled, even with structurally invalid routes', async () => {
+  it('refuses structurally invalid routes even when a legacy enabled:false key persists', async () => {
     const ctx = new Context()
     contexts.push(ctx)
-    await expect(ctx.plugin(plugin, spreadConfig({
-      enabled: false,
-      priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'sz', model: 'a', reasoningEffort: '' }],
-    }))).resolves.toBeDefined()
+    const residue = { enabled: false }
+    await expect(ctx.plugin(plugin, {
+      ...spreadConfig({ priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'sz', model: 'a', reasoningEffort: '' }] }),
+      ...residue,
+    })).rejects.toThrow()
   })
 })
 
@@ -598,17 +603,9 @@ describe('fallback route (adjudication after candidates)', () => {
   })
 })
 
-describe('soft switch softens invalid spread configuration (review P2-1)', () => {
-  it('loads with enabled:false even when the priority strategy has no routes', async () => {
-    const ctx = new Context()
-    contexts.push(ctx)
-    await expect(ctx.plugin(plugin, spreadConfig({ enabled: false, strategy: 'priority' }))).resolves.toBeDefined()
-  })
-})
-
 describe('review P1-2/P1-3: inert disable and pinned attribution', () => {
-  it('stays inert on request-error while disabled, so re-enabling starts from clean health', async () => {
-    const entry = spreadConfig({ enabled: false, fallbackProvider: 'zai', fallbackModel: 'glm-5.3' })
+  it('records request-error health regardless of a legacy enabled residue', async () => {
+    const entry: { [key: string]: unknown } = { ...spreadConfig({ fallbackProvider: 'zai', fallbackModel: 'glm-5.3' }), enabled: false }
     const ctx = new Context()
     contexts.push(ctx)
     ctx.provide('subagentModelSelection', allowList(sz, hh))
@@ -618,9 +615,9 @@ describe('review P1-2/P1-3: inert disable and pinned attribution', () => {
     ctx.provide('settings', {})
     plugin.apply(ctx, entry)
     const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
     await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
-    entry.enabled = true
-    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
   })
 
   it('attributes a pinned-route failure to the pinned model, not the same-provider fallback', async () => {

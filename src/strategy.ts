@@ -28,8 +28,6 @@ export interface PriorityEntryView {
 
 /** Structural view of the configuration fields the strategy engine reads. */
 export interface StrategyConfigView {
-  /** Whether child routing is active at all. */
-  enabled: boolean
   /** Top-level provider id; only the `pinned` strategy reads it. */
   provider: string
   /** Top-level model id; only the `pinned` strategy reads it. */
@@ -52,7 +50,6 @@ export interface StrategyConfigView {
 
 /** How one configuration routes children. */
 export type StrategyPlan =
-  | { kind: 'off' }
   | { kind: 'pinned' }
   | {
     kind: 'spread'
@@ -69,10 +66,9 @@ export type StrategyPlan =
  * takes its candidates from `priority` when set, else from the official
  * allowed-model list, and ignores the top-level provider/model fields.
  * @param config - structural configuration view.
- * @returns the plan; `off` when the plugin is disabled.
+ * @returns the plan.
  */
 export function resolveStrategyPlan(config: StrategyConfigView): StrategyPlan {
-  if (!config.enabled) return { kind: 'off' }
   if (config.strategy === 'pinned') return { kind: 'pinned' }
   return {
     kind: 'spread',

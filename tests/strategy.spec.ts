@@ -21,7 +21,6 @@ import {
 } from '../src/strategy.js'
 
 const base: StrategyConfigView = {
-  enabled: true,
   provider: '',
   model: '',
   strategy: 'pinned',
@@ -43,10 +42,6 @@ const sequence = (...values: number[]): (() => number) => {
 }
 
 describe('resolveStrategyPlan (S-01)', () => {
-  it('is off when disabled regardless of strategy', () => {
-    expect(resolveStrategyPlan({ ...base, enabled: false, strategy: 'round-robin' })).toEqual({ kind: 'off' })
-  })
-
   it('keeps the legacy pinned plan by default, with or without an explicit route', () => {
     expect(resolveStrategyPlan(base)).toEqual({ kind: 'pinned' })
     expect(resolveStrategyPlan({ ...base, provider: 'sz', model: 'm' })).toEqual({ kind: 'pinned' })

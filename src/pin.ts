@@ -18,8 +18,6 @@ export interface PinRoute {
 
 /** Structural view of the pin configuration fields used in route resolution. */
 export interface PinConfigView {
-  /** Whether child requests are pinned at all. */
-  enabled: boolean
   /** Explicitly configured provider id; empty falls through to `autoRoute`. */
   provider: string
   /** Explicitly configured model id; empty falls through to `autoRoute`. */
@@ -50,7 +48,6 @@ export function resolvePinRoute(
   config: PinConfigView,
   settings: OfficialModelSelectionSettings | undefined,
 ): PinRoute | undefined {
-  if (!config.enabled) return undefined
   if (config.provider !== '' && config.model !== '') {
     return {
       provider: config.provider,

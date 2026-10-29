@@ -17,8 +17,6 @@ import { STRATEGIES } from './strategy.js'
 
 /** Plugin configuration; plain values only — runtime handles unwrap through {@link materializeConfig}. */
 export interface PinConfig {
-  /** Whether child requests are routed at all. */
-  enabled: boolean
   /** Provider id of the pinned route (`pinned` strategy); empty falls through to `autoRoute`. */
   provider: string
   /** Model id of the pinned route (`pinned` strategy); empty falls through to `autoRoute`. */
@@ -94,7 +92,6 @@ export function materializeConfig(runtime: PinConfigRuntime): PinConfig {
  * declaration emit stays portable.
  */
 export const Config: z = z.object({
-  enabled: z.boolean().default(true).volatile(),
   provider: z.string().default('').volatile(),
   model: z.string().default('').volatile(),
   reasoningEffort: z.string().default('').volatile(),

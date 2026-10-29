@@ -110,7 +110,7 @@ export interface SettingsUiState {
 }
 
 function isPinConfig(value: unknown): value is PinConfig {
-  return typeof value === 'object' && value !== null && typeof (value as PinConfig).enabled === 'boolean'
+  return typeof value === 'object' && value !== null && typeof (value as PinConfig).strategy === 'string'
 }
 
 function copyConfig(value: PinConfig): PinConfig {
@@ -291,7 +291,6 @@ export class SettingsSectionController {
     return accepted ? 'saved' : 'conflict'
   }
 
-  setEnabled = (enabled: boolean): void => { this.#edit(draft => { draft.enabled = enabled }) }
   setStrategy = (strategy: Strategy): void => { this.#edit(draft => { draft.strategy = strategy }) }
   setPinnedRoute = (route: RouteOption | null): void => {
     this.#edit(draft => {

@@ -75,7 +75,6 @@ const catalog: CatalogPort = {
 
 function baseConfig(): PinConfig {
   return {
-    enabled: true,
     provider: '',
     model: '',
     reasoningEffort: '',
@@ -222,6 +221,16 @@ describe('SettingsSectionController', () => {
     controller.setShowNotice(false)
     await controller.save()
     expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['showNotice'], value: false }], expectedRevision: 1 }])
+  })
+
+  it('recognizes a committed snapshot from hosts that never carried the legacy enabled key', async () => {
+    const form = new FakeForm(baseConfig())
+    const controller = new SettingsSectionController(form, catalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('not ready') })
+    expect(controller.snapshot().valueInvalid).toBe(false)
+    expect(controller.snapshot().draft?.strategy).toBe('pinned')
+    controller.dispose()
   })
 
   it('shows unavailable when the host does not serve the namespace', async () => {

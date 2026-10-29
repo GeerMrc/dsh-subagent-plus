@@ -73,7 +73,6 @@ const emptyCatalog: CatalogPort = { load: async () => ({ groups: [], failureCoun
 /** A minimal valid own-namespace value for the plugin form. */
 function pinConfig(overrides: Partial<PinConfig> = {}): PinConfig {
   return {
-    enabled: true,
     provider: '',
     model: '',
     reasoningEffort: '',

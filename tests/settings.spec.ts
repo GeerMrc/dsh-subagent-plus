@@ -13,7 +13,6 @@ afterEach(async () => {
 /** A plain config snapshot with every field overridable; tests also derive handles from it. */
 function plainConfig(overrides: Partial<PinConfig> = {}): PinConfig {
   return {
-    enabled: true,
     provider: '',
     model: '',
     reasoningEffort: '',
@@ -83,15 +82,15 @@ describe('attachSettingsSection', () => {
     const ctx = new Context()
     contexts.push(ctx)
     ctx.provide('settings', {})
-    const state = plainConfig({ enabled: false })
+    const state = plainConfig({ strategy: 'round-robin' })
     const runtime = handleRuntime(state)
     const live = new LivePinConfig(runtime)
     const onCommit = vi.fn()
     attachSettingsSection(ctx, runtime, live, onCommit)
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(live.current().enabled).toBe(false)
-    state.enabled = true
-    expect(live.current().enabled).toBe(true)
+    expect(live.current().strategy).toBe('round-robin')
+    state.strategy = 'random'
+    expect(live.current().strategy).toBe('random')
     ctx.emit('settings/document-updated', SETTINGS_NAMESPACE as SettingsNamespace, 1)
     expect(onCommit).toHaveBeenCalledTimes(1)
     ctx.emit('settings/document-updated', 'another-plugin' as SettingsNamespace, 2)

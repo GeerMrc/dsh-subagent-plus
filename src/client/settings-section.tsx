@@ -549,7 +549,6 @@ function EditorBelow({ state, controller, t }: EditorProps) {
         {advancedOpen
           ? (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <AdvancedToggle title={t('advanced.pauseAssignment')} help={t('advanced.pauseAssignmentHelp')} checked={draft.enabled} onChange={controller.setEnabled} />
               <AdvancedToggle title={t('advanced.respectExplicit')} help={t('advanced.respectExplicitHelp')} checked={draft.respectExplicit} onChange={controller.setRespectExplicit} disabled={draft.strategy === 'pinned'} />
               <AdvancedToggle title={t('advanced.showNotice')} help={t('advanced.showNoticeHelp')} checked={draft.showNotice} onChange={controller.setShowNotice} />
               <AdvancedToggle title={t('advanced.pinForkChildren')} help={t('advanced.pinForkChildrenHelp')} checked={draft.pinForkChildren} onChange={controller.setPinForkChildren} />

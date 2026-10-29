@@ -15,7 +15,6 @@ function agentWith(overrides: Partial<AgentLike>): AgentLike {
 }
 
 const base: PinConfigView = {
-  enabled: true,
   provider: '',
   model: '',
   reasoningEffort: '',
@@ -115,8 +114,7 @@ describe('resolvePinRoute', () => {
     expect(resolvePinRoute({ ...base, model: 'm' }, official)).toBeUndefined()
   })
 
-  it('never pins when disabled, and propagates settings failures', () => {
-    expect(resolvePinRoute({ ...base, enabled: false, provider: 'sz', model: 'm' }, official)).toBeUndefined()
+  it('propagates settings failures', () => {
     expect(() => resolvePinRoute(base, settingsWith(() => { throw new Error('unreadable') }))).toThrow('unreadable')
   })
 })
