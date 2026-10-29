@@ -260,11 +260,6 @@ export class SettingsSectionController {
    *  controller's state, not this controller's. */
   #saving = false
 
-  /** Discard the draft and mirror the committed value again. */
-  reset = (): void => {
-    this.#patch({ draft: this.#state.value === undefined ? undefined : copyConfig(this.#state.value) })
-  }
-
   /** Commit every changed field behind the revision fence; the shared validation gates the write.
    *  The returned outcome drives the unified footer (see unified-save.ts). */
   save = async (): Promise<SaveOutcome> => {

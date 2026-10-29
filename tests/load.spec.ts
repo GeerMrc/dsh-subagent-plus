@@ -246,7 +246,9 @@ describe('legacy residue: autoRoute (R7 binary takeover)', () => {
   })
 })
 
-/** Fresh official settings per test: the spread strategies read this list in stored order. */
+/** Fresh official settings per test. The plugin never reads this service (ADR 0005); these
+ *  provides are a regression tripwire — if the official-list reader ever comes back, the
+ *  empty-list and autoRoute-residue cases above flip red. */
 function allowList(...routes: { provider: string; model: string }[]): typeof officialSettings {
   const settings = {
     enabled: true,

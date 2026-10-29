@@ -19,16 +19,16 @@
 - **保存即热生效**：改策略/清单只影响下一个决策点——已粘住路由的运行中子 Agent 不动，直到其路由进入冷却。
 - **官方设置页接管**（v0.0.3 起）：插件启用期间官方「子智能体」设置页被隐藏（bundle patch disable，编辑面而已）；运行限制经本页同键读写官方命名空间，单一事实源。禁用/卸载插件后官方页面回归（生产宿主 hmr；源码启动宿主需重启），配置值保留；已存在子 Agent 从下一次请求起回官方解析。用户层 patch 写 `{id: ui-settings-subagent, disabled: false}` 可随时强制恢复官方页面（逃生门）。
 - **候选清单=唯一路由来源**（ADR 0005）：官方授权清单无编辑面且运行时零引用；未配置路由=不指派（继承主会话模型）。需调整官方清单（如 `respectExplicit=true` 的白名单）时，到「插件」页停用本插件后官方页回归编辑，或手改 profile patch 的 `subagent-model-selection-settings` 行。
-- **兜底触发条件**：候选全部冷却/未注册或清单为空。故障切换时**优先下一个健康候选**，兜底垫底；兜底自身故障同样进冷却，全部不可用时保持原路由（failOpen 语义）。
+- **兜底触发条件**：候选全部冷却/未注册或清单为空。故障切换时**优先下一个健康候选**，兜底垫底；兜底自身故障同样进冷却，全部不可用时保持原路由（不干预）。
 - **设置页与手改 yml 等价同层**：任何时刻都可回到 yml 手改或删除条目。
-- **远程 web 会话限制**：非本机（非 loopback）访问时设置命名空间整区不可用——读写都不可用（官方 configForms 的 memory 持久化语义，describe mirror 不加载），配置区转不可用行、完全接管开关仍可用；桌面端与本机访问=持久落盘。
+- **远程 web 会话限制**：非本机（非 loopback）访问时设置命名空间整区不可用——读写都不可用（官方 configForms 的 memory 持久化语义，describe mirror 不加载），配置区转不可用行；页内开关已随 ADR 0005 删除，远程会话请到本机「插件」页停用本插件（或改 profile）；桌面端与本机访问=持久落盘。
 - **修订冲突**：配置在其他位置（如另一窗口）被改过时，保存会提示"已被修改，已重新加载"（分区点名）——重试即可。
 
 ## 验证方式
 
 - 子 Agent 转录首行提示（**中英双语单行**）：`[模型钉定 model pinned: 本子智能体所有请求运行 sz/…｜every request runs sz/… — dsh-subagent-plus]`、`[模型指派 model assigned: …（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]`（兜底/切换/failOpen 跳过同格式）；子窗口琥珀色徽章显示实际路由。
 - Host 日志：`assigned (round-robin) child agent onto …`、`route "sz/…" failed (RATE_LIMIT); cooling down …`、`… continues with "hh/…"`。
-- 端到端回归流程见 `docs/e2e-manual.md`（Flow A/B/C：改策略/配兜底+死路由降级/软关对照；**Flow E：接管面**——官方页隐藏/统一保存写入官方命名空间/完全接管开关/重启回归）。
+- 端到端回归流程见 `docs/e2e-manual.md`（Flow A/B/C：改策略/配兜底+死路由降级/空配置不指派对照；**Flow E：接管面**——官方页隐藏/统一保存写入官方命名空间/页头无开关断言/重启回归）。
 
 ## 推理强度下拉（v0.2.0）
 

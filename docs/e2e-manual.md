@@ -54,11 +54,11 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | ① | 子会话 `request/header` = 钉定路由（非主窗口模型） | 解压 `~/.dsh/sessions/<临时工作区slug>/<子id>/session.v4.jsonl.zstd`（zstd -dc + jq） |
 | ② | 每个子会话恰 1 条双语言钉定提示 `[模型钉定 model pinned: …]` 消息 | 同上 grep `model pinned`（双语文案子串） |
 | ③ | 主会话路由 = agent-default-model，不受影响 | 同上查主 session 目录 |
-| ④ | 子窗口徽章显示 `sz/Qwen3.8-27B-FP8`（两处：输入框右侧 + 会话头部） | DOM 快照搜 `子智能体当前模型` / 截图留档 |
+| ④ | 子窗口徽章显示 `sz/Qwen3.8-27B-FP8`（仅输入框右侧一处；会话头部座位 0.2.5 起已删，一次性只读子窗口无徽章、以转录 notice 为准） | DOM 快照搜 `子智能体当前模型` / 截图留档 |
 | ⑤ | 主窗口无徽章、模型选择器正常 | 快照 |
 | ⑥ | 空配置轮：插件 provider/model/清单全部留空后重启派 1 子 Agent（「不指派、继承主会话模型」对照组） | 改 patch 后重启 |
 
-负路径（可选）：allowedModels 指向未注册路由 → failOpen warn + 子请求放行原路由（`routeRegistered` 负分支目前仅靠此手工验证；建议后续补 fake `llm` 单测，见审核 NOTE）。
+负路径（冒烟）：钉定路由（或候选）指向未注册路由 → failOpen warn + 子请求保持原路由。`routeRegistered` 负分支已有 fake `llm` 单测覆盖（`tests/load.spec.ts` 的 pinned notice vs registration 组），手工仅作冒烟。
 
 ## 5. 清理（测完即清）
 
@@ -80,7 +80,7 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | Flow | UI 操作 | 通过标准（会话日志取证） |
 |---|---|---|
 | A 轮询 | 设置 → 子Agent增强 → 策略=轮询 → 保存 → 新会话派 2 子 Agent | 两子会话 `request/header` 分别 = 清单第 1/第 2 条；各 1 条双语文案 `[模型指派 model assigned: …（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]`；主会话不受影响 |
-| B 兜底降级 | 设置页 → 策略=优先级 → 清单添加两条指向 `http://127.0.0.1:9/v1` 的 provider → 兜底=某真实路由 → 保存 → 派 1 子 Agent（主 Agent 可能自动重试委派） | 死路由子会话 `end:error`（冷却记账）；最终子会话落兜底路由 + `[模型兜底 model fallback: …]`（双语文案）+ completed |
+| B 兜底降级 | 前置：把死路由 provider 先写进 profile patch 的 `llm` providers（目录刷新后才出现在设置页添加下拉）→ 设置页 → 策略=优先级 → 清单添加两条指向 `http://127.0.0.1:9/v1` 的 provider → 兜底=某真实路由 → 保存 → 派 1 子 Agent（主 Agent 可能自动重试委派） | 死路由子会话 `end:error`（冷却记账）；最终子会话落兜底路由 + `[模型兜底 model fallback: …]`（双语文案）+ completed |
 | C 空配置不指派 | 设置页 → 钉定路由清空 + 清单清空 + 兜底关闭 → 保存 → 新会话派 1 子 Agent（ADR 0005：页内无开关，空配置=不指派） | 子会话 `request/header` = 主窗口模型（继承）、无任何插件 notice；官方页保持隐藏（编辑面接管不变） |
 
 清理同第 5 节（workspace.json 按 `tables.workspaces.<uuid>.path` 字段定位删除并同步 `global.workspaceIds`）。

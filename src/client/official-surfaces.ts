@@ -120,11 +120,6 @@ export class NamespaceFormController<Value extends object> {
     this.#listeners.clear()
   }
 
-  /** Discard the draft and mirror the committed value again. */
-  reset = (): void => {
-    this.#patch({ draft: this.#state.value === undefined ? undefined : this.#options.copy(this.#state.value) })
-  }
-
   /** Commit every changed field behind the revision fence; `blocked` and the
    *  section's invalid flag gate the write. The returned outcome drives the
    *  unified footer: unavailable/blocked namespaces never reach the wire. */

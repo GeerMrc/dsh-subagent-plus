@@ -89,7 +89,7 @@ export const infoButtonStyle = {
   cursor: 'help',
 } as const
 
-/** Page header: h3 16px/500 with the ⓘ inline, switch at the right edge. */
+/** Page header: h3 16px/500 with the ⓘ inline, description below the heading. */
 export const pageHeaderRowStyle = {
   display: 'flex',
   alignItems: 'center',
@@ -167,7 +167,7 @@ export const routeSubStyle = {
 } as const
 
 /* Track follows the dsh-websearch switch shape (36x20, pad 2, r10): green
-   only when enabled — the semantic the user picked for this page. */
+   only when enabled — the advanced-fold semantics. */
 export const switchStyle = (checked: boolean) => ({
   boxSizing: 'border-box' as const,
   position: 'relative' as const,
