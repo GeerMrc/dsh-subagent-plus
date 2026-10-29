@@ -562,7 +562,6 @@ function EditorBelow({ state, controller, t }: EditorProps) {
                   aria-label={t('advanced.cooldownMs')}
                   onChange={event => { controller.setCooldownMs(event.target.value) }}
                 />
-                <span style={hintStyle}>0 = {t('advanced.cooldownOff')}</span>
               </div>
               {state.cooldownInvalid ? <p style={invalidStyle}>{t('advanced.cooldownInvalid')}</p> : null}
               {draft.strategy === 'pinned' && draft.fallbackProvider === '' ? <p style={hintStyle}>{t('advanced.cooldownInactive')}</p> : null}
