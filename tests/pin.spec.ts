@@ -5,7 +5,6 @@ import {
   pinnedRoute,
   resolvePinRoute,
   type AgentLike,
-  type OfficialModelSelectionSettings,
   type PinConfigView,
   type SessionEventLike,
 } from '../src/pin.js'
@@ -18,11 +17,6 @@ const base: PinConfigView = {
   provider: '',
   model: '',
   reasoningEffort: '',
-  autoRoute: true,
-}
-
-function settingsWith(current: OfficialModelSelectionSettings['current']): OfficialModelSelectionSettings {
-  return { current }
 }
 
 describe('childDepthOf', () => {
@@ -83,39 +77,16 @@ describe('isForkedChild', () => {
 })
 
 describe('resolvePinRoute', () => {
-  const official = settingsWith(() => ({
-    enabled: true,
-    allowedModels: [{ provider: 'sz', model: 'first-model' }, { provider: 'sz', model: 'second-model' }],
-  }))
-
   it('prefers the explicitly configured route', () => {
     expect(resolvePinRoute(
       { ...base, provider: 'hh', model: 'explicit', reasoningEffort: 'low' },
-      official,
     )).toEqual({ provider: 'hh', model: 'explicit', reasoningEffort: 'low' })
   })
 
-  it('adopts the first official allowed route when unset and autoRoute is on', () => {
-    expect(resolvePinRoute(base, official)).toEqual({ provider: 'sz', model: 'first-model' })
-  })
-
-  it('does not auto-route without the settings service', () => {
-    expect(resolvePinRoute(base, undefined)).toBeUndefined()
-  })
-
-  it('does not auto-route when the official preference is disabled or empty', () => {
-    expect(resolvePinRoute(base, settingsWith(() => ({ enabled: false, allowedModels: [{ provider: 'sz', model: 'm' }] })))).toBeUndefined()
-    expect(resolvePinRoute(base, settingsWith(() => ({ enabled: true, allowedModels: [] })))).toBeUndefined()
-  })
-
-  it('respects autoRoute=false and rejects half-set explicit routes', () => {
-    expect(resolvePinRoute({ ...base, autoRoute: false }, official)).toBeUndefined()
-    expect(resolvePinRoute({ ...base, provider: 'sz' }, official)).toBeUndefined()
-    expect(resolvePinRoute({ ...base, model: 'm' }, official)).toBeUndefined()
-  })
-
-  it('propagates settings failures', () => {
-    expect(() => resolvePinRoute(base, settingsWith(() => { throw new Error('unreadable') }))).toThrow('unreadable')
+  it('assigns nothing when unset and rejects half-set explicit routes', () => {
+    expect(resolvePinRoute(base)).toBeUndefined()
+    expect(resolvePinRoute({ ...base, provider: 'sz' })).toBeUndefined()
+    expect(resolvePinRoute({ ...base, model: 'm' })).toBeUndefined()
   })
 })
 

@@ -47,19 +47,12 @@ describe('resolveStrategyPlan (S-01)', () => {
     expect(resolveStrategyPlan({ ...base, provider: 'sz', model: 'm' })).toEqual({ kind: 'pinned' })
   })
 
-  it('spreads from the official list when priority is empty, and flags ignored top-level fields', () => {
+  it('spreads regardless of the priority list, and flags ignored top-level fields', () => {
     expect(resolveStrategyPlan({ ...base, strategy: 'round-robin' })).toEqual({
-      kind: 'spread', strategy: 'round-robin', source: 'official', ignoredRoute: false,
+      kind: 'spread', strategy: 'round-robin', ignoredRoute: false,
     })
     expect(resolveStrategyPlan({ ...base, strategy: 'random', provider: 'sz' })).toEqual({
-      kind: 'spread', strategy: 'random', source: 'official', ignoredRoute: true,
-    })
-  })
-
-  it('spreads from priority when configured', () => {
-    const priority = [{ provider: 'sz', model: 'a', reasoningEffort: '' }]
-    expect(resolveStrategyPlan({ ...base, strategy: 'priority', priority })).toEqual({
-      kind: 'spread', strategy: 'priority', source: 'priority', ignoredRoute: false,
+      kind: 'spread', strategy: 'random', ignoredRoute: true,
     })
   })
 })
@@ -158,28 +151,16 @@ describe('candidateRoutes (S-01)', () => {
       strategy: 'round-robin' as const,
       priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'hh', model: 'b', reasoningEffort: 'high' }],
     }
-    expect(candidateRoutes({ ...spread, source: 'priority' }, config, undefined)).toEqual([
+    expect(candidateRoutes(config)).toEqual([
       { provider: 'sz', model: 'a' },
       { provider: 'hh', model: 'b', reasoningEffort: 'high' },
     ])
   })
 
-  it('reads the official allowed list in stored order, empty when disabled or absent', () => {
-    const settings = { current: () => ({ enabled: true, allowedModels: [sz, hh] }) }
-    expect(candidateRoutes(spread, base, settings)).toEqual([sz, hh])
-    expect(candidateRoutes(spread, base, { current: () => ({ enabled: false, allowedModels: [sz] }) })).toEqual([])
-    expect(candidateRoutes(spread, base, undefined)).toEqual([])
-  })
-
-  it('propagates a throwing current()', () => {
-    const settings = { current: (): never => { throw new Error('empty list') } }
-    expect(() => candidateRoutes(spread, base, settings)).toThrow('empty list')
-  })
-
-  it('resolves no candidates for the priority strategy with an empty list, even with an official list present (degraded)', () => {
-    const settings = { current: () => ({ enabled: true, allowedModels: [sz, hh] }) }
-    const plan = { kind: 'spread', strategy: 'priority', source: 'official', ignoredRoute: false } as const
-    expect(candidateRoutes(plan, { ...base, strategy: 'priority' }, settings)).toEqual([])
+  it('resolves no candidates for an empty list under every spread strategy', () => {
+    for (const strategy of ['round-robin', 'random', 'priority'] as const) {
+      expect(candidateRoutes({ ...base, strategy })).toEqual([])
+    }
   })
 })
 

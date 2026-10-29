@@ -42,15 +42,12 @@ import type { LlmCallConfig, LlmFailure, ReasoningEffortId } from '@deepseek-ai/
 import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 // Ambient `AgentOptions.subagentDepth` augmentation owned by the subagent runtime.
 import type {} from '@deepseek-ai/dsh-subagent'
-// Ambient `ctx.subagentModelSelection` service augmentation (optional at runtime).
-import type {} from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import {
   childDepthOf,
   isForkedChild,
   pinnedRoute,
   resolvePinRoute,
   routeId,
-  type OfficialModelSelectionSettings,
   type PinOverride,
   type PinRoute,
   type RouteFields,
@@ -144,35 +141,8 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   let noCandidateWarned = false
   let unregisteredPinWarned = false
 
-  // Read per use: the official preference is volatile and may change while
-  // the Host runs, and the read costs two getters next to a full LLM request.
-  const readSettings = (): OfficialModelSelectionSettings | undefined => {
-    try {
-      // Structural read of the optional host service; the official face is
-      // not a compile-time peer of this plugin.
-      return ctx.get('subagentModelSelection') as OfficialModelSelectionSettings | undefined
-    } catch {
-      return undefined
-    }
-  }
-  const resolvePin = (config: PinConfig): PinRoute | undefined => {
-    try {
-      return resolvePinRoute(config, readSettings())
-    } catch {
-      logSettingsFailureOnce(ctx)
-      return undefined
-    }
-  }
-  const candidatesOf = (config: PinConfig): PinRoute[] => {
-    const plan = resolveStrategyPlan(config)
-    if (plan.kind !== 'spread') return []
-    try {
-      return candidateRoutes(plan, config, readSettings())
-    } catch {
-      logSettingsFailureOnce(ctx)
-      return []
-    }
-  }
+  const resolvePin = (config: PinConfig): PinRoute | undefined => resolvePinRoute(config)
+  const candidatesOf = (config: PinConfig): PinRoute[] => candidateRoutes(config)
   const usableCandidates = async (config: PinConfig): Promise<PinRoute[]> => {
     const all = candidatesOf(config)
     if (!config.failOpen) return all
@@ -457,15 +427,6 @@ function parentRouteOf(ctx: Context, agent: Agent): RouteFields | undefined {
 
 /** One notice per agent per distinct pin target (pinned strategy and fallback). */
 const noticedLabel = new WeakMap<object, string>()
-
-/** One debug line for the lifetime of the process when the official settings read fails. */
-let settingsFailureLogged = false
-
-function logSettingsFailureOnce(ctx: Context): void {
-  if (settingsFailureLogged) return
-  settingsFailureLogged = true
-  ctx.logger.debug('dsh-subagent-plus: reading the subagent model-selection settings failed; this request keeps its resolved route')
-}
 
 /** Successful validations are memoized; failures retry on later requests. */
 const registeredRoutes = new Set<string>()

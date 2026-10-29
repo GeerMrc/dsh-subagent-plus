@@ -30,7 +30,6 @@ async function loadedContext(overrides: Record<string, unknown> = {}): Promise<C
     pinForkChildren: false,
     failOpen: true,
     showNotice: true,
-    autoRoute: false,
     strategy: 'pinned',
     priority: [],
     respectExplicit: false,
@@ -169,7 +168,6 @@ describe('pinned notice vs registration', () => {
     pinForkChildren: false,
     failOpen: true,
     showNotice: true,
-    autoRoute: false,
     strategy: 'pinned',
     priority: [],
     respectExplicit: false,
@@ -227,7 +225,6 @@ const autoRouteConfig: plugin.PinConfig = {
   pinForkChildren: false,
   failOpen: true,
   showNotice: false,
-  autoRoute: true,
   strategy: 'pinned',
   priority: [],
   respectExplicit: false,
@@ -237,20 +234,14 @@ const autoRouteConfig: plugin.PinConfig = {
   fallbackReasoningEffort: '',
 }
 
-describe('autoRoute through a live context', () => {
-  it('pins onto the first official allowed route when provider/model are unset', async () => {
+describe('legacy residue: autoRoute (R7 binary takeover)', () => {
+  it('ignores a legacy autoRoute:true key when the pinned route is empty', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     ctx.provide('subagentModelSelection', officialSettings)
-    await ctx.plugin(plugin, autoRouteConfig)
-    await expect(dispatch(ctx, childAgent)).resolves.toEqual({ provider: 'sz', model: 'auto-picked' })
-    await expect(dispatch(ctx, topAgent)).resolves.toEqual(seed)
-  })
-
-  it('pins nothing without the settings service', async () => {
-    const ctx = new Context()
-    contexts.push(ctx)
-    await ctx.plugin(plugin, autoRouteConfig)
+    const residue = { autoRoute: true }
+    await ctx.plugin(plugin, { ...autoRouteConfig, ...residue })
+    // No adoption of the official first entry: the child keeps its resolved route.
     await expect(dispatch(ctx, childAgent)).resolves.toEqual(seed)
   })
 })
@@ -278,9 +269,11 @@ function spreadConfig(overrides: Partial<plugin.PinConfig>): plugin.PinConfig {
     pinForkChildren: false,
     failOpen: true,
     showNotice: true,
-    autoRoute: true,
     strategy: 'round-robin',
-    priority: [],
+    priority: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    ],
     respectExplicit: false,
     cooldownMs: 120_000,
     fallbackProvider: '',
@@ -341,10 +334,9 @@ describe('spread strategies through a live context (S-06)', () => {
     await expect(dispatch(ctx, newChild())).resolves.toEqual({ ...hh, reasoningEffort: 'high' })
   })
 
-  it('passes requests through when the official list is disabled and no priority is configured', async () => {
-    const settings = allowList(sz, hh)
-    settings.enabled = false
-    const ctx = await spreadContext(spreadConfig({}), settings)
+  it('keeps children on their resolved route when the candidate list is empty and no fallback is configured', async () => {
+    const ctx = await spreadContext(spreadConfig({ priority: [] }))
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
   })
 
@@ -501,7 +493,7 @@ describe('configuration gates (structural fail-loud, cross-field degrade)', () =
   })
 
   it('loads a priority strategy with no routes and keeps children on their resolved route (degraded, restart-safe)', async () => {
-    const ctx = await spreadContext(spreadConfig({ strategy: 'priority' }))
+    const ctx = await spreadContext(spreadConfig({ strategy: 'priority', priority: [] }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
   })
@@ -522,7 +514,7 @@ describe('fallback route (adjudication after candidates)', () => {
 
   it('answers for a pinned config with no pinned route (single-model entry)', async () => {
     const ctx = await spreadContext(spreadConfig({
-      strategy: 'pinned', provider: '', model: '', autoRoute: false,
+      strategy: 'pinned', provider: '', model: '', priority: [],
       fallbackProvider: 'hh', fallbackModel: 'Qwen3.8-27B-FP8',
     }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
@@ -574,7 +566,7 @@ describe('fallback route (adjudication after candidates)', () => {
   })
 
   it('ignores a half-filled fallback (degraded)', async () => {
-    const ctx = await spreadContext(spreadConfig({ strategy: 'pinned', provider: '', model: '', autoRoute: false, fallbackProvider: 'hh' }))
+    const ctx = await spreadContext(spreadConfig({ strategy: 'pinned', provider: '', model: '', fallbackProvider: 'hh' }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
   })
 
@@ -593,7 +585,7 @@ describe('fallback route (adjudication after candidates)', () => {
 
   it('records fallback-provider failures for a pinned config and clears the fallback while cooling', async () => {
     const ctx = await spreadContext(spreadConfig({
-      strategy: 'pinned', provider: '', model: '', autoRoute: false,
+      strategy: 'pinned', provider: '', model: '', priority: [],
       fallbackProvider: 'sz', fallbackModel: 'Qwen3.8-27B-FP8',
     }))
     const child = newChild()

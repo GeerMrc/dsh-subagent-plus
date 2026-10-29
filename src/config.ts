@@ -17,9 +17,9 @@ import { STRATEGIES } from './strategy.js'
 
 /** Plugin configuration; plain values only — runtime handles unwrap through {@link materializeConfig}. */
 export interface PinConfig {
-  /** Provider id of the pinned route (`pinned` strategy); empty falls through to `autoRoute`. */
+  /** Provider id of the pinned route (`pinned` strategy); empty assigns nothing. */
   provider: string
-  /** Model id of the pinned route (`pinned` strategy); empty falls through to `autoRoute`. */
+  /** Model id of the pinned route (`pinned` strategy); empty assigns nothing. */
   model: string
   /** Effort id pinned alongside the route; empty drops effort on route change. */
   reasoningEffort: string
@@ -29,8 +29,6 @@ export interface PinConfig {
   failOpen: boolean
   /** Whether each child's transcript gains a visible one-line route notice. */
   showNotice: boolean
-  /** With provider/model unset under `pinned`, adopt the official subagent settings' first allowed route. */
-  autoRoute: boolean
   /** Selection strategy; `pinned` keeps the v0.1.x single-route behaviour. */
   strategy: Strategy
   /** Ordered candidate routes for spread strategies (at most 5); empty uses the official allowed-model list. */
@@ -98,7 +96,6 @@ export const Config: z = z.object({
   pinForkChildren: z.boolean().default(false).volatile(),
   failOpen: z.boolean().default(true).volatile(),
   showNotice: z.boolean().default(true).volatile(),
-  autoRoute: z.boolean().default(true).volatile(),
   strategy: z.union([...STRATEGIES]).default('pinned').volatile(),
   priority: z.array(z.object({
     provider: z.string().default(''),

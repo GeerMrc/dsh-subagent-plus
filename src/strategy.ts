@@ -5,7 +5,7 @@
  * explicit-route test. Clock and randomness are injected so every rule is
  * unit-testable without a live Host.
  */
-import { routeId, type OfficialModelSelectionSettings, type PinRoute, type RouteFields } from './pin.js'
+import { routeId, type PinRoute, type RouteFields } from './pin.js'
 
 /** Closed set of selection strategies; `pinned` is the v0.1.x single-route behaviour. */
 export const STRATEGIES = ['pinned', 'round-robin', 'random', 'priority'] as const
@@ -34,7 +34,7 @@ export interface StrategyConfigView {
   model: string
   /** Selection strategy. */
   strategy: Strategy
-  /** Ordered candidate routes; empty falls back to the official allowed-model list. */
+  /** Ordered candidate routes; empty leaves the strategy with no candidates. */
   priority: readonly PriorityEntryView[]
   /** Whether a route the delegating model chose explicitly is left untouched. */
   respectExplicit: boolean
@@ -54,17 +54,15 @@ export type StrategyPlan =
   | {
     kind: 'spread'
     strategy: SpreadStrategy
-    /** Where candidate routes come from. */
-    source: 'priority' | 'official'
     /** True when top-level provider/model fields are set but ignored by this strategy. */
     ignoredRoute: boolean
   }
 
 /**
- * Resolve the routing plan for a configuration. `pinned` keeps the complete
- * v0.1.x resolution (explicit route, then `autoRoute`); a spread strategy
- * takes its candidates from `priority` when set, else from the official
- * allowed-model list, and ignores the top-level provider/model fields.
+ * Resolve the routing plan for a configuration. `pinned` keeps the single
+ * explicit route; a spread strategy takes its candidates from `priority`
+ * (the sole routing source — ADR 0005) and ignores the top-level
+ * provider/model fields.
  * @param config - structural configuration view.
  * @returns the plan.
  */
@@ -73,7 +71,6 @@ export function resolveStrategyPlan(config: StrategyConfigView): StrategyPlan {
   return {
     kind: 'spread',
     strategy: config.strategy,
-    source: config.priority.length > 0 ? 'priority' : 'official',
     ignoredRoute: config.provider !== '' || config.model !== '',
   }
 }
@@ -169,35 +166,18 @@ export function routeKey(route: { provider: string; model: string }): string {
   return `${route.provider}\0${route.model}`
 }
 
-/**
- * Candidate routes for a spread plan, in priority order.
- * @param plan - a spread plan.
- * @param config - structural configuration view (for `priority`).
- * @param settings - official settings face, when the Host provides one;
- * `current()` failures propagate.
- * @returns the ordered candidates; empty when nothing is configured or the
- * official list is disabled or absent.
+/** The candidate routes of one configuration: the `priority` list in stored
+ *  order — the sole routing source (ADR 0005); an empty list leaves every
+ *  spread strategy with no candidates.
+ * @param config - structural configuration view.
+ * @returns the ordered candidates; empty when nothing is configured.
  */
-export function candidateRoutes(
-  plan: Extract<StrategyPlan, { kind: 'spread' }>,
-  config: StrategyConfigView,
-  settings: OfficialModelSelectionSettings | undefined,
-): PinRoute[] {
-  if (plan.source === 'priority') {
-    return config.priority.map(entry => ({
-      provider: entry.provider,
-      model: entry.model,
-      ...entry.reasoningEffort === '' ? {} : { reasoningEffort: entry.reasoningEffort },
-    }))
-  }
-  // The `priority` strategy never falls back to the official list: its stored
-  // order is undocumented ordering, so an empty list is the degraded
-  // "no candidates" state rather than a silent source switch.
-  if (plan.strategy === 'priority') return []
-  if (settings === undefined || typeof settings.current !== 'function') return []
-  const current = settings.current()
-  if (!current.enabled) return []
-  return current.allowedModels.map(route => ({ provider: route.provider, model: route.model }))
+export function candidateRoutes(config: StrategyConfigView): PinRoute[] {
+  return config.priority.map(entry => ({
+    provider: entry.provider,
+    model: entry.model,
+    ...entry.reasoningEffort === '' ? {} : { reasoningEffort: entry.reasoningEffort },
+  }))
 }
 
 /** Mutable cursor and deck state shared by every selection under one plugin instance. */

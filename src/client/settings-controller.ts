@@ -339,7 +339,6 @@ export class SettingsSectionController {
   setShowNotice = (value: boolean): void => { this.#edit(draft => { draft.showNotice = value }) }
   setPinForkChildren = (value: boolean): void => { this.#edit(draft => { draft.pinForkChildren = value }) }
   setFailOpen = (value: boolean): void => { this.#edit(draft => { draft.failOpen = value }) }
-  setAutoRoute = (value: boolean): void => { this.#edit(draft => { draft.autoRoute = value }) }
   /** Parse and store the cooldown; an invalid parse sets `cooldownInvalid` and keeps the old number. */
   setCooldownMs = (text: string): void => {
     const trimmed = text.trim()

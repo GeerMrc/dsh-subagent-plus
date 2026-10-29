@@ -19,7 +19,6 @@ function plainConfig(overrides: Partial<PinConfig> = {}): PinConfig {
     pinForkChildren: false,
     failOpen: true,
     showNotice: true,
-    autoRoute: true,
     strategy: 'pinned',
     priority: [],
     respectExplicit: false,

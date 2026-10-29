@@ -18,36 +18,22 @@ export interface PinRoute {
 
 /** Structural view of the pin configuration fields used in route resolution. */
 export interface PinConfigView {
-  /** Explicitly configured provider id; empty falls through to `autoRoute`. */
+  /** Explicitly configured provider id; empty assigns nothing under `pinned`. */
   provider: string
-  /** Explicitly configured model id; empty falls through to `autoRoute`. */
+  /** Explicitly configured model id; empty assigns nothing under `pinned`. */
   model: string
   /** Effort id pinned alongside the route; empty drops effort on route change. */
   reasoningEffort: string
-  /** Whether an unset route may adopt the official subagent settings' first allowed model. */
-  autoRoute: boolean
-}
-
-/** Structural face of the official `subagentModelSelection` settings service. */
-export interface OfficialModelSelectionSettings {
-  /** Read the live preference; throws when the enabled list is empty or unreadable. */
-  current(): { enabled: boolean; allowedModels: readonly { provider: string; model: string }[] }
 }
 
 /**
  * Resolve the pin target for one delegation: an explicit `provider`/`model`
- * pair always wins; with both unset and `autoRoute` on, adopt the first route
- * of the official subagent model-selection settings when they are enabled.
- * `current()` failures propagate to the caller, which logs once and pins
- * nothing for that request.
+ * pair; empty fields assign nothing and the child keeps its resolved route
+ * (the plugin's candidate list is the sole routing source — ADR 0005).
  * @param config - structural pin configuration.
- * @param settings - official settings service face, when the Host provides one.
  * @returns the pin target, or undefined when this request keeps its resolved route.
  */
-export function resolvePinRoute(
-  config: PinConfigView,
-  settings: OfficialModelSelectionSettings | undefined,
-): PinRoute | undefined {
+export function resolvePinRoute(config: PinConfigView): PinRoute | undefined {
   if (config.provider !== '' && config.model !== '') {
     return {
       provider: config.provider,
@@ -55,11 +41,7 @@ export function resolvePinRoute(
       ...config.reasoningEffort === '' ? {} : { reasoningEffort: config.reasoningEffort },
     }
   }
-  if (!config.autoRoute || config.provider !== '' || config.model !== '') return undefined
-  if (settings === undefined || typeof settings.current !== 'function') return undefined
-  const current = settings.current()
-  const first = current.enabled ? current.allowedModels[0] : undefined
-  return first === undefined ? undefined : { provider: first.provider, model: first.model }
+  return undefined
 }
 
 /** Display identity of a route: `provider/model` (the id, not display names). */
