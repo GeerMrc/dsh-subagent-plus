@@ -8,6 +8,8 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
+  pinnedNotice,
+  pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
   RouteHealth,
@@ -341,5 +343,15 @@ describe('notice text (S-08 helpers)', () => {
   it('names the cooled route, the code, and the replacement', () => {
     expect(reassignedNotice('sz/a', 'hh/a', 'RATE_LIMIT'))
       .toBe('[模型切换 model reassigned: sz/a 冷却中（RATE_LIMIT），本子智能体继续使用 hh/a｜sz/a cooling (RATE_LIMIT), continues hh/a — dsh-subagent-plus]')
+  })
+
+  it('names the pinned route', () => {
+    expect(pinnedNotice('sz/Qwen3.8-27B-FP8'))
+      .toBe('[模型钉定 model pinned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8｜every request runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+  })
+
+  it('names the skipped pin and the kept resolved route', () => {
+    expect(pinSkippedNotice('sz/a'))
+      .toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/a 未注册，本子智能体保持原路由｜pinned route sz/a unregistered, this child keeps its resolved route — dsh-subagent-plus]')
   })
 })

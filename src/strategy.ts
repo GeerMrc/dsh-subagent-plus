@@ -446,6 +446,26 @@ export function fallbackNotice(label: string): string {
 }
 
 /**
+ * Transcript notice naming the pinned route a child is forced onto.
+ * @param label - `provider/model` of the pinned route.
+ * @returns the bracketed one-line notice.
+ */
+export function pinnedNotice(label: string): string {
+  return `[模型钉定 model pinned: 本子智能体所有请求运行 ${label}｜every request runs ${label} — dsh-subagent-plus]`
+}
+
+/**
+ * Transcript notice for a pin that failOpen skipped because the route is not
+ * registered: the child keeps its resolved route, so the notice names the skip
+ * instead of claiming the unregistered pin runs.
+ * @param label - `provider/model` of the unregistered pinned route.
+ * @returns the bracketed one-line notice.
+ */
+export function pinSkippedNotice(label: string): string {
+  return `[模型钉定跳过 model pin skipped: 钉定路由 ${label} 未注册，本子智能体保持原路由｜pinned route ${label} unregistered, this child keeps its resolved route — dsh-subagent-plus]`
+}
+
+/**
  * Transcript notice recording a mid-child failover.
  * @param from - `provider/model` that entered cooldown.
  * @param to - `provider/model` the child continues with.

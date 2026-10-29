@@ -154,6 +154,57 @@ describe('visible pinned-model notice', () => {  it('adds one transcript notice 
   })
 })
 
+describe('pinned notice vs registration', () => {
+  const unregisteredPinConfig: plugin.PinConfig = {
+    enabled: true,
+    provider: 'sz',
+    model: 'Qwen3.8-27B-FP8',
+    reasoningEffort: '',
+    pinForkChildren: false,
+    failOpen: true,
+    showNotice: true,
+    autoRoute: false,
+    strategy: 'pinned',
+    priority: [],
+    respectExplicit: false,
+    cooldownMs: 120_000,
+    fallbackProvider: '',
+    fallbackModel: '',
+    fallbackReasoningEffort: '',
+  }
+
+  it('names the skip when failOpen keeps the resolved route (no false pinned claim)', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    // Only hh is registered: the sz pin is the unregistered route.
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, unregisteredPinConfig)
+    const decision = await dispatchPreStep(ctx, newChild())
+    expect(decision.kind).toBe('enter')
+    expect(noticeText(decision)).toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/Qwen3.8-27B-FP8 未注册，本子智能体保持原路由｜pinned route sz/Qwen3.8-27B-FP8 unregistered, this child keeps its resolved route — dsh-subagent-plus]')
+  })
+
+  it('still claims the pin when failOpen is off (the override applies and fails loudly)', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, { ...unregisteredPinConfig, failOpen: false })
+    const decision = await dispatchPreStep(ctx, newChild())
+    expect(noticeText(decision)).toBe('[模型钉定 model pinned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8｜every request runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+  })
+
+  it('skipped notice dedupes per child like the pinned one', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, unregisteredPinConfig)
+    const agent = newChild()
+    await dispatchPreStep(ctx, agent)
+    const again = await dispatchPreStep(ctx, agent, 3)
+    expect(again.kind === 'enter' && again.messages.length).toBe(0)
+  })
+})
+
 /** Structural stand-in for the official `subagentModelSelection` settings. */
 const officialSettings = {
   enabled: true,

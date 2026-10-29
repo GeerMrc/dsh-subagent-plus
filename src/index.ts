@@ -62,6 +62,8 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
+  pinnedNotice,
+  pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
   RouteHealth,
@@ -357,7 +359,11 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       let target: PinRoute | undefined
       if (pin !== undefined) {
         target = pin
-        text = `[模型钉定 model pinned: 本子智能体所有请求运行 ${label(pin)}｜every request runs ${label(pin)} — dsh-subagent-plus]`
+        // Registration mirrors the request-side failOpen check: a skipped pin
+        // must not be claimed as the running route.
+        text = config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)
+          ? pinSkippedNotice(label(pin))
+          : pinnedNotice(label(pin))
       } else {
         const fallback = fallbackRouteOf(config)
         if (fallback !== undefined && healthyNow(config)(fallback)
