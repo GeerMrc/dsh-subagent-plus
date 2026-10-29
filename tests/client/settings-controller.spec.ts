@@ -231,6 +231,14 @@ describe('SettingsSectionController', () => {
     controller.dispose()
   })
 
+  it('never writes back residue keys the schema no longer knows', async () => {
+    const residue = { legacyPause: false }
+    const { controller, form } = await harness({ ...baseConfig(), ...residue })
+    controller.setCooldownMs('90000')
+    await expect(controller.save()).resolves.toBe('saved')
+    expect(form.mutateCalls[0]?.ops).toEqual([{ op: 'set', path: ['cooldownMs'], value: 90_000 }])
+  })
+
   it('shows unavailable when the host does not serve the namespace', async () => {
     const form = new FakeForm(baseConfig())
     form.status = 'unavailable'
