@@ -50,9 +50,14 @@ export class TakeoverSwitchController {
   readonly #listeners = new Set<() => void>()
   #state: TakeoverSwitchState
   #disposed = false
-  /** Monotonic operation counter: only the newest started refresh or disable
-   *  write may patch the state; a stale resolving response is dropped. */
+  /** Monotonic operation counter: a refresh resolving after any newer
+   *  operation started is dropped as stale. */
   #generation = 0
+  /** Completion epoch of the last accepted disable write. A refresh that
+   *  started while the write was in flight may have read the pre-write
+   *  manifest; its response is stale even though it started later than the
+   *  write, so a completed write outranks it. */
+  #writeEpoch = 0
 
   /**
    * @param bundle - this plugin's package name (the bundle row id).
@@ -83,6 +88,7 @@ export class TakeoverSwitchController {
   refresh = async (): Promise<void> => {
     if (this.#face === undefined || this.#disposed) return
     const generation = ++this.#generation
+    const writeEpoch = this.#writeEpoch
     let enabled: boolean | undefined
     try {
       const bundles = await this.#face.listBundles()
@@ -90,7 +96,7 @@ export class TakeoverSwitchController {
     } catch {
       enabled = undefined
     }
-    if (this.#disposed || generation !== this.#generation) return
+    if (this.#disposed || generation !== this.#generation || writeEpoch !== this.#writeEpoch) return
     // A manifest that shows the bundle enabled again superseded a queued
     // disable (the user re-enabled it), so the restart notice retires.
     const patch: Partial<TakeoverSwitchState> = { status: enabled === undefined ? 'unknown' : enabled ? 'on' : 'off' }
@@ -124,6 +130,9 @@ export class TakeoverSwitchController {
       return
     }
     if (this.#disposed) return
+    // The accepted write changed the manifest; its outcome is authoritative
+    // over any refresh that raced it and read the pre-write state.
+    if (response.ok) this.#writeEpoch += 1
     const application = response.ok ? response.value?.application : undefined
     if (application === 'applied') {
       this.#patch({ working: false, confirming: false, status: 'off' })

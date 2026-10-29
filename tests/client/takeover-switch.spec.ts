@@ -149,6 +149,22 @@ describe('TakeoverSwitchController', () => {
     expect(switch_.snapshot().status).toBe('off')
   })
 
+  it('a completed disable outranks a refresh that raced it and read the pre-write manifest', async () => {
+    const face = new FakeFace()
+    const switch_ = controller(face)
+    let releaseRacing = (): void => {}
+    face.readGate = new Promise<void>(resolve => { releaseRacing = resolve })
+    switch_.requestDisable()
+    const disable = switch_.confirmDisable()
+    // Starts while the write is in flight; its listBundles captured the
+    // pre-write enabled:true snapshot before hanging on the gate.
+    const racing = switch_.refresh()
+    await disable
+    releaseRacing()
+    await racing
+    expect(switch_.snapshot().status).toBe('off')
+  })
+
   it('a later re-enable clears the restart-required notice', async () => {
     const face = new FakeFace()
     face.nextResponse = { ok: true, value: { application: 'restart-required' } }
