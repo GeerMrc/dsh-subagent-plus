@@ -14,6 +14,7 @@
  */
 import { validateStrategyConfig, type Strategy } from '../strategy.js'
 import type { PinConfig } from '../config.js'
+import type { SaveOutcome } from './unified-save.js'
 
 /** Maximum candidate routes; mirrors the schema bound. */
 export const MAX_ROUTES = 5
@@ -263,13 +264,15 @@ export class SettingsSectionController {
     this.#patch({ draft: this.#state.value === undefined ? undefined : copyConfig(this.#state.value) })
   }
 
-  /** Commit every changed field behind the revision fence; the shared validation gates the write. */
-  save = async (): Promise<void> => {
+  /** Commit every changed field behind the revision fence; the shared validation gates the write.
+   *  The returned outcome drives the unified footer (see unified-save.ts). */
+  save = async (): Promise<SaveOutcome> => {
     const { value, draft } = this.#state
-    if (value === undefined || draft === undefined || this.#state.saving) return
-    if (this.#state.structural.length > 0 || this.#state.degraded.length > 0 || this.#state.cooldownInvalid) return
+    if (value === undefined || draft === undefined) return 'unavailable'
+    if (this.#state.saving) return 'clean'
+    if (this.#state.structural.length > 0 || this.#state.degraded.length > 0 || this.#state.cooldownInvalid) return 'blocked'
     const ops = fieldOps(value, draft)
-    if (ops.length === 0) return
+    if (ops.length === 0) return 'clean'
     this.#patch({ saving: true, saved: false, saveFailed: false, conflict: false })
     let accepted: boolean
     try {
@@ -277,13 +280,14 @@ export class SettingsSectionController {
       // release the button and surface `saveFailed`, never strand `saving`.
       accepted = await this.#form.mutate(ops, this.#form.getSnapshot().revision)
     } catch {
-      if (this.#disposed) return
+      if (this.#disposed) return 'failed'
       this.#patch({ saving: false, saveFailed: true })
-      return
+      return 'failed'
     }
-    if (this.#disposed) return
+    if (this.#disposed) return accepted ? 'saved' : 'conflict'
     this.#sync()
     this.#patch(accepted ? { saving: false, saved: true } : { saving: false, conflict: true })
+    return accepted ? 'saved' : 'conflict'
   }
 
   setEnabled = (enabled: boolean): void => { this.#edit(draft => { draft.enabled = enabled }) }

@@ -17,9 +17,11 @@
  *
  * @module dsh-subagent-plus/client/official-surfaces
  */
+import type { SaveOutcome } from './unified-save.js'
 import type { FieldSetOp, SettingsFormPort } from './settings-controller.js'
 
 export type { FieldSetOp, SettingsFormPort as NamespaceFormPort }
+export type { SaveOutcome }
 
 /** Official `subagent` namespace value as this page edits it. */
 export interface OfficialLimitsValue {
@@ -153,25 +155,28 @@ export class NamespaceFormController<Value extends object> {
   }
 
   /** Commit every changed field behind the revision fence; `blocked` and the
-   *  section's invalid flag gate the write. */
-  save = async (): Promise<void> => {
+   *  section's invalid flag gate the write. The returned outcome drives the
+   *  unified footer: unavailable/blocked namespaces never reach the wire. */
+  save = async (): Promise<SaveOutcome> => {
     const { value, draft } = this.#state
-    if (value === undefined || draft === undefined || this.#state.saving) return
-    if (this.#options.blocked(draft) || this.#state.invalid) return
+    if (value === undefined || draft === undefined) return 'unavailable'
+    if (this.#state.saving) return 'clean'
+    if (this.#options.blocked(draft) || this.#state.invalid) return 'blocked'
     const ops = namespaceFieldOps(value, draft)
-    if (ops.length === 0) return
+    if (ops.length === 0) return 'clean'
     this.#patch({ saving: true, saved: false, saveFailed: false, conflict: false })
     let accepted: boolean
     try {
       accepted = await this.#form.mutate(ops, this.#form.getSnapshot().revision)
     } catch {
-      if (this.#disposed) return
+      if (this.#disposed) return 'failed'
       this.#patch({ saving: false, saveFailed: true })
-      return
+      return 'failed'
     }
-    if (this.#disposed) return
+    if (this.#disposed) return accepted ? 'saved' : 'conflict'
     this.#sync()
     this.#patch(accepted ? { saving: false, saved: true } : { saving: false, conflict: true })
+    return accepted ? 'saved' : 'conflict'
   }
 
   /** Apply one draft mutation; rebuilds the state object for useSyncExternalStore. */

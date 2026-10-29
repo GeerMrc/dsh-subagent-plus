@@ -1,10 +1,8 @@
 /**
- * The takeover card (v0.3.0 T5/T7): the banner naming what was taken over and
- * how to restore it, plus the two absorbed official sections — runtime limits
- * and the model-selection allowlist — each editing its official namespace
- * through the shared config form. The card renders while this plugin's own
- * settings namespace is served; an official namespace going away flips only
- * its own section to `unavailable`, never the card (T7).
+ * Transitional takeover card: since the runtime-limits section moved into the
+ * main settings page (v0.3.1 D2), this card carries only the model-selection
+ * allowlist until it migrates onto the main page layout as well. It disappears
+ * entirely once the allowlist section lands beside the limits card.
  *
  * @module dsh-subagent-plus/client/takeover-card
  */
@@ -19,33 +17,24 @@ import type {
   OfficialAllowlistController,
   OfficialAllowlistValue,
   OfficialLimitsController,
-  OfficialLimitsValue,
 } from './official-surfaces.ts'
+import { NsStatusLine, SectionHeader } from './official-sections.tsx'
 import { routeShort, Switch } from './settings-section.tsx'
 import {
   cardHeadingStyle,
-  cardHeaderRowStyle,
   cardStyle,
   hintStyle,
-  inputStyle,
-  invalidStyle,
   saveButtonStyle,
   statusTextStyle,
 } from './settings-styles.ts'
 
-/** Banner box: the takeover statement, distinct from plain hints. */
-const bannerStyle: CSSProperties = {
-  margin: 0,
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: '0.5px solid var(--dsw-alias-state-warn-primary)',
-  background: 'var(--dsw-alias-bg-layer-2, transparent)',
-  fontSize: 12,
-  lineHeight: 1.6,
-  color: 'var(--dsw-alias-label-secondary)',
+/** The two official controllers the page edits, shared with the client entry's wiring. */
+export interface TakeoverControllers {
+  limits: OfficialLimitsController
+  allowlist: OfficialAllowlistController
 }
 
-/** Sub-section divider inside the takeover card. */
+/** Sub-section divider inside the card. */
 const sectionDividerStyle: CSSProperties = {
   borderTop: '0.5px solid var(--dsw-alias-border-l2)',
   paddingTop: 12,
@@ -65,17 +54,7 @@ function Info({ label, text }: { label: string; text: string }) {
   )
 }
 
-/** One official namespace's header row: title + hover help. */
-function SectionHeader({ title, help }: { title: string; help: string }) {
-  return (
-    <div style={cardHeaderRowStyle}>
-      <h5 style={{ ...cardHeadingStyle, margin: 0, fontSize: 13 }}>{title}</h5>
-      <Info label={help} text={help} />
-    </div>
-  )
-}
-
-/** One namespace's save row: disabled while clean/blocked/saving, one-shot feedback. */
+/** The allowlist's save row: disabled while clean/saving, one-shot feedback. */
 function SectionFooter(props: {
   clean: boolean
   blocked: boolean
@@ -103,60 +82,14 @@ function SectionFooter(props: {
   )
 }
 
-/** The status branches every official section shares (loading / unavailable / invalid). */
-function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: PropsLocale<typeof NS>['t'] }) {
-  if (state.status === 'unavailable') return <p style={hintStyle}>{t('takeover.nsUnavailable')}</p>
-  if (state.valueInvalid) return <p style={invalidStyle}>{t('takeover.valueInvalid')}</p>
-  return null
-}
-
-/** The two official controllers the card edits, shared with the client entry's wiring. */
-export interface TakeoverControllers {
-  limits: OfficialLimitsController
-  allowlist: OfficialAllowlistController
-}
-
 /** Presentation component; every action is a controller call, every string a locale key. */
-export function TakeoverCard(props: PropsLocale<typeof NS> & TakeoverControllers & { routes: readonly RouteOption[] }) {
+export function TakeoverCard(props: PropsLocale<typeof NS> & { allowlist: OfficialAllowlistController; routes: readonly RouteOption[] }) {
   const { t } = props
-  const limits = useSyncExternalStore(props.limits.subscribe, props.limits.snapshot)
   const allowlist = useSyncExternalStore(props.allowlist.subscribe, props.allowlist.snapshot)
   return (
     <section style={cardStyle} aria-labelledby="dsmp-takeover">
-      <div style={cardHeaderRowStyle}>
-        <h4 id="dsmp-takeover" style={cardHeadingStyle}>{t('takeover.title')}</h4>
-      </div>
-      <p style={bannerStyle}>{t('takeover.banner')}</p>
-
       <div style={sectionDividerStyle}>
-        <SectionHeader title={t('takeover.limitsTitle')} help={t('takeover.limitsHelp')} />
-        <NsStatusLine state={limits} t={t} />
-        {limits.status === 'ready' && !limits.valueInvalid && limits.draft !== undefined
-          ? (
-            <>
-              <LimitsBody state={limits} controller={props.limits} t={t} />
-              {limits.invalid ? <p style={invalidStyle}>{t('takeover.limitsInvalid')}</p> : null}
-            </>
-            )
-          : null}
-        {limits.status === 'ready' && !limits.valueInvalid && limits.draft !== undefined
-          ? (
-            <SectionFooter
-              clean={limits.value !== undefined && JSON.stringify(limits.value) === JSON.stringify(limits.draft)}
-              blocked={limits.invalid}
-              saving={limits.saving}
-              saved={limits.saved}
-              saveFailed={limits.saveFailed}
-              conflict={limits.conflict}
-              saveLabel={t('action.save')} savingLabel={t('action.saving')} savedLabel={t('action.saved')} failedLabel={t('action.failed')} conflictLabel={t('action.conflict')}
-              onSave={() => { void props.limits.save() }}
-            />
-            )
-          : null}
-      </div>
-
-      <div style={sectionDividerStyle}>
-        <SectionHeader title={t('takeover.allowlistTitle')} help={t('takeover.allowlistHelp')} />
+        <SectionHeader title={t('takeover.allowlistTitle')} help={t('takeover.allowlistHelp')} saved={allowlist.saved} savedLabel={t('action.saved')} />
         <NsStatusLine state={allowlist} t={t} />
         {allowlist.status === 'ready' && !allowlist.valueInvalid && allowlist.draft !== undefined
           ? <AllowlistBody state={allowlist} controller={props.allowlist} routes={props.routes} t={t} />
@@ -177,44 +110,6 @@ export function TakeoverCard(props: PropsLocale<typeof NS> & TakeoverControllers
           : null}
       </div>
     </section>
-  )
-}
-
-/** The runtime-limits rows: two parsed numeric inputs writing the official keys. */
-function LimitsBody(props: {
-  state: NamespaceFormState<OfficialLimitsValue>
-  controller: Pick<OfficialLimitsController, 'setMaxDepth' | 'setMaxActiveSubagents'>
-  t: PropsLocale<typeof NS>['t']
-}) {
-  const { draft } = props.state
-  if (draft === undefined) return null
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={cardHeadingStyle}>{props.t('takeover.maxDepth')}</span>
-        <span style={{ flex: 1 }} />
-        <input
-          className={`dsmp-input${props.state.invalid ? ' dsmp-invalid' : ''}`}
-          style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
-          type="number" min={0} step={1} inputMode="numeric"
-          value={String(draft.maxDepth)}
-          aria-label={props.t('takeover.maxDepth')}
-          onChange={event => { props.controller.setMaxDepth(event.target.value) }}
-        />
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={cardHeadingStyle}>{props.t('takeover.maxActive')}</span>
-        <span style={{ flex: 1 }} />
-        <input
-          className={`dsmp-input${props.state.invalid ? ' dsmp-invalid' : ''}`}
-          style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
-          type="number" min={1} step={1} inputMode="numeric"
-          value={String(draft.maxActiveSubagents)}
-          aria-label={props.t('takeover.maxActive')}
-          onChange={event => { props.controller.setMaxActiveSubagents(event.target.value) }}
-        />
-      </div>
-    </div>
   )
 }
 

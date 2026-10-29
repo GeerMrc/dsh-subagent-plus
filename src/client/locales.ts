@@ -84,6 +84,9 @@ const keys = [
   'action.saved',
   'action.failed',
   'action.conflict',
+  'save.blockedAt',
+  'save.failedAt',
+  'save.conflictAt',
 ] as const
 
 export type LocaleKey = typeof keys[number]
@@ -151,7 +154,7 @@ export const zh: Record<LocaleKey, string> = {
   'invalid.structural': '配置无法生效：{message}',
   'invalid.degraded': '配置将被降级：{message}',
   'takeover.title': '官方子智能体设置（已接管）',
-  'takeover.banner': '本插件已接管子智能体模型路由，官方「子智能体」设置页已隐藏；下方两项直接读写官方配置（同一事实源）。禁用或卸载本插件即完整恢复官方页面与行为，配置值保留不变。',
+  'takeover.banner': '本插件已接管子智能体模型路由，官方「子智能体」设置页已隐藏；页面中的官方配置区块直接读写官方配置（同一事实源）。禁用或卸载本插件即完整恢复官方页面与行为，配置值保留不变。',
   'takeover.limitsTitle': '运行限制',
   'takeover.limitsHelp': '最大递归深度与并行数量上限，由官方子智能体运行时在委派时强制执行；此处修改直接写入官方配置，立即生效。',
   'takeover.maxDepth': '最大递归深度（≥0）',
@@ -170,6 +173,9 @@ export const zh: Record<LocaleKey, string> = {
   'action.saved': '已保存',
   'action.failed': '保存失败，请重试',
   'action.conflict': '配置已被其他位置修改，已重新加载',
+  'save.blockedAt': '{section}：输入有误，已阻止保存',
+  'save.failedAt': '{section}：保存失败，请重试',
+  'save.conflictAt': '{section}：配置已被其他位置修改，已重新加载',
 }
 
 export const en: Record<LocaleKey, string> = {
@@ -229,7 +235,7 @@ export const en: Record<LocaleKey, string> = {
   'invalid.structural': 'Configuration cannot apply: {message}',
   'invalid.degraded': 'Configuration will be downgraded: {message}',
   'takeover.title': 'Official subagent settings (taken over)',
-  'takeover.banner': 'This plugin has taken over subagent model routing and hidden the official "Subagents" settings page; the two sections below read and write the official configuration directly (single source of truth). Disabling or uninstalling this plugin fully restores the official page and behaviour with the values intact.',
+  'takeover.banner': 'This plugin has taken over subagent model routing and hidden the official "Subagents" settings page; the official sections on this page read and write the official configuration directly (single source of truth). Disabling or uninstalling this plugin fully restores the official page and behaviour with the values intact.',
   'takeover.limitsTitle': 'Runtime limits',
   'takeover.limitsHelp': 'Maximum recursion depth and parallel-child cap, enforced by the official subagent runtime at delegation time; edits here write the official keys and apply immediately.',
   'takeover.maxDepth': 'Max recursion depth (≥0)',
@@ -248,4 +254,7 @@ export const en: Record<LocaleKey, string> = {
   'action.saved': 'Saved',
   'action.failed': 'Save failed, please retry',
   'action.conflict': 'Configuration changed elsewhere; reloaded',
+  'save.blockedAt': '{section}: invalid input; save blocked',
+  'save.failedAt': '{section}: save failed, please retry',
+  'save.conflictAt': '{section}: changed elsewhere; reloaded',
 }

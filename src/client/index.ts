@@ -32,7 +32,8 @@ import {
   type OfficialLimitsValue,
 } from './official-surfaces.ts'
 import type { TakeoverControllers } from './takeover-card.tsx'
-import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.ts'
+import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.js'
+import { UnifiedSaveController } from './unified-save.js'
 import { bindSettingsSection } from './settings-section.tsx'
 import { PAGE_STYLE_CSS } from './settings-styles.ts'
 
@@ -106,7 +107,13 @@ export function apply(ctx: Context): void {
     limits: new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent'))),
     allowlist: new OfficialAllowlistController(asFormPort(ctx.configForms.get<OfficialAllowlistValue>('subagent-model-selection-settings'))),
   }
-  ctx.effect(() => () => { controller.dispose(); official.limits.dispose(); official.allowlist.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
+  // One footer button, fixed commit order: the official limits namespace
+  // first, then (once migrated) the allowlist, the plugin's own form last.
+  const save = new UnifiedSaveController([
+    { key: 'limits', save: official.limits.save },
+    { key: 'self', save: controller.save },
+  ])
+  ctx.effect(() => () => { controller.dispose(); official.limits.dispose(); official.allowlist.dispose(); save.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
   // The catalogue is not part of the settings document: adapters come and go,
   // and a commit elsewhere can change which routes exist.
   ctx.effect(() => ctx.remote.$on('llm/adapters-updated', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: adapter invalidations')
@@ -125,6 +132,6 @@ export function apply(ctx: Context): void {
       order: 17,
       label: () => t('nav'),
       locale: NS,
-    }, bindSettingsSection(controller, official)))
+    }, bindSettingsSection(controller, official, save)))
   }), 'dsh-subagent-plus: settings section')
 }
