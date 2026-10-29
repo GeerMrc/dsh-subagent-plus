@@ -88,10 +88,10 @@ export interface ValidationReport {
  * routes, a priority entry missing its provider or model, a repeated route)
  * refuse to load. Cross-field combinations that a settings page could
  * persist degrade instead of throwing — throwing here would brick the plugin
- * on the next Host restart, so an empty `priority` list under the `priority`
- * strategy resolves to no candidates (fallback route, then the resolved
- * route) and a half-filled or duplicate fallback stays unused. Shared with
- * the settings page, which blocks both classes before writing.
+ * on the next Host restart, so an empty `priority` list resolves to no
+ * candidates (fallback route, then the resolved route — the legitimate
+ * not-assigned state) and a half-filled or duplicate fallback stays unused.
+ * Shared with the settings page, which blocks both classes before writing.
  * @param config - structural configuration view.
  * @returns the structural and degraded findings.
  */
@@ -113,9 +113,6 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
     }
     seen.add(key)
   })
-  if (config.strategy === 'priority' && config.priority.length === 0) {
-    degraded.push('dsh-subagent-plus: strategy "priority" lists no candidate routes; children use the fallback route when configured, otherwise keep their resolved route')
-  }
   const fallbackHalfFilled = (config.fallbackProvider === '') !== (config.fallbackModel === '')
   if (fallbackHalfFilled) {
     degraded.push('dsh-subagent-plus: fallback needs both provider and model; it stays unused')

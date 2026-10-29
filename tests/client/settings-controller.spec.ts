@@ -146,18 +146,18 @@ describe('SettingsSectionController', () => {
     expect(controller.snapshot().draft?.priority.length).toBeLessThanOrEqual(MAX_ROUTES)
   })
 
-  it('blocks the save when the shared validation reports structural or degraded findings (P0 gate)', async () => {
+  it('saves an empty candidate list (not assigned) but blocks on degraded findings (P0 gate)', async () => {
     const { controller, form } = await harness()
     controller.setStrategy('priority')
-    expect(controller.snapshot().degraded.length).toBeGreaterThan(0)
-    await controller.save()
-    expect(form.mutateCalls).toEqual([])
+    // An empty list is the legitimate not-assigned state — saving goes through.
+    await expect(controller.save()).resolves.toBe('saved')
+    // A fallback repeating a listed route stays unused: degraded blocks the save.
     controller.setStrategy('random')
-    controller.setFallbackRoute(szRoute)
     controller.addRoute(szRoute)
+    controller.setFallbackRoute(szRoute)
     expect(controller.snapshot().degraded.length).toBeGreaterThan(0)
     await controller.save()
-    expect(form.mutateCalls).toEqual([])
+    expect(form.mutateCalls).toHaveLength(1)
   })
 
   it('saves changed fields atomically behind the revision fence and reloads the committed value', async () => {
@@ -181,10 +181,9 @@ describe('SettingsSectionController', () => {
     await expect(controller.save()).resolves.toBe('conflict')
     // The next save carries the reloaded revision.
     controller.setStrategy('priority')
-    controller.snapshot() // no-op read
-    await controller.save()
-    const last = form.mutateCalls.at(-1)
-    expect(last?.expectedRevision).toBe(form.revision)
+    const before = form.revision
+    await expect(controller.save()).resolves.toBe('saved')
+    expect(form.mutateCalls.at(-1)?.expectedRevision).toBe(before)
   })
 
   it('rejects a cooldown above the 24h cap and accepts the boundary', async () => {

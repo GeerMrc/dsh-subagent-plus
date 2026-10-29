@@ -492,7 +492,7 @@ describe('configuration gates (structural fail-loud, cross-field degrade)', () =
     await expect(ctx.plugin(plugin, spreadConfig({ strategy: 'round-robin', priority: six }))).rejects.toThrow()
   })
 
-  it('loads a priority strategy with no routes and keeps children on their resolved route (degraded, restart-safe)', async () => {
+  it('loads a priority strategy with no routes and keeps children on their resolved route (not assigned)', async () => {
     const ctx = await spreadContext(spreadConfig({ strategy: 'priority', priority: [] }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)

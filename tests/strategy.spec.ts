@@ -86,12 +86,6 @@ describe('validateStrategyConfig (structural vs degraded, anti-brick)', () => {
     }).structural[0]).toMatch(/repeats route "sz\/a"/)
   })
 
-  it('degrades a priority strategy with no routes instead of throwing (restart-safe)', () => {
-    const report = validateStrategyConfig({ ...base, strategy: 'priority' })
-    expect(report.structural).toEqual([])
-    expect(report.degraded[0]).toMatch(/strategy "priority" lists no candidate routes/)
-  })
-
   it('degrades a half-filled fallback', () => {
     expect(validateStrategyConfig({ ...base, fallbackProvider: 'hh' }).degraded[0]).toMatch(/fallback needs both provider and model/)
     expect(validateStrategyConfig({ ...base, fallbackModel: 'x' }).degraded[0]).toMatch(/fallback needs both provider and model/)
@@ -139,6 +133,14 @@ describe('fallbackRouteOf / usableFallback (fallback adjudication)', () => {
   it('names the fallback in its notice', () => {
     expect(fallbackNotice('hh/x'))
       .toBe('[模型兜底 model fallback: 无可用候选路由，本子智能体运行 hh/x｜no usable candidate, runs hh/x — dsh-subagent-plus]')
+  })
+})
+
+describe('validateStrategyConfig: empty list is a legitimate not-assigned state (R7)', () => {
+  it('reports no degraded finding for an empty list under any strategy', () => {
+    for (const strategy of ['pinned', 'round-robin', 'random', 'priority'] as const) {
+      expect(validateStrategyConfig({ ...base, strategy }).degraded).toEqual([])
+    }
   })
 })
 
