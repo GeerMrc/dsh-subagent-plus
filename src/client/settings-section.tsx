@@ -224,7 +224,7 @@ const cancelButtonStyle: CSSProperties = {
 }
 
 /** The 36×20 green-when-on switch (header takeover switch, advanced rows). */
-function Switch({ checked, onChange, label, title }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string }) {
+function Switch({ checked, onChange, label, title, disabled }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string; disabled?: boolean }) {
   return (
     <button
       type="button"
@@ -233,8 +233,9 @@ function Switch({ checked, onChange, label, title }: { checked: boolean; onChang
       aria-label={label}
       title={title}
       className="dsmp-switch"
-      style={switchStyle(checked)}
-      onClick={() => { onChange(!checked) }}
+      style={{ ...switchStyle(checked), ...(disabled ? { opacity: 0.45, cursor: 'default' } : {}) }}
+      disabled={disabled}
+      onClick={() => { if (!disabled) onChange(!checked) }}
     >
       <span style={switchThumbStyle(checked)} />
     </button>
@@ -544,7 +545,7 @@ function EditorBelow({ state, controller, t }: EditorProps) {
           ? (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <AdvancedToggle title={t('advanced.pauseAssignment')} help={t('advanced.pauseAssignmentHelp')} checked={draft.enabled} onChange={controller.setEnabled} />
-              <AdvancedToggle title={t('advanced.respectExplicit')} help={t('advanced.respectExplicitHelp')} checked={draft.respectExplicit} onChange={controller.setRespectExplicit} />
+              <AdvancedToggle title={t('advanced.respectExplicit')} help={t('advanced.respectExplicitHelp')} checked={draft.respectExplicit} onChange={controller.setRespectExplicit} disabled={draft.strategy === 'pinned'} />
               <AdvancedToggle title={t('advanced.showNotice')} help={t('advanced.showNoticeHelp')} checked={draft.showNotice} onChange={controller.setShowNotice} />
               <AdvancedToggle title={t('advanced.pinForkChildren')} help={t('advanced.pinForkChildrenHelp')} checked={draft.pinForkChildren} onChange={controller.setPinForkChildren} />
               <AdvancedToggle title={t('advanced.failOpen')} help={t('advanced.failOpenHelp')} checked={draft.failOpen} onChange={controller.setFailOpen} />
@@ -561,8 +562,10 @@ function EditorBelow({ state, controller, t }: EditorProps) {
                   aria-label={t('advanced.cooldownMs')}
                   onChange={event => { controller.setCooldownMs(event.target.value) }}
                 />
+                <span style={hintStyle}>0 = {t('advanced.cooldownOff')}</span>
               </div>
               {state.cooldownInvalid ? <p style={invalidStyle}>{t('advanced.cooldownInvalid')}</p> : null}
+              {draft.strategy === 'pinned' && draft.fallbackProvider === '' ? <p style={hintStyle}>{t('advanced.cooldownInactive')}</p> : null}
             </div>
             )
           : null}
@@ -575,13 +578,13 @@ function EditorBelow({ state, controller, t }: EditorProps) {
 
 /** One advanced row: single compact line — title + hover ⓘ left, green switch right;
  *  the explanation lives only in the ⓘ tooltip. */
-function AdvancedToggle(props: { title: string; help: string; checked: boolean; onChange: (value: boolean) => void }) {
+function AdvancedToggle(props: { title: string; help: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return (
-    <div style={advancedRowStyle}>
+    <div style={{ ...advancedRowStyle, ...(props.disabled ? { opacity: 0.55 } : {}) }}>
       <span style={advancedTitleStyle}>{props.title}</span>
       <Info label={props.help} text={props.help} delayMs={400} />
       <span style={{ flex: 1 }} />
-      <Switch checked={props.checked} onChange={props.onChange} label={props.title} />
+      <Switch checked={props.checked} onChange={props.onChange} label={props.title} disabled={props.disabled} />
     </div>
   )
 }

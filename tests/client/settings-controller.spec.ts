@@ -186,6 +186,16 @@ describe('SettingsSectionController', () => {
     expect(last?.expectedRevision).toBe(form.revision)
   })
 
+  it('rejects a cooldown above the 24h cap and accepts the boundary', async () => {
+    const { controller } = await harness()
+    controller.setCooldownMs('86400001')
+    expect(controller.snapshot().cooldownInvalid).toBe(true)
+    expect(controller.snapshot().draft?.cooldownMs).toBe(baseConfig().cooldownMs)
+    controller.setCooldownMs('86400000')
+    expect(controller.snapshot().cooldownInvalid).toBe(false)
+    expect(controller.snapshot().draft?.cooldownMs).toBe(86_400_000)
+  })
+
   it('flags an invalid cooldown text and blocks the save', async () => {
     const { controller, form } = await harness()
     controller.setCooldownMs('abc')

@@ -19,6 +19,9 @@ import type { SaveOutcome } from './unified-save.js'
 /** Maximum candidate routes; mirrors the schema bound. */
 export const MAX_ROUTES = 5
 
+/** Cooldown upper bound: 24h — beyond it a route is effectively frozen forever. */
+export const MAX_COOLDOWN_MS = 86_400_000
+
 /** One reasoning effort a model supports, from the catalogue. */
 export interface EffortOption {
   /** Effort id (= the wire vocabulary: off/low/…/xhigh/max). */
@@ -347,8 +350,13 @@ export class SettingsSectionController {
       this.#patch({ cooldownInvalid: true })
       return
     }
+    const parsed = Number(trimmed)
+    if (parsed > MAX_COOLDOWN_MS) {
+      this.#patch({ cooldownInvalid: true })
+      return
+    }
     this.#patch({ cooldownInvalid: false })
-    this.#edit(draft => { draft.cooldownMs = Number(trimmed) })
+    this.#edit(draft => { draft.cooldownMs = parsed })
   }
 
   #edit = (edit: (draft: PinConfig) => void): void => {
