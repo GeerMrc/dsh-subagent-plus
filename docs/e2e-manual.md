@@ -86,6 +86,38 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 清理同第 5 节（workspace.json 按 `tables.workspaces.<uuid>.path` 字段定位删除并同步 `global.workspaceIds`）。
 
 
-## 8. 版本回退/降级安装注意
+## 8. v0.3.x 接管面（takeover）Flow E
+
+前置同第 2 节（profile 的 `cordis.patch.yml` **不放** `dsh-subagent-plus` 配置条目，也不放 `subagent` 覆盖——安装即默认接管，运行限制全部走设置页写入）。
+
+### 8.1 浏览器 UI 全流程（用户实测门）
+
+| # | 操作 | 通过标准 |
+|---|---|---|
+| E1 | 打开 `插件` 页 | 「已安装插件」出现 dsh-subagent-plus 且开关为开；「内置插件配置」**没有**「子智能体」卡（仅剩 Agent 循环/终端等） |
+| E2 | 设置 → 子 Agent 增强 | 页头有完全接管开关（开）+ 琥珀横幅；**运行限制**卡位于候选模型清单**上方**（深度/并行两个数字输入）；策略编辑器之后是官方授权清单区；高级折叠首项是「仅停用路由指派」；底部只有**一个**保存按钮 |
+| E3 | 运行限制改为 深度=3 / 并行=2 → 保存 | 保存按钮变已保存；`~/.dsh/profiles/pin-test/cordis.patch.yml` 出现 `subagent` 行 `maxDepth: 3`、`maxActiveSubagents: 2`（用户层覆写，官方命名空间同键落盘） |
+| E4 | 页头完全接管开关 → 确认关闭 | 出现确认条（含「本页将随之卸载」）；确认后本设置分区消失（hmr 即时；源码宿主需重启并显示 restart-required 提示）；`插件` 页 dsh-subagent-plus 开关变关 |
+| E5 | 重启宿主（源码宿主必须）→ `插件` 页 | 「内置插件配置」**回归**「子智能体」卡，最大递归深度=3 带「已覆盖」徽章、并行=2（值保留）；无 dsh-subagent-plus 分区 |
+| E6 | `插件` 页把 dsh-subagent-plus 开关打开 | 插件页/设置页回到 E1-E2 状态（官方页再次隐藏） |
+
+断言纪律（dont-do 沉淀）：源码启动的宿主对 bundle 开关**不热重组**，E4/E5 必须按「重启后回归」设计；官方条目文案是单数 "Subagent"；web-app 专属行（ui-settings-subagent / subagent-model-selection-settings）在 headless 组合需 `--patch` overlay 补插。
+
+### 8.2 无浏览器降级流程（组合层断言，v0.3.1 已执行留证）
+
+浏览器不可用时的等价组合层验证（证据存 `dist-artifacts/e2e-v0.3.1/`）：
+
+1. 按 §2 建隔离 profile → 启动 → `curl -c cookies -L "?token=…"` 取回 `index.html`
+2. **E1'**：模块表 `href="plugins/??…"` 中含 `dsh-subagent-plus/client.js` 且**不含** `@deepseek-ai/dsh-client-ui-settings-subagent/client.js`（官方页隐藏）
+3. **E3'**：停宿主 → 从 profile `package.json` 的 `dsh.profile.bundles` 移除 `dsh-subagent-plus`（即 `setBundleEnabled(false)` 的落盘动作）→ 重启 → 再取页面：模块表反转（含 ui-settings-subagent、不含 dsh-subagent-plus）
+4. UI 写入路径（E2/E3 的保存行为）由单测覆盖（`tests/client/unified-save.spec.ts` 真控制器集成用例），不在本降级流程内重复
+
+### 8.3 已知边界（本轮显式声明）
+
+- 行级禁用 `dsh-subagent-plus` entry（插件详情页行开关）不移除 bundle 层：官方页保持隐藏而插件停用——逃生门为用户层 patch 追加 `- id: ui-settings-subagent / disabled: false` 或重开 bundle。
+- 宿主致命恢复（sanitizeProfile）会重置 bundles 列表：插件随之停用、官方页回归，需在插件页重开。
+
+
+## 9. 版本回退/降级安装注意
 
 从更高版本（如 0.2.5）降到低版本（如 v0.0.1）时，pnpm 视为版本回退——删 `node_modules/dsh-subagent-plus` 后 `pnpm install --force`（必要时先 `pnpm store prune`），并用 grep 安装产物内容确认版本（不要只看 MD5 对比本地 lib）。
