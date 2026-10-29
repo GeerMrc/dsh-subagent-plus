@@ -65,6 +65,11 @@ export function resolvePinRoute(
   return first === undefined ? undefined : { provider: first.provider, model: first.model }
 }
 
+/** Display identity of a route: `provider/model` (the id, not display names). */
+export function routeId(route: { provider: string; model: string }): string {
+  return `${route.provider}/${route.model}`
+}
+
 /** Subset of `LlmCallConfig` this plugin reads and overrides. */
 export interface RouteFields {
   /** Resolved provider id of the request. */

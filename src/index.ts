@@ -49,6 +49,7 @@ import {
   isForkedChild,
   pinnedRoute,
   resolvePinRoute,
+  routeId,
   type OfficialModelSelectionSettings,
   type PinOverride,
   type PinRoute,
@@ -66,6 +67,7 @@ import {
   pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
+  routeKey,
   RouteHealth,
   selectChildRoute,
   usableFallback,
@@ -232,8 +234,8 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (next === undefined || routeKeyEquals(next, decision.route)) return
     decision.pendingFailover = { from: decision.route, to: next, code: cooling.code }
     ctx.logger.warn(
-      `dsh-subagent-plus: route "${label(decision.route)}" is cooling down (${cooling.code}); `
-      + `child agent continues with "${label(next)}"`,
+      `dsh-subagent-plus: route "${routeId(decision.route)}" is cooling down (${cooling.code}); `
+      + `child agent continues with "${routeId(next)}"`,
     )
     decision.route = next
   }
@@ -272,7 +274,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       return
     }
     health.markRoute({ provider, model }, until, failure.code)
-    ctx.logger.warn(`dsh-subagent-plus: route "${provider}/${model}" failed (${failure.code}); cooling down for ${until - now}ms`)
+    ctx.logger.warn(`dsh-subagent-plus: route "${routeId({ provider, model })}" failed (${failure.code}); cooling down for ${until - now}ms`)
   }
 
   // Adapter sets change at runtime: a memoized-registered route may have been
@@ -302,7 +304,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
             if (!unregisteredPinWarned) {
               unregisteredPinWarned = true
               ctx.logger.warn(
-                `dsh-subagent-plus: pinned route "${pin.provider}/${pin.model}" is not registered; `
+                `dsh-subagent-plus: pinned route "${routeId(pin)}" is not registered; `
                 + `child requests keep their resolved route`,
               )
             }
@@ -362,18 +364,18 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
         // Registration mirrors the request-side failOpen check: a skipped pin
         // must not be claimed as the running route.
         text = config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)
-          ? pinSkippedNotice(label(pin))
-          : pinnedNotice(label(pin))
+          ? pinSkippedNotice(routeId(pin))
+          : pinnedNotice(routeId(pin))
       } else {
         const fallback = fallbackRouteOf(config)
         if (fallback !== undefined && healthyNow(config)(fallback)
           && (!config.failOpen || await routeRegistered(ctx, fallback.provider, fallback.model))) {
           target = fallback
-          text = fallbackNotice(label(fallback))
+          text = fallbackNotice(routeId(fallback))
         }
       }
       if (target === undefined || text === undefined) return decision
-      const targetLabel = label(target)
+      const targetLabel = routeId(target)
       if (noticedLabel.get(agent) === targetLabel) return decision
       noticedLabel.set(agent, targetLabel)
       const notice = createUserMessage({
@@ -388,7 +390,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (routing.pendingFailover !== undefined) {
       const { from, to, code } = routing.pendingFailover
       routing.pendingFailover = undefined
-      text = reassignedNotice(label(from), label(to), code)
+      text = reassignedNotice(routeId(from), routeId(to), code)
       // The reassignment names the new route; its plain assignment notice is redundant.
       routing.noticed.add(assignmentText(routing, routing.route))
     } else {
@@ -398,7 +400,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     routing.noticed.add(text)
     const notice = createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(label(routing.route)) },
+      source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(routeId(routing.route)) },
     })
     return { ...decision, messages: [...decision.messages, notice] }
   })
@@ -407,16 +409,12 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
 /** The transcript line naming how one decision's current route was assigned. */
 function assignmentText(decision: SpreadDecision, route: PinRoute): string {
   return decision.via === 'fallback'
-    ? fallbackNotice(label(route))
-    : assignedNotice(label(route), decision.strategy)
+    ? fallbackNotice(routeId(route))
+    : assignedNotice(routeId(route), decision.strategy)
 }
 
 function routeKeyEquals(left: PinRoute, right: PinRoute): boolean {
   return left.provider === right.provider && left.model === right.model
-}
-
-function label(route: { provider: string; model: string }): string {
-  return `${route.provider}/${route.model}`
 }
 
 function applyOverride(resolved: LlmCallConfig, override: PinOverride): LlmCallConfig {
@@ -478,7 +476,7 @@ function logSettingsFailureOnce(ctx: Context): void {
 const registeredRoutes = new Set<string>()
 
 async function routeRegistered(ctx: Context, provider: string, model: string): Promise<boolean> {
-  if (registeredRoutes.has(`${provider}\0${model}`)) return true
+  if (registeredRoutes.has(routeKey({ provider, model }))) return true
   const llm = ctx.get('llm')
   if (llm === undefined) return true
   try {
@@ -488,7 +486,7 @@ async function routeRegistered(ctx: Context, provider: string, model: string): P
   } catch {
     return false
   }
-  registeredRoutes.add(`${provider}\0${model}`)
+  registeredRoutes.add(routeKey({ provider, model }))
   return true
 }
 
@@ -503,12 +501,12 @@ function logRouteOnce(
   verb: string,
 ): void {
   const target = override.kind === 'route'
-    ? label(override)
+    ? routeId(override)
     : `effort ${override.reasoningEffort}`
   if (lastRouteLabel.get(agent) === target) return
   lastRouteLabel.set(agent, target)
   const from = resolved.provider === undefined || resolved.model === undefined
     ? 'unset'
-    : `${resolved.provider}/${resolved.model}`
+    : routeId(resolved)
   ctx.logger.info(`dsh-subagent-plus: ${verb} child agent onto ${target} (was ${from})`)
 }

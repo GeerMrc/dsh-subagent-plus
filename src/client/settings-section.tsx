@@ -19,6 +19,8 @@ import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialAllowlistStatus, OfficialAllowlistStatusState, OfficialLimitsController } from './official-surfaces.js'
 import type { TakeoverSwitchController } from './takeover-switch.js'
+import { routeId } from '../pin.js'
+import { routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
@@ -65,7 +67,7 @@ const STRATEGY_KEYS = [
 
 type StrategyId = typeof STRATEGY_KEYS[number][0]
 
-const routeValue = (route: RouteOption): string => `${route.provider}\0${route.model}`
+const routeValue: (route: { provider: string; model: string }) => string = routeKey
 
 /** Short closed-box label (the browser-plus translate pattern): the select
  *  stays compact; the full route rides the hover tooltip and the option title. */
@@ -74,7 +76,7 @@ const routeShort = (route: { providerName: string; modelName: string }): string 
 
 /** Full route text for hover tooltips and option titles. */
 const routeFull = (route: { providerName: string; modelName: string; provider: string; model: string }): string =>
-  `${route.providerName} · ${route.provider}/${route.model} — ${route.modelName}`
+  `${route.providerName} · ${routeId(route)} — ${route.modelName}`
 
 /** Hover ⓘ: the dsh-websearch pattern — Tooltip wraps a borderless help-cursor anchor. */
 function Info({ label, text, delayMs }: { label: string; text: string; delayMs: number }) {
@@ -358,9 +360,9 @@ function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStat
   const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
   const pinnedHover = pinnedRoute === null && draft.provider === ''
     ? undefined
-    : state.routes.find(route => route.provider === draft.provider && route.model === draft.model) !== undefined || pinnedRoute !== null
-      ? routeFull(pinnedRoute ?? { providerName: draft.provider, modelName: draft.model, provider: draft.provider, model: draft.model })
-      : `${draft.provider}/${draft.model}`
+    : pinnedRoute !== null
+      ? routeFull(pinnedRoute)
+      : routeId(draft)
 
   return (
     <>
@@ -381,7 +383,7 @@ function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStat
                   <select
                     className="dsmp-select"
                     style={routeSelectStyle}
-                    value={pinnedRoute === null && draft.provider === '' ? '' : pinnedRoute !== null ? routeValue(pinnedRoute) : `${draft.provider}\0${draft.model}`}
+                    value={pinnedRoute === null && draft.provider === '' ? '' : routeValue(pinnedRoute !== null ? pinnedRoute : draft)}
                     aria-label={t('strategy.pinnedRoute')}
                     title={pinnedHover ?? t('strategy.pinnedPlaceholder')}
                     onChange={event => { controller.setPinnedRoute(routeFromValue(state, event.target.value)) }}
@@ -411,12 +413,12 @@ function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStat
               {listed.length === 0 ? <p style={hintStyle}>{t('list.empty')}</p> : null}
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {listed.map((route, index) => (
-                  <div key={`${route.provider}\0${route.model}`} className="dsmp-hover" style={listRowStyle}>
+                  <div key={routeValue(route)} className="dsmp-hover" style={listRowStyle}>
                     <span style={indexChipStyle}>{index + 1}</span>
                     <RowNameCell
                       label={`${route.providerName} · ${route.modelName}`}
-                      sub={`${route.provider}/${route.model}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
-                      popupLabel={`${t('list.rowActions')} ${route.provider}/${route.model}`}
+                      sub={`${routeId(route)}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
+                      popupLabel={`${t('list.rowActions')} ${routeId(route)}`}
                       index={index} count={listed.length}
                       moveUp={t('list.moveUp')} moveDown={t('list.moveDown')} remove={t('list.remove')}
                       onMove={delta => { controller.moveRoute(index, delta) }}
@@ -425,7 +427,7 @@ function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStat
                     {route.available && route.efforts !== undefined && route.efforts.length > 0
                       ? (
                         <EffortSelect
-                          label={`${t('strategy.effort')} ${route.provider}/${route.model}`} route={route}
+                          label={`${t('strategy.effort')} ${routeId(route)}`} route={route}
                           value={draft.priority[index]?.reasoningEffort ?? ''}
                           onChange={value => { controller.setRouteEffort(index, value) }}
                           defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')}
@@ -520,7 +522,7 @@ function OfficialListLine({ state, t }: { state: OfficialAllowlistStatusState; t
     <p style={hintStyle}>
       {t('takeover.officialListSome')
         .replace('{n}', String(state.count))
-        .replace('{route}', `${state.first.provider}/${state.first.model}`)}
+        .replace('{route}', routeId(state.first))}
     </p>
   )
 }

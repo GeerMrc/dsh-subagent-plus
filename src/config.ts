@@ -35,7 +35,7 @@ export interface PinConfig {
   autoRoute: boolean
   /** Selection strategy; `pinned` keeps the v0.1.x single-route behaviour. */
   strategy: Strategy
-  /** Ordered candidate routes for spread strategies (at most {@link MAX_PRIORITY_ROUTES}); empty uses the official allowed-model list. */
+  /** Ordered candidate routes for spread strategies (at most 5); empty uses the official allowed-model list. */
   priority: PriorityEntryView[]
   /** Whether a route the delegating model chose explicitly is left untouched by a spread strategy. */
   respectExplicit: boolean
@@ -50,7 +50,7 @@ export interface PinConfig {
 }
 
 /** Upper bound on `priority` entries; enforced by the schema and the settings page. */
-export const MAX_PRIORITY_ROUTES = 5
+const MAX_PRIORITY_ROUTES = 5
 
 /**
  * A volatile handle as the host hands it to `apply` (upstream `Volatile<T>`):

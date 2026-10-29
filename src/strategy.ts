@@ -5,7 +5,7 @@
  * explicit-route test. Clock and randomness are injected so every rule is
  * unit-testable without a live Host.
  */
-import type { OfficialModelSelectionSettings, PinRoute, RouteFields } from './pin.js'
+import { routeId, type OfficialModelSelectionSettings, type PinRoute, type RouteFields } from './pin.js'
 
 /** Closed set of selection strategies; `pinned` is the v0.1.x single-route behaviour. */
 export const STRATEGIES = ['pinned', 'round-robin', 'random', 'priority'] as const
@@ -116,7 +116,7 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
     }
     const key = routeKey(entry)
     if (seen.has(key)) {
-      structural.push(`dsh-subagent-plus: priority repeats route "${entry.provider}/${entry.model}"`)
+      structural.push(`dsh-subagent-plus: priority repeats route "${routeId(entry)}"`)
     }
     seen.add(key)
   })

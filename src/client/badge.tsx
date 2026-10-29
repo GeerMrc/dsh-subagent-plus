@@ -16,6 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import { badgeRoute } from './badge-logic.ts'
+import { routeId } from '../pin.js'
 import { NS } from './locales.ts'
 import { badgeEffortStyle, badgeRouteStyle, badgeStyle } from './styles.ts'
 
@@ -27,7 +28,7 @@ export function PinBadge({ useSession, useProjection, t }: PinBadgeProps) {
   const projection = useProjection('modelSelection')
   const route = badgeRoute(subagent, projection)
   if (route === undefined) return null
-  const routeLabel = `${route.provider}/${route.model}`
+  const routeLabel = routeId(route)
   const fullLabel = route.effort === undefined ? routeLabel : `${routeLabel} · ${route.effort}`
   return (
     <span data-dsmp-badge style={badgeStyle} title={fullLabel} aria-label={t('badge.aria')}>
