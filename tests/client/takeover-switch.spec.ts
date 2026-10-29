@@ -6,6 +6,8 @@ class FakeFace implements PluginManagerFace {
   bundles: { name: string; enabled: boolean }[] = [{ name: 'dsh-subagent-plus', enabled: true }]
   nextResponse: { ok: boolean; value?: { application?: string } } = { ok: true, value: { application: 'applied' } }
   readonly setBundleCalls: { name: string; enabled: boolean }[] = []
+  /** Optional gate the next listBundles awaits, for racing two reads. */
+  readGate?: Promise<void>
   #failRead = false
   #throwWrite = false
 
@@ -14,7 +16,10 @@ class FakeFace implements PluginManagerFace {
 
   async listBundles(): Promise<{ name: string; enabled: boolean }[]> {
     if (this.#failRead) throw new Error('transport')
-    return this.bundles
+    // The response is fixed at request time, like a real host read.
+    const bundles = this.bundles
+    await this.readGate
+    return bundles
   }
 
   async setBundleEnabled(packageName: string, enabled: boolean): Promise<{ ok: boolean; value?: { application?: string } }> {
@@ -113,5 +118,46 @@ describe('TakeoverSwitchController', () => {
       await switch_.confirmDisable()
       expect(switch_.snapshot()).toMatchObject({ status: 'on', disableFailed: true })
     }
+  })
+
+  it('a stale refresh resolving late never overwrites a newer read', async () => {
+    const face = new FakeFace()
+    const switch_ = controller(face)
+    let releaseStale = (): void => {}
+    face.readGate = new Promise<void>(resolve => { releaseStale = resolve })
+    const stale = switch_.refresh()
+    face.readGate = undefined
+    face.bundles = [{ name: 'dsh-subagent-plus', enabled: false }]
+    await switch_.refresh()
+    expect(switch_.snapshot().status).toBe('off')
+    releaseStale()
+    await stale
+    expect(switch_.snapshot().status).toBe('off')
+  })
+
+  it('a disable outcome outranks a refresh that started before it', async () => {
+    const face = new FakeFace()
+    const switch_ = controller(face)
+    let releaseStale = (): void => {}
+    face.readGate = new Promise<void>(resolve => { releaseStale = resolve })
+    const stale = switch_.refresh()
+    face.readGate = undefined
+    switch_.requestDisable()
+    await switch_.confirmDisable()
+    releaseStale()
+    await stale
+    expect(switch_.snapshot().status).toBe('off')
+  })
+
+  it('a later re-enable clears the restart-required notice', async () => {
+    const face = new FakeFace()
+    face.nextResponse = { ok: true, value: { application: 'restart-required' } }
+    const switch_ = controller(face)
+    switch_.requestDisable()
+    await switch_.confirmDisable()
+    expect(switch_.snapshot().restartRequired).toBe(true)
+    face.bundles = [{ name: 'dsh-subagent-plus', enabled: true }]
+    await switch_.refresh()
+    expect(switch_.snapshot()).toMatchObject({ status: 'on', restartRequired: false })
   })
 })

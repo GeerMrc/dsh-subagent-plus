@@ -50,6 +50,9 @@ export class TakeoverSwitchController {
   readonly #listeners = new Set<() => void>()
   #state: TakeoverSwitchState
   #disposed = false
+  /** Monotonic operation counter: only the newest started refresh or disable
+   *  write may patch the state; a stale resolving response is dropped. */
+  #generation = 0
 
   /**
    * @param bundle - this plugin's package name (the bundle row id).
@@ -79,6 +82,7 @@ export class TakeoverSwitchController {
   /** Re-read the bundle's enabled state (boot, plugin-manager change, reconnect). */
   refresh = async (): Promise<void> => {
     if (this.#face === undefined || this.#disposed) return
+    const generation = ++this.#generation
     let enabled: boolean | undefined
     try {
       const bundles = await this.#face.listBundles()
@@ -86,8 +90,12 @@ export class TakeoverSwitchController {
     } catch {
       enabled = undefined
     }
-    if (this.#disposed) return
-    this.#patch({ status: enabled === undefined ? 'unknown' : enabled ? 'on' : 'off' })
+    if (this.#disposed || generation !== this.#generation) return
+    // A manifest that shows the bundle enabled again superseded a queued
+    // disable (the user re-enabled it), so the restart notice retires.
+    const patch: Partial<TakeoverSwitchState> = { status: enabled === undefined ? 'unknown' : enabled ? 'on' : 'off' }
+    if (enabled === true) patch.restartRequired = false
+    this.#patch(patch)
   }
 
   /** Open the confirm bar (the switch was clicked while on). */
@@ -105,6 +113,7 @@ export class TakeoverSwitchController {
    *  right after; on `restart-required` it stays alive with a notice. */
   confirmDisable = async (): Promise<void> => {
     if (this.#face === undefined || this.#state.working || this.#state.status !== 'on') return
+    ++this.#generation
     this.#patch({ working: true, disableFailed: false })
     let response: { ok: boolean; value?: { application?: string } }
     try {
