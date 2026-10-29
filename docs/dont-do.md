@@ -31,3 +31,8 @@
 - **源码启动的宿主对 `setBundleEnabled` 不热重组**（写 manifest + pnpm 移除都执行了，运行中组合不变）：E2E 里"禁用即官方回归"的断言必须按"重启后回归"设计；生产桌面的 hmr 即时性需实机另验。
 - **UI 断言字符串先核单复数**：官方插件页条目是 "View Subagent"（单数）——正则按复数写导致 E3a 假阴性，差点误判"官方页未回归"。
 - **web-app 专属行在 headless 组合里不存在**：`subagent-model-selection-settings` 行由 web-app bundle 插入；headless E2E 需要它时用 `--patch` overlay `insert` 补行（profile 层的 config 行无法配置"更晚层才插入"的行）。
+
+## 发布门（v0.3.1 轮沉淀）
+
+- **tag 推送 = 发布动作本身**：release.yml 由 `v*` tag 触发并在数秒内 `npm publish`——0.3.0 在 AGENTS.md 人工实测门写入前 7 分钟被 tag 推送泄漏上 npm（latest 事后拨回 0.0.2，包体无法撤回）。推 tag 前必须逐字核对人工实测门条件；"先推 tag 再补验证"不存在。事后处置三选一（保留/deprecate/unpublish）只能由用户本人决策，执行侧不得代行。
+- **版本线以 registry 为准，不以本地认知为准**：发版决策前先 `npm view <pkg> versions` 实测——本轮计划原定 0.0.3，实测发现 0.3.0 已面世后改为 0.3.1 续接（低于已发布版本的号在任何 semver 区间下都无法安装覆盖）。

@@ -18,7 +18,7 @@ A standalone cordis plugin for [DeepSeek Harness](https://github.com/deepseek-ai
 | Read-only badge | Beside the child window's composer: `provider/model · effort` (two-segment coloring, full text on hover) |
 | Child-window identity | Inside the sibling-switcher popup, the row of the child you have open tints amber (layered on the official bold marker) |
 | Settings page | Settings → Subagent Boost: strategy / list (≤5) / fallback / advanced, fully graphical; saves hot-apply (no restart, no runtime-state reset) |
-| Official-page takeover | While enabled, the official "Subagents" settings page is hidden; its runtime-limits and model-selection cards are edited from this plugin's settings page through the same keys (single source of truth); disabling/uninstalling fully restores the official page with values intact |
+| Official-page takeover | While enabled, the official "Subagents" settings page is hidden; the **runtime-limits** card sits above the candidate list and the **official allowlist** section follows the strategy editor, with one Save committing the official and plugin namespaces in a fixed order (single source of truth); the header switch is the full takeover switch (off = plugin disabled, official page restored with values intact) |
 | Coverage | `subagent` delegations, Agent Teams teammates, delegations inside resumed sessions; top-level agents and (by default) fork children unaffected |
 
 ## Install from scratch (three steps)
@@ -64,18 +64,24 @@ Everything is editable on the settings page; the equivalent profile-patch layer:
 
 Full semantics: [docs/strategy.md](docs/strategy.md) and [docs/settings.md](docs/settings.md).
 
-## Takeover semantics (v0.3.0+)
+## Takeover semantics (v0.3.0+; refined in v0.3.1)
 
-- **Installed and enabled = takeover**: the official "Subagents" settings page (a pure edit surface) is hidden; its **runtime limits** (max recursion depth / parallel cap — still enforced by the official subagent runtime at delegation time; this plugin does not re-implement them) and the **official allowlist** ("allow the Agent to choose models for subagents" — feeding per-call explicit picks, pinned-route auto-adoption, and the empty-list fallback pool) are edited from the "Official subagent settings (taken over)" card on this plugin's settings page **through the same keys**: what you write is the official namespace value.
-- **Disable / uninstall = restore**: the official page returns immediately (hmr hot-applies, no restart) with the values intact. Existing child agents return to official resolution from their **next request**; in-flight requests are unaffected.
+- **Installed and enabled = takeover**: the official "Subagents" settings page (a pure edit surface) is hidden; its **runtime limits** (max recursion depth / parallel cap — still enforced by the official subagent runtime at delegation time; this plugin does not re-implement them) and the **official allowlist** ("allow the Agent to choose models for subagents" — feeding per-call explicit picks, pinned-route auto-adoption, and the empty-list fallback pool) are edited from this plugin's settings page **through the same keys**: what you write is the official namespace value. Since v0.3.1 both sections live on the main page — the limits card sits **above the candidate list** (mirroring the official page's layout) and the allowlist section follows the strategy editor; **one Save button** commits everything in a fixed order (limits → allowlist → plugin config), a failing namespace is named in the footer, and a namespace that goes unserved only blanks its own section and is excluded from the save (no deadlock while taken over).
+- **The header switch is the full takeover switch (v0.3.1)**: turning it off goes through a confirm bar (spelling out that this page unloads and re-enabling lives on the Plugins page); confirming disables the whole plugin through the plugin manager (bundle level) — the official "Subagents" settings page returns with every value intact. Production desktop/remote hosts apply it via hmr immediately; startup-profile hosts show a restart-required notice. The switch mirrors the bundle state and stays in sync with the Plugins page toggle. Compositions without the plugin-manager face degrade to a hint pointing at the Plugins page instead of a dead settings entry.
+- **Disable / uninstall = restore**: after the Plugins page toggle (or uninstall, or the confirmed header switch) the official page returns (hmr on production hosts; source-launched hosts need a restart) with the values intact. Existing child agents return to official resolution from their **next request**; in-flight requests are unaffected.
 - **Transparency & escape hatch**: the takeover is visible in the plugin page's overrides list; a user-layer patch `{id: ui-settings-subagent, disabled: false}` restores the official page at any time.
 - Only the edit surface is hidden: the `subagent` runtime row and the `subagent-model-selection-settings` service row are never touched (official presets hard-depend on the latter; disabling it removes the delegation tool itself).
 
-## Toggle & uninstall
+## Toggle & uninstall (v0.3.1)
 
-- **Plugin page switch**: Settings → Plugins → dsh-subagent-plus (writes `disabled: true` and hot-reloads).
-- **Soft off**: the settings-page master switch or `enabled: false` (hooks fully inert; routing is byte-identical to official; note this does NOT restore the official settings page — use the plugin-page switch or uninstall for that).
+- **Header takeover switch** (top-right of Settings → Subagent Boost): confirmed, it disables the plugin at bundle level and restores the official page; this settings page unloads with the plugin. Re-enable from the Plugins page.
+- **Plugin page switch**: Settings → Plugins → dsh-subagent-plus main toggle (the same bundle state as the header switch, synced both ways).
+- **Pause route assignment only** (first item in the Advanced fold, the former soft switch `enabled: false`): hooks fully inert, routing byte-identical to official; **the page takeover stays** (the official page remains hidden) — use the takeover switch, the plugin-page switch, or uninstall to restore it. A v0.0.2 `enabled: false` keeps its exact meaning after the upgrade.
 - **Uninstall**: remove on the plugin page — the official "Subagents" settings page and official routing both return.
+
+## Upgrade & version line (v0.3.1)
+
+- npm carries **0.3.0** (published 2026-10-28 by a tag push minutes before the mandatory user real-test gate existed; `latest` was moved back to 0.0.2). The line continues at **0.3.1**; `tests/manifest.spec.ts` enforces the published floor. Upgrading from 0.0.2 changes no config fields — only the header switch's meaning moves (the former soft switch now lives in Advanced) and every stored value stays compatible.
 
 ## Known behaviour & limitations (summary)
 
