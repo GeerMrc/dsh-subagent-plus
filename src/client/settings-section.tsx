@@ -12,12 +12,13 @@
  *
  * @module dsh-subagent-plus/client/settings-section
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { AllowlistSection, bannerStyle, LimitsSection, routeShort, Switch } from './official-sections.tsx'
 import type { TakeoverControllers } from './official-surfaces.js'
+import type { TakeoverSwitchController } from './takeover-switch.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
@@ -190,16 +191,42 @@ function EffortSelect(props: {
   return stale ? <span title={props.value} style={{ display: 'inline-flex' }}>{select}</span> : select
 }
 
+/** The confirm bar's bordered box, mirroring the banner's treatment. */
+const confirmBarStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: '0.5px solid var(--dsw-alias-state-warn-primary)',
+  background: 'var(--dsw-alias-bg-layer-2, transparent)',
+  fontSize: 12,
+  lineHeight: 1.6,
+  color: 'var(--dsw-alias-label-secondary)',
+}
+
+/** A plain inline text button (the confirm bar's cancel). */
+const cancelButtonStyle: CSSProperties = {
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--dsw-alias-label-secondary)',
+  cursor: 'pointer',
+  fontSize: 13,
+  padding: '6px 10px',
+}
+
 /** Presentation component; every action is a controller call, every string a locale key.
- *  The page shell (header, takeover banner, limits card, single footer) renders
+ *  The page shell (header, takeover switch, banner, limits card, single footer) renders
  *  while any section is servable: the own-namespace branch only gates the
  *  strategy editor, never the absorbed official sections (T7 — no deadlock
  *  while the official page is hidden). */
-export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; official: TakeoverControllers; save: UnifiedSaveController }) {
+export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; official: TakeoverControllers; save: UnifiedSaveController; takeoverSwitch: TakeoverSwitchController }) {
   const { t, controller, official, save } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
   const limits = useSyncExternalStore(official.limits.subscribe, official.limits.snapshot)
   const allowlist = useSyncExternalStore(official.allowlist.subscribe, official.allowlist.snapshot)
+  const switchState = useSyncExternalStore(props.takeoverSwitch.subscribe, props.takeoverSwitch.snapshot)
   const saveState = useSyncExternalStore(save.subscribe, save.snapshot)
   const limitsDirty = limits.value !== undefined && limits.draft !== undefined
     && JSON.stringify(limits.value) !== JSON.stringify(limits.draft)
@@ -219,19 +246,44 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
         <div style={pageHeaderRowStyle}>
           <h3 style={pageHeadingStyle}>{t('title')}</h3>
           <span style={{ flex: 1 }} />
-          {state.draft !== undefined
+          {switchState.available
             ? (
               <Switch
-                checked={state.draft.enabled}
-                onChange={controller.setEnabled}
-                label={state.draft.enabled ? t('status.active') : t('status.disabled')}
-                title={t('status.officialNote')}
+                checked={switchState.status !== 'off'}
+                onChange={checked => {
+                  // Turning off goes through the confirm bar; turning back on
+                  // is the Plugins page's job (the bundle is unloaded by then).
+                  if (!checked) props.takeoverSwitch.requestDisable()
+                }}
+                label={t('switch.aria')}
+                title={t('switch.title')}
               />
               )
             : null}
         </div>
         <p style={pageDescriptionStyle}>{t('description')}</p>
       </header>
+      {switchState.confirming
+        ? (
+          <div style={confirmBarStyle} role="alertdialog" aria-label={t('switch.aria')}>
+            <span style={{ flex: 1, minWidth: 200 }}>{t('switch.confirmText')}</span>
+            <button
+              type="button"
+              style={saveButtonStyle(switchState.working)}
+              disabled={switchState.working}
+              onClick={() => { void props.takeoverSwitch.confirmDisable() }}
+            >
+              {t('switch.confirmOff')}
+            </button>
+            <button type="button" style={cancelButtonStyle} onClick={() => { props.takeoverSwitch.cancel() }}>
+              {t('switch.cancel')}
+            </button>
+          </div>
+          )
+        : null}
+      {switchState.restartRequired ? <p style={statusTextStyle('warn')}>{t('switch.restartRequired')}</p> : null}
+      {switchState.disableFailed ? <p style={invalidStyle}>{t('switch.failed')}</p> : null}
+      {!switchState.available ? <p style={hintStyle}>{t('switch.unavailableHint')}</p> : null}
       <p style={bannerStyle}>{t('takeover.banner')}</p>
       <LimitsSection state={limits} controller={official.limits} t={t} />
       {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
@@ -434,6 +486,7 @@ function Editor({ state, controller, t }: EditorProps) {
         {advancedOpen
           ? (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <AdvancedToggle title={t('advanced.pauseAssignment')} help={t('advanced.pauseAssignmentHelp')} checked={draft.enabled} onChange={controller.setEnabled} />
               <AdvancedToggle title={t('advanced.respectExplicit')} help={t('advanced.respectExplicitHelp')} checked={draft.respectExplicit} onChange={controller.setRespectExplicit} />
               <AdvancedToggle title={t('advanced.showNotice')} help={t('advanced.showNoticeHelp')} checked={draft.showNotice} onChange={controller.setShowNotice} />
               <AdvancedToggle title={t('advanced.pinForkChildren')} help={t('advanced.pinForkChildrenHelp')} checked={draft.pinForkChildren} onChange={controller.setPinForkChildren} />
@@ -483,8 +536,8 @@ function routeFromValue(state: SettingsUiState, value: string): RouteOption | nu
 }
 
 /** Bind factory closing over the controllers, mirroring the badge registration. */
-export function bindSettingsSection(controller: SettingsSectionController, official: TakeoverControllers, save: UnifiedSaveController) {
+export function bindSettingsSection(controller: SettingsSectionController, official: TakeoverControllers, save: UnifiedSaveController, takeoverSwitch: TakeoverSwitchController) {
   return function BoundSettingsSection(props: PropsLocale<typeof NS>) {
-    return <SettingsSection {...props} controller={controller} official={official} save={save} />
+    return <SettingsSection {...props} controller={controller} official={official} save={save} takeoverSwitch={takeoverSwitch} />
   }
 }
