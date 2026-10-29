@@ -251,3 +251,79 @@ export class OfficialLimitsController extends NamespaceFormController<OfficialLi
     this.setInvalid(this.#depthInvalid || this.#activeInvalid)
   }
 }
+
+
+/** Read-only view of the official model-selection allowlist — the list this
+ *  page neither edits nor displays as an editor (ADR 0003), but which two
+ *  bridges still consume (auto-adoption of the first entry with an empty
+ *  pinned route; the empty-candidate fallback pool). The status line makes
+ *  that hidden dataset visible: its size and first entry, or its emptiness.
+ *  No draft, no save — a subscriber, not an editor. */
+export interface OfficialAllowlistView {
+  enabled: boolean
+  allowedModels: { provider: string; model: string }[]
+}
+
+/** Render state for the read-only official-list status line. */
+export interface OfficialAllowlistStatusState {
+  status: 'loading' | 'ready' | 'unavailable'
+  /** Ready but unrecognizable shape — the line renders nothing. */
+  valueInvalid: boolean
+  /** Entries in the official list; 0 when empty or unrecognizable. */
+  count: number
+  /** The first entry, exactly what auto-adoption would pick. */
+  first: { provider: string; model: string } | undefined
+}
+
+function isAllowlistView(value: unknown): value is OfficialAllowlistView {
+  return typeof value === 'object' && value !== null
+    && typeof (value as OfficialAllowlistView).enabled === 'boolean'
+    && Array.isArray((value as OfficialAllowlistView).allowedModels)
+}
+
+export class OfficialAllowlistStatus {
+  readonly #form: SettingsFormPort
+  readonly #listeners = new Set<() => void>()
+  #state: OfficialAllowlistStatusState
+  #unsubscribe: (() => void) | undefined
+  #disposed = false
+
+  constructor(form: SettingsFormPort) {
+    this.#form = form
+    this.#state = { status: 'loading', valueInvalid: false, count: 0, first: undefined }
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
+  }
+
+  snapshot = (): OfficialAllowlistStatusState => this.#state
+
+  dispose = (): void => {
+    this.#disposed = true
+    this.#unsubscribe?.()
+    this.#listeners.clear()
+  }
+
+  init = (): void => {
+    if (this.#unsubscribe !== undefined) return
+    this.#unsubscribe = this.#form.subscribe(() => { this.#sync() })
+    this.#sync()
+  }
+
+  #sync = (): void => {
+    const snapshot = this.#form.getSnapshot()
+    const status = snapshot.status === 'ready' ? 'ready' : snapshot.status === 'loading' ? 'loading' : 'unavailable'
+    const value = snapshot.status === 'ready' && isAllowlistView(snapshot.value) ? snapshot.value : undefined
+    const list = value?.allowedModels.filter(entry =>
+      typeof entry?.provider === 'string' && typeof entry?.model === 'string') ?? []
+    this.#state = {
+      status,
+      valueInvalid: snapshot.status === 'ready' && value === undefined,
+      count: list.length,
+      first: list[0] !== undefined ? { provider: list[0].provider, model: list[0].model } : undefined,
+    }
+    for (const listener of this.#listeners) listener()
+  }
+}

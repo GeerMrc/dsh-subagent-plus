@@ -17,7 +17,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
-import type { OfficialLimitsController } from './official-surfaces.js'
+import type { OfficialAllowlistStatus, OfficialAllowlistStatusState, OfficialLimitsController } from './official-surfaces.js'
 import type { TakeoverSwitchController } from './takeover-switch.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
@@ -246,10 +246,11 @@ function Switch({ checked, onChange, label, title }: { checked: boolean; onChang
  *  footer) renders while any section is servable: the own-namespace branch only
  *  gates the strategy half of the merged card, never the limits block (T7 — no
  *  deadlock while the official page is hidden). */
-export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; save: UnifiedSaveController; takeoverSwitch: TakeoverSwitchController }) {
+export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; officialList: OfficialAllowlistStatus; save: UnifiedSaveController; takeoverSwitch: TakeoverSwitchController }) {
   const { t, controller, save } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
   const limitsState = useSyncExternalStore(props.limits.subscribe, props.limits.snapshot)
+  const officialListState = useSyncExternalStore(props.officialList.subscribe, props.officialList.snapshot)
   const switchState = useSyncExternalStore(props.takeoverSwitch.subscribe, props.takeoverSwitch.snapshot)
   const saveState = useSyncExternalStore(save.subscribe, save.snapshot)
   const limitsDirty = limitsState.value !== undefined && limitsState.draft !== undefined
@@ -316,7 +317,7 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
               ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
               : state.draft === undefined
                 ? <p style={hintStyle}>…</p>
-                : <EditorRoutes state={state} controller={controller} t={t} />}
+                : <EditorRoutes state={state} controller={controller} officialList={officialListState} t={t} />}
         </div>
       </section>
       {ownReady ? <EditorBelow state={state} controller={controller} t={t} /> : null}
@@ -347,7 +348,8 @@ type EditorProps = {
 /** The strategy half of the merged card: the candidate/pinned header row,
  *  the route list, the add row, and the strategy row. No card wrapper — the
  *  merged card in SettingsSection owns the single border. */
-function EditorRoutes({ state, controller, t }: EditorProps) {
+function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStatusState }) {
+  const { state, controller, t, officialList } = props
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -496,7 +498,26 @@ function EditorRoutes({ state, controller, t }: EditorProps) {
               )
             : null}
         </div>
+
+        <OfficialListLine state={officialList} t={t} />
     </>
+  )
+}
+
+/** The read-only official-list status line: what the auto-adopt and
+ *  fallback-pool bridges actually see (ADR 0003 made the list invisible —
+ *  this line is its only window, empty state included). */
+function OfficialListLine({ state, t }: { state: OfficialAllowlistStatusState; t: PropsLocale<typeof NS>['t'] }) {
+  if (state.status !== 'ready' || state.valueInvalid) return null
+  if (state.count === 0 || state.first === undefined) {
+    return <p style={hintStyle}>{t('takeover.officialListEmpty')}</p>
+  }
+  return (
+    <p style={hintStyle}>
+      {t('takeover.officialListSome')
+        .replace('{n}', String(state.count))
+        .replace('{route}', `${state.first.provider}/${state.first.model}`)}
+    </p>
   )
 }
 
@@ -572,8 +593,8 @@ function routeFromValue(state: SettingsUiState, value: string): RouteOption | nu
 }
 
 /** Bind factory closing over the controllers, mirroring the badge registration. */
-export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, save: UnifiedSaveController, takeoverSwitch: TakeoverSwitchController) {
+export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, officialList: OfficialAllowlistStatus, save: UnifiedSaveController, takeoverSwitch: TakeoverSwitchController) {
   return function BoundSettingsSection(props: PropsLocale<typeof NS>) {
-    return <SettingsSection {...props} controller={controller} limits={limits} save={save} takeoverSwitch={takeoverSwitch} />
+    return <SettingsSection {...props} controller={controller} limits={limits} officialList={officialList} save={save} takeoverSwitch={takeoverSwitch} />
   }
 }

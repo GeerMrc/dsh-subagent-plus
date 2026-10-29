@@ -29,7 +29,9 @@ import type { CatalogGroup } from './settings-controller.js'
 import { PinBadge } from './badge.tsx'
 import { en, NS, zh } from './locales.ts'
 import {
+  OfficialAllowlistStatus,
   OfficialLimitsController,
+  type OfficialAllowlistView,
   type OfficialLimitsValue,
 } from './official-surfaces.ts'
 import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.js'
@@ -105,6 +107,9 @@ export function apply(ctx: Context): void {
   // restores the official page with these values. The model-selection
   // allowlist has no editing face: the candidate list is the replacement.
   const limits = new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent')))
+  // Read-only window onto the hidden official allowlist (ADR 0003): the
+  // status line shows what the auto-adopt / fallback-pool bridges see.
+  const officialList = new OfficialAllowlistStatus(asFormPort(ctx.configForms.get<OfficialAllowlistView>('subagent-model-selection-settings')))
   // One footer button, fixed commit order: the official limits namespace
   // first, the plugin's own form last.
   const save = new UnifiedSaveController([
@@ -125,7 +130,7 @@ export function apply(ctx: Context): void {
     void takeoverSwitch.refresh()
     return () => { for (const dispose of disposers) dispose() }
   }, 'dsh-subagent-plus: takeover switch state')
-  ctx.effect(() => () => { controller.dispose(); limits.dispose(); save.dispose(); takeoverSwitch.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
+  ctx.effect(() => () => { controller.dispose(); limits.dispose(); officialList.dispose(); save.dispose(); takeoverSwitch.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
   // The catalogue is not part of the settings document: adapters come and go,
   // and a commit elsewhere can change which routes exist.
   ctx.effect(() => ctx.remote.$on('llm/adapters-updated', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: adapter invalidations')
@@ -137,12 +142,13 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.configForms.whileServed([NS], () => {
     controller.init()
     limits.init()
+    officialList.init()
     return ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: NS,
       order: 17,
       label: () => t('nav'),
       locale: NS,
-    }, bindSettingsSection(controller, limits, save, takeoverSwitch)))
+    }, bindSettingsSection(controller, limits, officialList, save, takeoverSwitch)))
   }), 'dsh-subagent-plus: settings section')
 }

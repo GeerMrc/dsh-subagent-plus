@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isLimitsValue,
   NamespaceFormController,
+  OfficialAllowlistStatus,
   OfficialLimitsController,
   parseLimitText,
   type FieldSetOp,
@@ -266,5 +267,47 @@ describe('T7 per-namespace availability (independent sections)', () => {
     expect(state.status).toBe('ready')
     expect(state.value).toEqual({ maxDepth: 3, maxActiveSubagents: 2 })
     expect(state.draft).toEqual({ maxDepth: 3, maxActiveSubagents: 2 })
+  })
+})
+
+describe('OfficialAllowlistStatus (read-only view of the hidden official list)', () => {
+  function statusHarness(value: unknown): { status: OfficialAllowlistStatus; form: FakeNsForm } {
+    const form = new FakeNsForm(value)
+    const status = new OfficialAllowlistStatus(form)
+    status.init()
+    return { status, form }
+  }
+
+  it('mirrors the committed list read-only: count and first entry, no draft surface', () => {
+    const { status } = statusHarness({ enabled: true, allowedModels: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8' },
+    ] })
+    const view = status.snapshot()
+    expect(view.status).toBe('ready')
+    expect(view.count).toBe(2)
+    expect(view.first).toEqual({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+    expect('draft' in view).toBe(false)
+    expect(typeof (status as { save?: unknown }).save).toBe('undefined')
+  })
+
+  it('reports an empty list as count 0', () => {
+    const { status } = statusHarness({ enabled: false, allowedModels: [] })
+    expect(status.snapshot()).toMatchObject({ status: 'ready', count: 0, first: undefined })
+  })
+
+  it('follows live updates and flips to unavailable with the namespace', () => {
+    const { status, form } = statusHarness({ enabled: true, allowedModels: [{ provider: 'sz', model: 'm' }] })
+    form.setValue({ enabled: true, allowedModels: [] })
+    expect(status.snapshot().count).toBe(0)
+    form.setStatus('unavailable')
+    expect(status.snapshot().status).toBe('unavailable')
+    form.setStatus('ready')
+    expect(status.snapshot().count).toBe(0)
+  })
+
+  it('marks an unrecognizable shape valueInvalid and exposes nothing', () => {
+    const { status } = statusHarness({ something: 'else' })
+    expect(status.snapshot()).toMatchObject({ status: 'ready', count: 0, valueInvalid: true })
   })
 })
