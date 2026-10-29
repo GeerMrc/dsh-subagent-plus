@@ -60,7 +60,7 @@ function Info({ label, text }: { label: string; text: string }) {
 }
 
 /** One section's header row: title + hover help + the section's one-shot feedback. */
-export function SectionHeader(props: { title: string; help: string; saved?: boolean; savedLabel: string }) {
+function SectionHeader(props: { title: string; help: string; saved?: boolean; savedLabel: string }) {
   return (
     <div style={cardHeaderRowStyle}>
       <h4 style={cardHeadingStyle}>{props.title}</h4>
@@ -72,7 +72,7 @@ export function SectionHeader(props: { title: string; help: string; saved?: bool
 }
 
 /** The status branches every official section shares (loading / unavailable / invalid). */
-export function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: PropsLocale<typeof NS>['t'] }) {
+function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: PropsLocale<typeof NS>['t'] }) {
   if (state.status === 'unavailable') return <p style={hintStyle}>{t('takeover.nsUnavailable')}</p>
   if (state.valueInvalid) return <p style={invalidStyle}>{t('takeover.valueInvalid')}</p>
   return null

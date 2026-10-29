@@ -21,7 +21,7 @@
   表现为高级项关闭 + 页头接管中）。
 - chore(deps): 全部 @deepseek-ai/dsh-* devDeps 对齐 0.2.1-rc.3（用户桌面
   实际运行版本；peer 区间本就覆盖）；新增 dsh-plugin-manager types 依赖以
-  解析 `plugin-manager/changed` 事件键类型。typecheck/181 用例/build 全绿。
+  解析 `plugin-manager/changed` 事件键类型。typecheck/183 用例/build 全绿。
 - 已知事实：npm 上存在 0.3.0（2026-10-28 误发布，latest 仍指 0.0.2）；本
   版本线自 0.3.1 起续接其上，manifest.spec 增加版本下限守卫防回退。
 - 留待：DOM 渲染级测试仍为既有技术债；Flow E 真机演练见 docs/e2e-manual.md。
