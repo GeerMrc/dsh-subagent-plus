@@ -532,6 +532,64 @@ describe('configuration gates (structural fail-loud, cross-field degrade)', () =
   })
 })
 
+describe('pinned route failure hands over to the fallback (R9)', () => {
+  const pinnedWithFallback = (overrides: Partial<plugin.PinConfig> = {}): plugin.PinConfig => ({
+    ...spreadConfig({
+      strategy: 'pinned',
+      provider: 'sz',
+      model: 'Qwen3.8-27B-FP8',
+      priority: [],
+      fallbackProvider: 'hh',
+      fallbackModel: 'Qwen3.8-27B-FP8',
+    }),
+    ...overrides,
+  })
+
+  it('routes children to the fallback while the pinned route is cooling', async () => {
+    const ctx = await spreadContext(pinnedWithFallback())
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
+    // The same child's next request also lands on the fallback.
+    await expect(dispatch(ctx, child)).resolves.toEqual(hh)
+  })
+
+  it('falls back when the pinned route is unregistered and failOpen skips it', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, pinnedWithFallback())
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
+  })
+
+  it('keeps the cooling pinned route when the fallback is unusable too', async () => {
+    const ctx = await spreadContext(pinnedWithFallback())
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await dispatchFailure(ctx, newChild(), 'hh', 'SERVER', 503)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+  })
+
+  it('never hands over on health when cooldownMs is 0', async () => {
+    const ctx = await spreadContext(pinnedWithFallback({ cooldownMs: 0 }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+  })
+
+  it('notifies truthfully when the fallback takes over a cooling pin', async () => {
+    const ctx = await spreadContext(pinnedWithFallback({ showNotice: true }))
+    const child = newChild()
+    await dispatch(ctx, child)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    const notice = await dispatchPreStep(ctx, newChild())
+    expect(noticeText(notice)).toBe('[模型钉定兜底 model pin fallback: 钉定路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 hh/Qwen3.8-27B-FP8｜pinned route sz/Qwen3.8-27B-FP8 unavailable, runs fallback hh/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+  })
+})
+
 describe('fallback route (adjudication after candidates)', () => {
   const zai = { provider: 'zai', model: 'glm-5.3' }
 

@@ -61,6 +61,7 @@ import {
   fallbackNotice,
   fallbackRouteOf,
   pinnedNotice,
+  pinFallbackNotice,
   pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
@@ -213,7 +214,12 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const failureClass = classifyFailure(failure.code, failure.status)
     if (failureClass === 'ignore') return
     const fallback = fallbackRouteOf(config)
-    if (!candidatesOf(config).some(route => route.provider === provider) && fallback?.provider !== provider) return
+    const failurePlan = resolveStrategyPlan(config)
+    const failurePin = failurePlan.kind === 'pinned' ? resolvePin(config) : undefined
+    // The provider gate covers every route this configuration can assign:
+    // candidates, the fallback, and — under the pinned strategy — the pin.
+    if (!candidatesOf(config).some(route => route.provider === provider)
+      && fallback?.provider !== provider && failurePin?.provider !== provider) return
     const now = Date.now()
     const until = now + Math.max(failure.providerRetryAfterMs ?? 0, config.cooldownMs)
     if (failureClass === 'sticky-provider') {
@@ -264,6 +270,19 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       if (pin !== undefined) {
         const override = pinnedRoute(resolved, pin)
         if (override !== undefined) {
+          // An unusable pin (unregistered under failOpen, or cooling while a
+          // fallback is usable) hands over to the fallback — the same
+          // "configured fallback always backs up" semantics as the spread
+          // strategies; with no usable fallback the pin stays (all-dead keeps
+          // the assigned route, like a spread child keeps its sticky one).
+          const pinFallback = async (verb: string): Promise<LlmCallConfig | undefined> => {
+            const fallback = await usableFallbackOf(config)
+            if (fallback === undefined) return undefined
+            const fallbackOverride = pinnedRoute(resolved, fallback)
+            if (fallbackOverride === undefined) return undefined
+            logRouteOnce(ctx, agent, resolved, fallbackOverride, verb)
+            return applyOverride(resolved, fallbackOverride)
+          }
           if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
             // One line per lifetime: an unregistered pin fails every request,
             // and the registration cache below memoizes only successes, so
@@ -273,10 +292,14 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
               unregisteredPinWarned = true
               ctx.logger.warn(
                 `dsh-subagent-plus: pinned route "${routeId(pin)}" is not registered; `
-                + `child requests keep their resolved route`,
+                + `child requests fall back or keep their resolved route`,
               )
             }
-            return resolved
+            return await pinFallback('fallback-routed (pin unavailable)') ?? resolved
+          }
+          if (!healthyNow(config)(pin)) {
+            const moved = await pinFallback('fallback-routed (pin cooling)')
+            if (moved !== undefined) return moved
           }
           logRouteOnce(ctx, agent, resolved, override, 'pinned')
           return applyOverride(resolved, override)
@@ -330,12 +353,31 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       let text: string | undefined
       let target: PinRoute | undefined
       if (pin !== undefined) {
-        target = pin
-        // Registration mirrors the request-side failOpen check: a skipped pin
-        // must not be claimed as the running route.
-        text = config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)
-          ? pinSkippedNotice(routeId(pin))
-          : pinnedNotice(routeId(pin))
+        // Mirrors the request-side usability decision: an unusable pin
+        // (unregistered under failOpen, or cooling) with a usable fallback
+        // must be reported as the fallback actually running.
+        if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
+          const fallback = await usableFallbackOf(config)
+          if (fallback !== undefined) {
+            target = fallback
+            text = pinFallbackNotice(routeId(pin), routeId(fallback))
+          } else {
+            target = pin
+            text = pinSkippedNotice(routeId(pin))
+          }
+        } else if (!healthyNow(config)(pin)) {
+          const fallback = await usableFallbackOf(config)
+          if (fallback !== undefined) {
+            target = fallback
+            text = pinFallbackNotice(routeId(pin), routeId(fallback))
+          } else {
+            target = pin
+            text = pinnedNotice(routeId(pin))
+          }
+        } else {
+          target = pin
+          text = pinnedNotice(routeId(pin))
+        }
       } else {
         const fallback = fallbackRouteOf(config)
         if (fallback !== undefined && healthyNow(config)(fallback)

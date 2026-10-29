@@ -9,6 +9,7 @@ import {
   fallbackNotice,
   fallbackRouteOf,
   pinnedNotice,
+  pinFallbackNotice,
   pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
@@ -324,6 +325,11 @@ describe('notice text (S-08 helpers)', () => {
   it('names the pinned route', () => {
     expect(pinnedNotice('sz/Qwen3.8-27B-FP8'))
       .toBe('[模型钉定 model pinned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8｜every request runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+  })
+
+  it('names the unusable pin and the fallback that took over', () => {
+    expect(pinFallbackNotice('sz/a', 'hh/b'))
+      .toBe('[模型钉定兜底 model pin fallback: 钉定路由 sz/a 当前不可用（冷却或未注册），本子智能体改用兜底 hh/b｜pinned route sz/a unavailable, runs fallback hh/b — dsh-subagent-plus]')
   })
 
   it('names the skipped pin and the kept resolved route', () => {

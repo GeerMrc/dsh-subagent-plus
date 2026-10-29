@@ -428,6 +428,17 @@ export function pinnedNotice(label: string): string {
 }
 
 /**
+ * Transcript notice for an unusable pinned route (cooling, or unregistered
+ * and skipped by failOpen) that handed the child over to the fallback.
+ * @param pinLabel - `provider/model` of the unusable pinned route.
+ * @param fallbackLabel - `provider/model` of the fallback now in use.
+ * @returns the bracketed one-line notice.
+ */
+export function pinFallbackNotice(pinLabel: string, fallbackLabel: string): string {
+  return `[模型钉定兜底 model pin fallback: 钉定路由 ${pinLabel} 当前不可用（冷却或未注册），本子智能体改用兜底 ${fallbackLabel}｜pinned route ${pinLabel} unavailable, runs fallback ${fallbackLabel} — dsh-subagent-plus]`
+}
+
+/**
  * Transcript notice for a pin that failOpen skipped because the route is not
  * registered: the child keeps its resolved route, so the notice names the skip
  * instead of claiming the unregistered pin runs.
