@@ -17,7 +17,7 @@
 | 勾 N 条 → 运行中改为空 | spread 策略且无 `priority` | 不分配，透传继承（一次 warn） |
 | 任意 | `subagent_fork` 子 Agent | 不受影响（`pinForkChildren` 默认 false；官方 KV cache 约束） |
 
-候选来源：`priority` 非空时用它（顺序即优先级）；否则读官方清单（**存储顺序** = 历史已存顺序 + 新勾选按点击顺序追加；与设置页显示顺序无关）。
+候选来源：`priority` 非空时用它（顺序即优先级）；轮询/随机策略下 `priority` 为空时读官方清单（**存储顺序** = 历史已存顺序 + 新勾选按点击顺序追加；与设置页显示顺序无关）；`priority` 策略空清单**不回落**官方清单（无候选的降级态，仅兜底可用）。
 
 ## 二、故障降级
 
@@ -65,7 +65,7 @@
 ## 四、可观测性
 
 - 子窗口琥珀色徽章显示该子 Agent **实际**路由（读 `request/header`），分配与 failover 自动跟随，无需客户端改动。
-- 转录提示：`[model assigned: every request from this child agent runs sz/… (strategy: round-robin, dsh-subagent-plus)]`；failover 后追加 `[model reassigned: route sz/… is cooling down (RATE_LIMIT); this child agent continues with hh/… (dsh-subagent-plus)]`。每子 Agent 每条文案只出现一次。
+- 转录提示（**中英双语单行**，v0.0.3）：`[模型指派 model assigned: 本子智能体所有请求运行 sz/…（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]`；failover 后追加 `[模型切换 model reassigned: sz/… 冷却中（RATE_LIMIT），本子智能体继续使用 hh/…｜sz/… cooling (RATE_LIMIT), continues hh/… — dsh-subagent-plus]`。钉定/兜底/failOpen 跳过为同格式变体。每子 Agent 每条文案只出现一次。
 - Host 日志：`assigned (round-robin) child agent onto hh/… (was zai/…)`、`route "sz/…" failed (RATE_LIMIT); cooling down for 120000ms`、`route "sz/…" is cooling down (…); child agent continues with "hh/…"`。
 - 转录 notice 的两个边角：同一步内连续多次重试触发多次 failover（A→B→C）时，转录只报告最后一跳（中间跳见 Host 日志）；子 Agent 最后一步之后才发生的 failover 不会落转录 notice（Host 日志仍在）。
 
@@ -78,5 +78,5 @@
 5. 流构造期的同步失败不经 `agent/request-error`，健康表学不到；未注册路由由 `failOpen` 预检跳过。
 6. `retryPolicy.mode: 'always'` 的 provider 会持续重试，重试的 `agent/request` 仍会被换到健康路由，无饿死。
 7. 子 Agent 中途 failover 需对已积累前缀重新 prefill；若首请求即失败则零代价。
-8. 官方 per-call 校验用会话组合时的清单快照，插件候选读 live 设置——运行中改清单可能分叉；授权仍以官方为准。
+8. 官方 per-call 校验用会话组合时的清单快照，插件候选读 live 设置——运行中改清单可能分叉；授权仍以官方为准。官方清单（ADR 0003 后无编辑面）现仅经本插件设置页的只读状态行可见（条数与首条；官方开关停用时明示两条桥接不取用）。
 9. 失败事件只带 provider 不带 model：模型取该子 Agent 的记忆路由（provider 一致时）或其会话最新 `request/header`；两者都取不到则不记账（debug 日志）。

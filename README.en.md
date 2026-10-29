@@ -50,16 +50,16 @@ Everything is editable on the settings page; the equivalent profile-patch layer:
 - id: dsh-subagent-plus
   name: dsh-subagent-plus
   config:
-    enabled: true            # master switch; off fully restores official behaviour
+    enabled: true            # soft switch: pauses route assignment only (takeover stays); full restore = header takeover switch or uninstall
     strategy: round-robin    # pinned | round-robin | random | priority
-    priority:                # candidate routes (≤5, order = priority; empty uses the official allowlist)
+    priority:                # candidate routes (≤5, order = priority; round-robin/random fall back to the official allowlist when empty; priority never does)
       - { provider: sz, model: Qwen3.8-27B-FP8, reasoningEffort: "" }
       - { provider: hh, model: Qwen3.8-27B-FP8, reasoningEffort: xhigh }
     fallbackProvider: ""     # fallback route (paired with fallbackModel; empty = off)
     fallbackModel: ""
     respectExplicit: false   # true = respect explicit per-call selections
-    cooldownMs: 120000       # failure cooldown; 0 disables health tracking
-    showNotice: true         # one transcript notice per child
+    cooldownMs: 120000       # failure cooldown; 0 disables health tracking (UI cap 86400000)
+    showNotice: true         # one transcript notice per child (bilingual zh + en line)
 ```
 
 Full semantics: [docs/strategy.md](docs/strategy.md) and [docs/settings.md](docs/settings.md).

@@ -50,16 +50,16 @@ dsh --profile desktop --dump-config | grep dsh-subagent-plus
 - id: dsh-subagent-plus
   name: dsh-subagent-plus
   config:
-    enabled: true            # 总开关；关闭即完整恢复官方行为
+    enabled: true            # 软开关：仅停用路由指派（接管保持）；完整恢复走页头完全接管开关或卸载
     strategy: round-robin    # pinned | round-robin | random | priority
-    priority:                # 候选路由（≤5，顺序即优先级；空则用官方授权清单）
+    priority:                # 候选路由（≤5，顺序即优先级；轮询/随机留空时回落官方授权清单，priority 策略不回落）
       - { provider: sz, model: Qwen3.8-27B-FP8, reasoningEffort: "" }
       - { provider: hh, model: Qwen3.8-27B-FP8, reasoningEffort: xhigh }
     fallbackProvider: ""     # 兜底路由（与 fallbackModel 成对；空=关）
     fallbackModel: ""
     respectExplicit: false   # true=尊重主 Agent 显式指派
-    cooldownMs: 120000       # 故障冷却；0=关闭健康跟踪
-    showNotice: true         # 子 Agent 转录内显示指派提示
+    cooldownMs: 120000       # 故障冷却；0=关闭健康跟踪（UI 层上限 86400000）
+    showNotice: true         # 子 Agent 转录内显示指派提示（中英双语单行）
 ```
 
 完整语义见 [docs/strategy.md](docs/strategy.md) 与 [docs/settings.md](docs/settings.md)。
