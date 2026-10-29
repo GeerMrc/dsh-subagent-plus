@@ -17,8 +17,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
-import type { OfficialAllowlistStatus, OfficialAllowlistStatusState, OfficialLimitsController } from './official-surfaces.js'
-import type { TakeoverSwitchController } from './takeover-switch.js'
+import type { OfficialLimitsController } from './official-surfaces.js'
 import { routeId } from '../pin.js'
 import { routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -200,32 +199,7 @@ function EffortSelect(props: {
   return stale ? <span title={props.value} style={{ display: 'inline-flex' }}>{select}</span> : select
 }
 
-/** The confirm bar's bordered box (the page's one boxed notice while confirming). */
-const confirmBarStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexWrap: 'wrap',
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: '0.5px solid var(--dsw-alias-state-warn-primary)',
-  background: 'var(--dsw-alias-bg-layer-2, transparent)',
-  fontSize: 12,
-  lineHeight: 1.6,
-  color: 'var(--dsw-alias-label-secondary)',
-}
-
-/** A plain inline text button (the confirm bar's cancel). */
-const cancelButtonStyle: CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--dsw-alias-label-secondary)',
-  cursor: 'pointer',
-  fontSize: 13,
-  padding: '6px 10px',
-}
-
-/** The 36×20 green-when-on switch (header takeover switch, advanced rows). */
+/** The 36×20 green-when-on switch (advanced rows). */
 function Switch({ checked, onChange, label, title, disabled }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string; disabled?: boolean }) {
   return (
     <button
@@ -245,16 +219,14 @@ function Switch({ checked, onChange, label, title, disabled }: { checked: boolea
 }
 
 /** Presentation component; every action is a controller call, every string a locale key.
- *  The page shell (header, takeover switch, merged limits+strategy card, single
- *  footer) renders while any section is servable: the own-namespace branch only
+ *  The page shell (header, merged limits+strategy card, single footer) renders
+ *  while any section is servable: the own-namespace branch only
  *  gates the strategy half of the merged card, never the limits block (T7 — no
  *  deadlock while the official page is hidden). */
-export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; officialList: OfficialAllowlistStatus; save: UnifiedSaveController; takeoverSwitch: TakeoverSwitchController }) {
+export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; save: UnifiedSaveController }) {
   const { t, controller, save } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
   const limitsState = useSyncExternalStore(props.limits.subscribe, props.limits.snapshot)
-  const officialListState = useSyncExternalStore(props.officialList.subscribe, props.officialList.snapshot)
-  const switchState = useSyncExternalStore(props.takeoverSwitch.subscribe, props.takeoverSwitch.snapshot)
   const saveState = useSyncExternalStore(save.subscribe, save.snapshot)
   const limitsDirty = limitsState.value !== undefined && limitsState.draft !== undefined
     && JSON.stringify(limitsState.value) !== JSON.stringify(limitsState.draft)
@@ -271,45 +243,9 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
       <header>
         <div style={pageHeaderRowStyle}>
           <h3 style={pageHeadingStyle}>{t('title')}</h3>
-          <span style={{ flex: 1 }} />
-          {switchState.available
-            ? (
-              <Switch
-                checked={switchState.status !== 'off'}
-                onChange={checked => {
-                  // Turning off goes through the confirm bar; turning back on
-                  // is the Plugins page's job (the bundle is unloaded by then).
-                  if (!checked) props.takeoverSwitch.requestDisable()
-                }}
-                label={t('switch.aria')}
-                title={t('switch.title')}
-              />
-              )
-            : null}
         </div>
         <p style={pageDescriptionStyle}>{t('description')}</p>
       </header>
-      {switchState.confirming
-        ? (
-          <div style={confirmBarStyle} role="alertdialog" aria-label={t('switch.aria')}>
-            <span style={{ flex: 1, minWidth: 200 }}>{t('switch.confirmText')}</span>
-            <button
-              type="button"
-              style={saveButtonStyle(switchState.working)}
-              disabled={switchState.working}
-              onClick={() => { void props.takeoverSwitch.confirmDisable() }}
-            >
-              {t('switch.confirmOff')}
-            </button>
-            <button type="button" style={cancelButtonStyle} onClick={() => { props.takeoverSwitch.cancel() }}>
-              {t('switch.cancel')}
-            </button>
-          </div>
-          )
-        : null}
-      {switchState.restartRequired ? <p style={statusTextStyle('warn')}>{t('switch.restartRequired')}</p> : null}
-      {switchState.disableFailed ? <p style={invalidStyle}>{t('switch.failed')}</p> : null}
-      {!switchState.available ? <p style={hintStyle}>{t('switch.unavailableHint')}</p> : null}
       {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
       <section style={cardStyle} aria-labelledby="dsmp-limits">
         <LimitsBlock state={limitsState} controller={props.limits} t={t} />
@@ -320,7 +256,7 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
               ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
               : state.draft === undefined
                 ? <p style={hintStyle}>…</p>
-                : <EditorRoutes state={state} controller={controller} officialList={officialListState} t={t} />}
+                : <EditorRoutes state={state} controller={controller} t={t} />}
         </div>
       </section>
       {ownReady ? <EditorBelow state={state} controller={controller} t={t} /> : null}
@@ -351,8 +287,8 @@ type EditorProps = {
 /** The strategy half of the merged card: the candidate/pinned header row,
  *  the route list, the add row, and the strategy row. No card wrapper — the
  *  merged card in SettingsSection owns the single border. */
-function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStatusState }) {
-  const { state, controller, t, officialList } = props
+function EditorRoutes(props: EditorProps) {
+  const { state, controller, t } = props
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -502,30 +438,10 @@ function EditorRoutes(props: EditorProps & { officialList: OfficialAllowlistStat
             : null}
         </div>
 
-        <OfficialListLine state={officialList} t={t} />
     </>
   )
 }
 
-/** The read-only official-list status line: what the auto-adopt and
- *  fallback-pool bridges actually see (ADR 0003 made the list invisible —
- *  this line is its only window, empty state included). */
-function OfficialListLine({ state, t }: { state: OfficialAllowlistStatusState; t: PropsLocale<typeof NS>['t'] }) {
-  if (state.status !== 'ready' || state.valueInvalid) return null
-  if (!state.enabled) {
-    return <p style={hintStyle}>{t('takeover.officialListDisabled').replace('{n}', String(state.count))}</p>
-  }
-  if (state.count === 0 || state.first === undefined) {
-    return <p style={hintStyle}>{t('takeover.officialListEmpty')}</p>
-  }
-  return (
-    <p style={hintStyle}>
-      {t('takeover.officialListSome')
-        .replace('{n}', String(state.count))
-        .replace('{route}', routeId(state.first))}
-    </p>
-  )
-}
 
 /** The merged card's page-level siblings: the advanced fold and the
  *  validation lines. */
@@ -598,8 +514,8 @@ function routeFromValue(state: SettingsUiState, value: string): RouteOption | nu
 }
 
 /** Bind factory closing over the controllers, mirroring the badge registration. */
-export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, officialList: OfficialAllowlistStatus, save: UnifiedSaveController, takeoverSwitch: TakeoverSwitchController) {
+export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, save: UnifiedSaveController) {
   return function BoundSettingsSection(props: PropsLocale<typeof NS>) {
-    return <SettingsSection {...props} controller={controller} limits={limits} officialList={officialList} save={save} takeoverSwitch={takeoverSwitch} />
+    return <SettingsSection {...props} controller={controller} limits={limits} save={save} />
   }
 }
