@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  isAllowlistValue,
   isLimitsValue,
   NamespaceFormController,
-  OfficialAllowlistController,
   OfficialLimitsController,
   parseLimitText,
   type FieldSetOp,
@@ -146,11 +144,9 @@ describe('NamespaceFormController (generic takeover contract)', () => {
 })
 
 describe('official value guards', () => {
-  it('recognizes limits and allowlist shapes', () => {
+  it('recognizes the limits shape', () => {
     expect(isLimitsValue({ maxDepth: 1, maxActiveSubagents: 8 })).toBe(true)
     expect(isLimitsValue({ maxDepth: 1 })).toBe(false)
-    expect(isAllowlistValue({ enabled: true, allowedModels: [{ provider: 'sz', model: 'm' }] })).toBe(true)
-    expect(isAllowlistValue({ enabled: true })).toBe(false)
   })
 })
 
@@ -220,67 +216,30 @@ describe('OfficialLimitsController (T2 same-key writes into the official namespa
   })
 })
 
-describe('OfficialAllowlistController (T3 same-key writes, stored routes preserved)', () => {
-  function allowlistHarness(initial: { enabled: boolean; allowedModels: { provider: string; model: string }[] }): { controller: OfficialAllowlistController; form: FakeNsForm } {
-    const form = new FakeNsForm({ enabled: initial.enabled, allowedModels: initial.allowedModels.map(route => ({ ...route })) })
-    const controller = new OfficialAllowlistController(form)
-    controller.init()
-    return { controller, form }
-  }
-
-  it('toggles route membership and the enabled flag, writing whole-key ops', async () => {
-    const { controller, form } = allowlistHarness({ enabled: true, allowedModels: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8' }] })
-    controller.toggleRoute({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
-    await controller.save()
-    expect(form.mutateCalls).toEqual([{
-      ops: [{ op: 'set', path: ['allowedModels'], value: [
-        { provider: 'sz', model: 'Qwen3.8-27B-FP8' },
-        { provider: 'hh', model: 'Qwen3.8-27B-FP8' },
-      ] }],
-      expectedRevision: 1,
-    }])
-    controller.toggleRoute({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
-    controller.setEnabled(false)
-    await controller.save()
-    expect((form.value as { enabled: boolean }).enabled).toBe(false)
-    expect((form.value as { allowedModels: unknown[] }).allowedModels).toEqual([{ provider: 'sz', model: 'Qwen3.8-27B-FP8' }])
-  })
-
-  it('never duplicates a route and preserves stored routes the catalogue lost', async () => {
-    const { controller, form } = allowlistHarness({ enabled: true, allowedModels: [{ provider: 'gone', model: 'old-model' }] })
-    controller.toggleRoute({ provider: 'gone', model: 'old-model' })
-    expect(controller.snapshot().draft?.allowedModels).toEqual([])
-    controller.toggleRoute({ provider: 'gone', model: 'old-model' })
-    // Back to exactly one entry — the toggle contract cannot manufacture duplicates.
-    expect(controller.snapshot().draft?.allowedModels).toEqual([{ provider: 'gone', model: 'old-model' }])
-    // Net-zero edits are not a diff: the draft equals the committed value, so
-    // save is a no-op and the stored (catalogue-lost) route survives verbatim.
-    await controller.save()
-    expect(form.mutateCalls).toEqual([])
-    expect((form.value as { allowedModels: unknown[] }).allowedModels).toEqual([{ provider: 'gone', model: 'old-model' }])
-  })
-})
-
 describe('T7 per-namespace availability (independent sections)', () => {
-  function takeoverHarness(): { limits: OfficialLimitsController; limitsForm: FakeNsForm; allowlist: OfficialAllowlistController; allowlistForm: FakeNsForm } {
+  function takeoverHarness(): { limits: OfficialLimitsController; limitsForm: FakeNsForm; probe: ProbeController; probeForm: FakeNsForm } {
     const limitsForm = new FakeNsForm({ maxDepth: 1, maxActiveSubagents: 8 })
-    const allowlistForm = new FakeNsForm({ enabled: true, allowedModels: [] })
+    const probeForm = new FakeNsForm({ enabled: true, count: 2 })
     const limits = new OfficialLimitsController(limitsForm)
-    const allowlist = new OfficialAllowlistController(allowlistForm)
+    const probe = new ProbeController(probeForm, {
+      guard: (candidate): candidate is ProbeValue => typeof (candidate as ProbeValue).enabled === 'boolean',
+      copy: source => ({ ...source }),
+      blocked: () => false,
+    })
     limits.init()
-    allowlist.init()
-    return { limits, limitsForm, allowlist, allowlistForm }
+    probe.init()
+    return { limits, limitsForm, probe, probeForm }
   }
 
   it('one namespace going unavailable flips only its own section; the other keeps editing and saving', async () => {
-    const { limits, limitsForm, allowlist, allowlistForm } = takeoverHarness()
+    const { limits, limitsForm, probe, probeForm } = takeoverHarness()
     limitsForm.setStatus('unavailable')
     expect(limits.snapshot().status).toBe('unavailable')
-    expect(allowlist.snapshot().status).toBe('ready')
-    // The served section still edits and lands its write in the official ns.
-    allowlist.setEnabled(false)
-    await allowlist.save()
-    expect((allowlistForm.value as { enabled: boolean }).enabled).toBe(false)
+    expect(probe.snapshot().status).toBe('ready')
+    // The served section still edits and lands its write in its namespace.
+    probe.setCount(7)
+    await probe.save()
+    expect((probeForm.value as ProbeValue).count).toBe(7)
     // The unserved section's save is inert.
     limits.setMaxDepth('4')
     limitsForm.setValue({ maxDepth: 1, maxActiveSubagents: 8 })
@@ -288,13 +247,13 @@ describe('T7 per-namespace availability (independent sections)', () => {
   })
 
   it('both namespaces unavailable leaves both sections unavailable (the card keeps rendering)', () => {
-    const { limits, limitsForm, allowlist, allowlistForm } = takeoverHarness()
+    const { limits, limitsForm, probe, probeForm } = takeoverHarness()
     limitsForm.setStatus('unavailable')
-    allowlistForm.setStatus('unavailable')
+    probeForm.setStatus('unavailable')
     expect(limits.snapshot().status).toBe('unavailable')
-    expect(allowlist.snapshot().status).toBe('unavailable')
+    expect(probe.snapshot().status).toBe('unavailable')
     expect(limits.snapshot().draft).toBeUndefined()
-    expect(allowlist.snapshot().draft).toBeUndefined()
+    expect(probe.snapshot().draft).toBeUndefined()
   })
 
   it('a namespace returning to service reloads the committed value as the fresh draft', () => {

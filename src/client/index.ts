@@ -29,11 +29,8 @@ import type { CatalogGroup } from './settings-controller.js'
 import { PinBadge } from './badge.tsx'
 import { en, NS, zh } from './locales.ts'
 import {
-  OfficialAllowlistController,
   OfficialLimitsController,
-  type OfficialAllowlistValue,
   type OfficialLimitsValue,
-  type TakeoverControllers,
 } from './official-surfaces.ts'
 import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.js'
 import { probePluginManagerFace, TakeoverSwitchController } from './takeover-switch.js'
@@ -103,19 +100,15 @@ export function apply(ctx: Context): void {
     },
   }
   const controller = new SettingsSectionController(form, catalog)
-  // Takeover surfaces (v0.3.0): the two official subagent namespaces this
-  // page absorbs while the official settings page row is disabled by the
-  // bundle patch. Same-key reads and writes through the shared config form —
-  // disabling this plugin restores the official page with these values.
-  const official: TakeoverControllers = {
-    limits: new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent'))),
-    allowlist: new OfficialAllowlistController(asFormPort(ctx.configForms.get<OfficialAllowlistValue>('subagent-model-selection-settings'))),
-  }
-  // One footer button, fixed commit order: the two official namespaces
+  // Takeover surface (ADR 0003): the runtime-limits namespace is absorbed
+  // into the settings card through the same keys — disabling this plugin
+  // restores the official page with these values. The model-selection
+  // allowlist has no editing face: the candidate list is the replacement.
+  const limits = new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent')))
+  // One footer button, fixed commit order: the official limits namespace
   // first, the plugin's own form last.
   const save = new UnifiedSaveController([
-    { key: 'limits', save: official.limits.save },
-    { key: 'allowlist', save: official.allowlist.save },
+    { key: 'limits', save: limits.save },
     { key: 'self', save: controller.save },
   ])
   // The header switch is bundle-level (D1): it disables the whole plugin and
@@ -132,7 +125,7 @@ export function apply(ctx: Context): void {
     void takeoverSwitch.refresh()
     return () => { for (const dispose of disposers) dispose() }
   }, 'dsh-subagent-plus: takeover switch state')
-  ctx.effect(() => () => { controller.dispose(); official.limits.dispose(); official.allowlist.dispose(); save.dispose(); takeoverSwitch.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
+  ctx.effect(() => () => { controller.dispose(); limits.dispose(); save.dispose(); takeoverSwitch.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
   // The catalogue is not part of the settings document: adapters come and go,
   // and a commit elsewhere can change which routes exist.
   ctx.effect(() => ctx.remote.$on('llm/adapters-updated', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: adapter invalidations')
@@ -143,14 +136,13 @@ export function apply(ctx: Context): void {
   // per-namespace (T7), independent of this plugin's namespace.
   ctx.effect(() => ctx.configForms.whileServed([NS], () => {
     controller.init()
-    official.limits.init()
-    official.allowlist.init()
+    limits.init()
     return ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: NS,
       order: 17,
       label: () => t('nav'),
       locale: NS,
-    }, bindSettingsSection(controller, official, save, takeoverSwitch)))
+    }, bindSettingsSection(controller, limits, save, takeoverSwitch)))
   }), 'dsh-subagent-plus: settings section')
 }

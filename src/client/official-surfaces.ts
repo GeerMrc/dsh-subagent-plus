@@ -1,19 +1,22 @@
 /**
- * Pure controllers for the two official subagent config namespaces this
- * plugin's settings page absorbs while the takeover is active (v0.3.0 T2/T3):
- * the runtime limits (`subagent`: maxDepth / maxActiveSubagents — still
- * enforced by the official subagent runtime, this page only owns the edit
- * surface through the same keys) and the model-selection allowlist
- * (`subagent-model-selection-settings`: enabled / allowedModels). Each
- * namespace is one revision-fenced draft editor over the host's shared config
- * form — same contract as the plugin's own form, so a value written here is
- * exactly what the official page would have written; disabling this plugin
- * restores the official page with the values intact.
+ * The controller for the one official config namespace this plugin's settings
+ * page absorbs while the takeover is active (v0.3.0 T2): the runtime limits
+ * (`subagent`: maxDepth / maxActiveSubagents — still enforced by the official
+ * subagent runtime, this page only owns the edit surface through the same
+ * keys). The namespace is one revision-fenced draft editor over the host's
+ * shared config form — same contract as the plugin's own form, so a value
+ * written here is exactly what the official page would have written;
+ * disabling this plugin restores the official page with the values intact.
  *
- * The controllers never disappear with a namespace (T7): a namespace the host
- * stops serving flips its own section to `unavailable` while the takeover card
- * itself keeps rendering, so an ns hiccup cannot flash the hidden official
- * page back into existence.
+ * The official model-selection allowlist has no editing face here (ADR 0003):
+ * the candidate list is the plugin's complete replacement for it, and the
+ * host half keeps only the read-only bridges (auto-adoption of its first
+ * entry, the empty-candidate fallback pool).
+ *
+ * The controller never disappears with the namespace (T7): a namespace the
+ * host stops serving flips only its own section to `unavailable` while the
+ * merged card keeps rendering, so an ns hiccup cannot flash the hidden
+ * official page back into existence.
  *
  * @module dsh-subagent-plus/client/official-surfaces
  */
@@ -31,44 +34,16 @@ export interface OfficialLimitsValue {
   maxActiveSubagents: number
 }
 
-/** One allowed child route of the official model-selection allowlist. */
-export interface AllowedModelRouteView {
-  /** Provider id. */
-  provider: string
-  /** Model id. */
-  model: string
-}
-
-/** Official `subagent-model-selection-settings` namespace value as this page edits it. */
-export interface OfficialAllowlistValue {
-  /** Whether newly composed top-level sessions receive model selection. */
-  enabled: boolean
-  /** Exact child LLM routes offered to the delegating model. */
-  allowedModels: AllowedModelRouteView[]
-}
-
-/** Structural guards narrowing an untyped form snapshot onto the official shapes. */
+/** Structural guard narrowing an untyped form snapshot onto the official shape. */
 export function isLimitsValue(value: unknown): value is OfficialLimitsValue {
   return typeof value === 'object' && value !== null
     && typeof (value as OfficialLimitsValue).maxDepth === 'number'
     && typeof (value as OfficialLimitsValue).maxActiveSubagents === 'number'
 }
 
-/** See {@link isLimitsValue}. */
-export function isAllowlistValue(value: unknown): value is OfficialAllowlistValue {
-  return typeof value === 'object' && value !== null
-    && typeof (value as OfficialAllowlistValue).enabled === 'boolean'
-    && Array.isArray((value as OfficialAllowlistValue).allowedModels)
-}
-
 /** Deep-copy the limits value (flat fields). */
 export function copyLimits(source: OfficialLimitsValue): OfficialLimitsValue {
   return { ...source }
-}
-
-/** Deep-copy the allowlist value (the route array is rebuilt entry by entry). */
-export function copyAllowlist(source: OfficialAllowlistValue): OfficialAllowlistValue {
-  return { enabled: source.enabled, allowedModels: source.allowedModels.map(route => ({ ...route })) }
 }
 
 /** Per-namespace render state: one status machine per official namespace. */
@@ -276,37 +251,4 @@ export class OfficialLimitsController extends NamespaceFormController<OfficialLi
   #publishValidity = (): void => {
     this.setInvalid(this.#depthInvalid || this.#activeInvalid)
   }
-}
-
-/**
- * The official model-selection allowlist as an editable section: the enabled
- * switch plus a route checklist writing the official
- * `subagent-model-selection-settings` namespace keys verbatim. Stored routes
- * that have left the catalogue stay checked and visible (marked unavailable)
- * so a catalogue hiccup never silently drops an authorized route.
- */
-export class OfficialAllowlistController extends NamespaceFormController<OfficialAllowlistValue> {
-  constructor(form: SettingsFormPort) {
-    super(form, { guard: isAllowlistValue, copy: copyAllowlist, blocked: () => false })
-  }
-
-  /** Toggle the official enabled flag. */
-  setEnabled = (enabled: boolean): void => {
-    this.edit(draft => { draft.enabled = enabled })
-  }
-
-  /** Toggle one route's membership; adding an existing route is a no-op. */
-  toggleRoute = (route: AllowedModelRouteView): void => {
-    this.edit(draft => {
-      const index = draft.allowedModels.findIndex(entry => entry.provider === route.provider && entry.model === route.model)
-      if (index >= 0) draft.allowedModels.splice(index, 1)
-      else draft.allowedModels.push({ provider: route.provider, model: route.model })
-    })
-  }
-}
-
-/** The official controllers the settings page edits alongside its own form. */
-export interface TakeoverControllers {
-  limits: OfficialLimitsController
-  allowlist: OfficialAllowlistController
 }

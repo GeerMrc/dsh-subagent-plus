@@ -16,8 +16,8 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties }
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
-import { AllowlistSection, bannerStyle, LimitsSection, routeShort, Switch } from './official-sections.tsx'
-import type { TakeoverControllers } from './official-surfaces.js'
+import { LimitsBlock } from './official-sections.tsx'
+import type { OfficialLimitsController } from './official-surfaces.js'
 import type { TakeoverSwitchController } from './takeover-switch.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
@@ -51,6 +51,8 @@ import {
   selectStyle,
   settingsCss,
   statusTextStyle,
+  switchStyle,
+  switchThumbStyle,
 } from './settings-styles.ts'
 
 /** One strategy id paired with its locale key. */
@@ -64,6 +66,11 @@ const STRATEGY_KEYS = [
 type StrategyId = typeof STRATEGY_KEYS[number][0]
 
 const routeValue = (route: RouteOption): string => `${route.provider}\0${route.model}`
+
+/** Short closed-box label (the browser-plus translate pattern): the select
+ *  stays compact; the full route rides the hover tooltip and the option title. */
+const routeShort = (route: { providerName: string; modelName: string }): string =>
+  `${route.providerName} · ${route.modelName}`
 
 /** Full route text for hover tooltips and option titles. */
 const routeFull = (route: { providerName: string; modelName: string; provider: string; model: string }): string =>
@@ -216,29 +223,44 @@ const cancelButtonStyle: CSSProperties = {
   padding: '6px 10px',
 }
 
+/** The 36×20 green-when-on switch (header takeover switch, advanced rows). */
+function Switch({ checked, onChange, label, title }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={title}
+      className="dsmp-switch"
+      style={switchStyle(checked)}
+      onClick={() => { onChange(!checked) }}
+    >
+      <span style={switchThumbStyle(checked)} />
+    </button>
+  )
+}
+
 /** Presentation component; every action is a controller call, every string a locale key.
- *  The page shell (header, takeover switch, banner, limits card, single footer) renders
- *  while any section is servable: the own-namespace branch only gates the
- *  strategy editor, never the absorbed official sections (T7 — no deadlock
- *  while the official page is hidden). */
-export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; official: TakeoverControllers; save: UnifiedSaveController; takeoverSwitch: TakeoverSwitchController }) {
-  const { t, controller, official, save } = props
+ *  The page shell (header, takeover switch, merged limits+strategy card, single
+ *  footer) renders while any section is servable: the own-namespace branch only
+ *  gates the strategy half of the merged card, never the limits block (T7 — no
+ *  deadlock while the official page is hidden). */
+export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; save: UnifiedSaveController; takeoverSwitch: TakeoverSwitchController }) {
+  const { t, controller, save } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
-  const limits = useSyncExternalStore(official.limits.subscribe, official.limits.snapshot)
-  const allowlist = useSyncExternalStore(official.allowlist.subscribe, official.allowlist.snapshot)
+  const limitsState = useSyncExternalStore(props.limits.subscribe, props.limits.snapshot)
   const switchState = useSyncExternalStore(props.takeoverSwitch.subscribe, props.takeoverSwitch.snapshot)
   const saveState = useSyncExternalStore(save.subscribe, save.snapshot)
-  const limitsDirty = limits.value !== undefined && limits.draft !== undefined
-    && JSON.stringify(limits.value) !== JSON.stringify(limits.draft)
-  const allowlistDirty = allowlist.value !== undefined && allowlist.draft !== undefined
-    && JSON.stringify(allowlist.value) !== JSON.stringify(allowlist.draft)
+  const limitsDirty = limitsState.value !== undefined && limitsState.draft !== undefined
+    && JSON.stringify(limitsState.value) !== JSON.stringify(limitsState.draft)
   const ownBlocked = state.structural.length > 0 || state.degraded.length > 0 || state.cooldownInvalid
   const ownDirty = state.value !== undefined && state.draft !== undefined
     && JSON.stringify(state.value) !== JSON.stringify(state.draft)
-  const anyDirty = limitsDirty || allowlistDirty || ownDirty
-  const anyBlocked = limits.invalid || ownBlocked
-  const sectionTitle = (key: string): string =>
-    key === 'limits' ? t('takeover.limitsTitle') : key === 'allowlist' ? t('takeover.allowlistTitle') : t('title')
+  const ownReady = state.status === 'ready' && !state.valueInvalid && state.draft !== undefined
+  const anyDirty = limitsDirty || ownDirty
+  const anyBlocked = limitsState.invalid || ownBlocked
+  const sectionTitle = (key: string): string => key === 'limits' ? t('takeover.limitsTitle') : t('title')
   return (
     <div data-dsmp-settings style={rootStyle}>
       <style>{settingsCss}</style>
@@ -284,17 +306,20 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
       {switchState.restartRequired ? <p style={statusTextStyle('warn')}>{t('switch.restartRequired')}</p> : null}
       {switchState.disableFailed ? <p style={invalidStyle}>{t('switch.failed')}</p> : null}
       {!switchState.available ? <p style={hintStyle}>{t('switch.unavailableHint')}</p> : null}
-      <p style={bannerStyle}>{t('takeover.banner')}</p>
-      <LimitsSection state={limits} controller={official.limits} t={t} />
       {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
-      {state.status === 'unavailable'
-        ? <p style={invalidStyle}>{t('status.unavailable')}</p>
-        : state.valueInvalid
-          ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
-          : state.draft === undefined
-            ? <p style={hintStyle}>…</p>
-            : <Editor state={state} controller={controller} t={t} />}
-      <AllowlistSection state={allowlist} controller={official.allowlist} routes={state.routes} t={t} />
+      <section style={cardStyle} aria-labelledby="dsmp-limits">
+        <LimitsBlock state={limitsState} controller={props.limits} t={t} />
+        <div style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {state.status === 'unavailable'
+            ? <p style={invalidStyle}>{t('status.unavailable')}</p>
+            : state.valueInvalid
+              ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
+              : state.draft === undefined
+                ? <p style={hintStyle}>…</p>
+                : <EditorRoutes state={state} controller={controller} t={t} />}
+        </div>
+      </section>
+      {ownReady ? <EditorBelow state={state} controller={controller} t={t} /> : null}
       <footer style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button
           type="button"
@@ -319,13 +344,14 @@ type EditorProps = {
   t: PropsLocale<typeof NS>['t']
 }
 
-function Editor({ state, controller, t }: EditorProps) {
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+/** The strategy half of the merged card: the candidate/pinned header row,
+ *  the route list, the add row, and the strategy row. No card wrapper — the
+ *  merged card in SettingsSection owns the single border. */
+function EditorRoutes({ state, controller, t }: EditorProps) {
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
   const pinnedRoute = state.routes.find(route => route.provider === draft.provider && route.model === draft.model) ?? null
-  const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
   const pinnedHover = pinnedRoute === null && draft.provider === ''
     ? undefined
     : state.routes.find(route => route.provider === draft.provider && route.model === draft.model) !== undefined || pinnedRoute !== null
@@ -334,8 +360,6 @@ function Editor({ state, controller, t }: EditorProps) {
 
   return (
     <>
-
-      <section style={cardStyle} aria-labelledby="dsmp-routes">
         <div style={cardHeaderRowStyle}>
           <h4 id="dsmp-routes" style={cardHeadingStyle}>
             {draft.strategy === 'pinned' ? t('strategy.pinnedRoute') : t('list.title')}
@@ -443,8 +467,19 @@ function Editor({ state, controller, t }: EditorProps) {
             {STRATEGY_KEYS.map(([id, key]) => <option key={id} value={id}>{t(key)}</option>)}
           </select>
         </div>
-      </section>
+    </>
+  )
+}
 
+/** The strategy card's page-level siblings: the fallback row, the advanced
+ *  fold, and the validation lines. */
+function EditorBelow({ state, controller, t }: EditorProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const draft = state.draft
+  if (draft === undefined) return null
+  const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
+  return (
+    <>
       <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={cardHeadingStyle}>{t('fallback.title')}</span>
         <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
@@ -536,8 +571,8 @@ function routeFromValue(state: SettingsUiState, value: string): RouteOption | nu
 }
 
 /** Bind factory closing over the controllers, mirroring the badge registration. */
-export function bindSettingsSection(controller: SettingsSectionController, official: TakeoverControllers, save: UnifiedSaveController, takeoverSwitch: TakeoverSwitchController) {
+export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, save: UnifiedSaveController, takeoverSwitch: TakeoverSwitchController) {
   return function BoundSettingsSection(props: PropsLocale<typeof NS>) {
-    return <SettingsSection {...props} controller={controller} official={official} save={save} takeoverSwitch={takeoverSwitch} />
+    return <SettingsSection {...props} controller={controller} limits={limits} save={save} takeoverSwitch={takeoverSwitch} />
   }
 }
