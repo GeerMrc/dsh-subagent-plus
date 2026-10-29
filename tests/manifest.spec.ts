@@ -43,11 +43,11 @@ describe('plugin identity manifest (R-02)', () => {
     expect(pkg.version).toBe(topEntry?.[1])
   })
 
-  it('never dips below an already-published npm version (0.3.0 is live)', () => {
-    // The takeover build leaked to npm as 0.3.0 (latest stays 0.0.2); the
-    // version line must continue above it — a lower number can never install
-    // over it through any semver range.
-    const [major, minor, patch] = pkg.version.split('.').map(Number)
-    expect(major === 0 && minor === 3 ? patch >= 1 : major > 0 || minor > 3).toBe(true)
+  it('stays on the 0.0.x release line above 0.0.2 (ADR 0004)', () => {
+    // The npm 0.3.0 package is an orphaned accidental publish (2026-10-28),
+    // not part of this product line; releases continue 0.0.2 -> 0.0.3 -> …
+    // and every version that ships has passed the user's real-test gate.
+    expect(pkg.version).toMatch(/^0\.0\.\d+$/)
+    expect(Number(pkg.version.split('.')[2])).toBeGreaterThan(2)
   })
 })

@@ -103,9 +103,9 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 
 断言纪律（dont-do 沉淀）：源码启动的宿主对 bundle 开关**不热重组**，E4/E5 必须按「重启后回归」设计；官方条目文案是单数 "Subagent"；web-app 专属行（ui-settings-subagent / subagent-model-selection-settings）在 headless 组合需 `--patch` overlay 补插。
 
-### 8.2 无浏览器降级流程（组合层断言，v0.3.1 已执行留证）
+### 8.2 无浏览器降级流程（组合层断言，v0.0.3 开发期已执行留证）
 
-浏览器不可用时的等价组合层验证（证据存 `dist-artifacts/e2e-v0.3.1/`）：
+浏览器不可用时的等价组合层验证（证据存 `dist-artifacts/` 下的 e2e 目录）：
 
 1. 按 §2 建隔离 profile → 启动 → `curl -c cookies -L "?token=…"` 取回 `index.html`
 2. **E1'**：模块表 `href="plugins/??…"` 中含 `dsh-subagent-plus/client.js` 且**不含** `@deepseek-ai/dsh-client-ui-settings-subagent/client.js`（官方页隐藏）

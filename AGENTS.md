@@ -15,7 +15,9 @@
 - **patch**（0.0.x）：缺陷修复、UI 打磨、文档——常态迭代。
 - **minor**（0.x.0）：新功能或行为面扩展；升 minor 须在 `docs/decisions/` 记录一条决策说明（轻量 ADR：背景/决策/影响）。
 - **非功能性变更不 bump**：纯文档、注释、重构（测试全绿且行为不变）不动版本号。
-- 同版本号重打包陷阱：`file:`/tarball 循环开发中同版本换包会被 pnpm 跳过——**内容变更必须先 bump 再 pack**；调试期确需同版本重装，删 `node_modules/<pkg>` 后 `pnpm install --force`（并 `pnpm store prune` 清缓存副本）。
+- **版本号只在发布时推进（2026-10-29 用户指令）**：一个细节完善/一轮打磨 ≠ 一次版本更新；日常轮次用规范 commit 管理，本地 tarball 迭代复用当前版本号。仅当用户批准发布（人工实测门通过）时才 bump → CHANGELOG 定稿 → 附注 tag，一次完成。
+- **产品线固定 0.0.x 连续递增**（0.0.2 → 0.0.3 → …）；npm 上的 0.3.0 为误发孤儿包（ADR 0004），不属于本线，禁止在其上续号或以任何 0.x/0.3.x 形式发布。
+- 同版本号重打包陷阱：`file:`/tarball 循环开发中同版本换包会被 pnpm 跳过——重装删 `node_modules/<pkg>` 后 `pnpm install --force`（并 `pnpm store prune` 清缓存副本），并用 grep 安装产物内容确认。
 
 ## 发版流程
 
