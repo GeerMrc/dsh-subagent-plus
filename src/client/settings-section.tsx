@@ -396,8 +396,10 @@ function EditorRoutes(props: EditorProps) {
             )}
 
         <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={cardHeadingStyle}>{t('strategy.label')}</span>
-          <Info label={t('strategy.help')} text={t('strategy.help')} delayMs={400} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+            <span style={cardHeadingStyle}>{t('strategy.label')}</span>
+            <Info label={t('strategy.help')} text={t('strategy.help')} delayMs={400} />
+          </span>
           <span style={{ flex: 1 }} />
           <select
             className="dsmp-select"
@@ -411,8 +413,10 @@ function EditorRoutes(props: EditorProps) {
         </div>
 
         <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={cardHeadingStyle}>{t('fallback.title')}</span>
-          <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+            <span style={cardHeadingStyle}>{t('fallback.title')}</span>
+            <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
+          </span>
           <span style={{ flex: 1 }} />
           <Tooltip label={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)} side="bottom" delayMs={200} maxWidth={360} portal>
             <select
@@ -470,8 +474,10 @@ function EditorBelow({ state, controller, t }: EditorProps) {
               <AdvancedToggle title={t('advanced.pinForkChildren')} help={t('advanced.pinForkChildrenHelp')} checked={draft.pinForkChildren} onChange={controller.setPinForkChildren} />
               <AdvancedToggle title={t('advanced.failOpen')} help={t('advanced.failOpenHelp')} checked={draft.failOpen} onChange={controller.setFailOpen} />
               <div style={advancedRowStyle}>
-                <span style={advancedTitleStyle}>{t('advanced.cooldownMs')}</span>
-                <Info label={t('advanced.cooldownMsHelp')} text={t('advanced.cooldownMsHelp')} delayMs={400} />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+                  <span style={advancedTitleStyle}>{t('advanced.cooldownMs')}</span>
+                  <Info label={t('advanced.cooldownMsHelp')} text={t('advanced.cooldownMsHelp')} delayMs={400} />
+                </span>
                 <span style={{ flex: 1 }} />
                 <input
                   className={`dsmp-input${state.cooldownInvalid ? ' dsmp-invalid' : ''}`}
@@ -499,8 +505,10 @@ function EditorBelow({ state, controller, t }: EditorProps) {
 function AdvancedToggle(props: { title: string; help: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return (
     <div style={{ ...advancedRowStyle, ...(props.disabled ? { opacity: 0.55 } : {}) }}>
-      <span style={advancedTitleStyle}>{props.title}</span>
-      <Info label={props.help} text={props.help} delayMs={400} />
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+        <span style={advancedTitleStyle}>{props.title}</span>
+        <Info label={props.help} text={props.help} delayMs={400} />
+      </span>
       <span style={{ flex: 1 }} />
       <Switch checked={props.checked} onChange={props.onChange} label={props.title} disabled={props.disabled} />
     </div>
