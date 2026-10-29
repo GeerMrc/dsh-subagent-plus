@@ -7,7 +7,7 @@
 | 插件配置 | 子 Agent 实际行为 |
 |---|---|
 | 无配置（钉定空 + 清单空 + 无兜底） | 不指派，继承主会话模型（官方默认解析，页面明示） |
-| `provider`+`model` 显式（`strategy: pinned` 默认） | 全部钉定该路由；留空则不指派（继承主会话模型） |
+| `provider`+`model` 显式（`strategy: pinned` 默认） | 全部钉定该路由；路由故障（冷却）或未注册被失败开放跳过时**由兜底接手**（无可用兜底则保持钉定）；留空则不指派（继承主会话模型） |
 | `strategy: round-robin` | 每委派一个子 Agent 按清单顺序领一条（进程级游标），领到即**终身粘住**；下一个子 Agent 领下一条 |
 | `strategy: random` | 每个子 Agent 从不放回牌组随机领一条并粘住；清单变化自动重洗 |
 | `strategy: priority` | 默认全跑第一条健康路由；某路由故障进入冷却 → 后续子 Agent 自动降级到下一条；冷却期满自动恢复 |
@@ -21,13 +21,13 @@
 
 | 失败码（`LlmFailure.code`） | 分类 | 冷却范围 | 当前子 Agent | 后续子 Agent |
 |---|---|---|---|---|
-| RATE_LIMIT / SERVER / TIMEOUT / TRANSPORT / EMPTY_RESPONSE | 瞬态 | 该路由 | 官方重试机制发起重试时，插件把重试直接落到下一健康路由（`request/header` 记 `change`） | 避开冷却中的路由 |
+| RATE_LIMIT / SERVER / TIMEOUT / TRANSPORT / EMPTY_RESPONSE | 瞬态 | 该路由 | 官方重试机制发起重试时，插件把重试直接落到下一健康路由（`request/header` 记 `change`）——记账监听器注册在重试器**外层**，第一次失败即入冷却，重试发起时换路已生效 | 避开冷却中的路由 |
 | AUTH / INVALID_CREDENTIAL / QUOTA / ACCOUNT_QUOTA | 粘性（provider 级） | 该 provider 全部路由 | 按官方行为失败结束（方案 A） | 避开该 provider |
-| NO_ADAPTER / UNSUPPORTED_REASONING_EFFORT | 粘性（路由级） | 该路由 | 按官方行为失败结束 | 避开该路由 |
+| NO_ADAPTER / UNSUPPORTED_REASONING_EFFORT | 粘性（路由级） | 该路由 | 按官方行为失败结束（注意：NO_ADAPTER 多数在流构造期同步抛出、不经失败事件，见 §五.5；运行期到达失败事件的照常记账） | 避开该路由 |
 | CONTEXT_WINDOW_EXCEEDED / IMAGE_OFFLOAD_REQUIRED / ABORTED / 其它未知码 | 忽略 | — | 不变 | 不变 |
 | UNKNOWN 且 HTTP 429 / 5xx | 瞬态 | 该路由 | 同瞬态 | 同瞬态 |
 
-冷却时长 = `max(providerRetryAfterMs, cooldownMs)`，重复失败只延长不缩短。`cooldownMs: 0` 完全关闭健康跟踪。插件在 `agent/request-error` 上**只记账、永远 `next()` 委派**——重试与否完全由官方 `dsh-llm-retry` 决定。
+冷却时长 = `max(providerRetryAfterMs, cooldownMs)`，重复失败只延长不缩短。`cooldownMs: 0` 完全关闭健康跟踪。插件在 `agent/request-error` 上**只记账、永远 `next()` 委派**且以 `prepend` 注册在官方 `dsh-llm-retry` 外层——重试与否完全由官方决定，但**每次失败（含将被重试的失败）都先入账**，重试再进请求瀑布时换路逻辑即刻可见。
 
 ## 三、配置示例
 
@@ -69,7 +69,7 @@
 ## 五、已知限制
 
 1. 主 Agent 显式指派默认被策略覆盖（`respectExplicit: true` 可改）。开启尊重后，显式指派**恰好等于**父会话当前路由时识别不出（判别靠"子创建路由 ≠ 父当前路由"）；父会话未加载或无 `sessions` 服务（headless）时一律按继承处理。
-2. 粘性失败（凭据/配额）当前子 Agent 无法救回，只影响后续指派（方案 A）；官方 `dsh-llm-retry` 不在场或 provider 无 `retryPolicy` 时，瞬态失败同样只影响后续指派。
+2. 粘性失败（凭据/配额）当前子 Agent 无法救回，只影响后续指派（方案 A）。瞬态失败的记忆与换路不依赖官方重试器的在场形态：记账监听器以 `prepend` 注册在其外层，每次失败（含将被重试的失败）都先入账；官方重试器发起的重试再进请求瀑布即触发换路。若 provider 的 `retryPolicy` 不重试（不可重试码或额度耗尽），当前子 Agent 按官方行为失败结束，后续指派避开。
 3. 健康表与轮询游标是进程内存态：Host 重启 / 插件重载清零；多窗口共享同一 Host 进程，顺序与健康态跨窗口共享。
 4. 插件热重载后既有子 Agent 的粘住记忆丢失，其下一请求重新决策可能换路由（前缀重算一次、徽章跳变）。
 5. 流构造期的同步失败不经 `agent/request-error`，健康表学不到；未注册路由由 `failOpen` 预检跳过。

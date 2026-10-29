@@ -199,8 +199,8 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (plan.kind !== 'spread' || config.cooldownMs === 0) return
     const cooling = health.cooldown(decision.route, Date.now())
     if (cooling === undefined) return
-    const next = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
-      ?? await usableFallbackOf(config)
+    const nextCandidate = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
+    const next = nextCandidate ?? await usableFallbackOf(config)
     if (next === undefined || routeKeyEquals(next, decision.route)) return
     decision.pendingFailover = { from: decision.route, to: next, code: cooling.code }
     ctx.logger.warn(
@@ -208,6 +208,10 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       + `child agent continues with "${routeId(next)}"`,
     )
     decision.route = next
+    // Keep `via` truthful for the redundant-notice suppression and any future
+    // consumer: a hop onto a candidate is a strategy assignment, onto the
+    // fallback a fallback one.
+    decision.via = nextCandidate !== undefined ? 'strategy' : 'fallback'
   }
 
   const recordFailure = (config: PinConfig, agent: Agent, provider: string, failure: LlmFailure): void => {

@@ -532,6 +532,77 @@ describe('configuration gates (structural fail-loud, cross-field degrade)', () =
   })
 })
 
+describe('failover blind spots (R9 C2)', () => {
+  const zai = { provider: 'zai', model: 'glm-5.3' }
+
+  it('returns a child from the fallback to a recovered candidate', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: '' }],
+      fallbackProvider: 'zai',
+      fallbackModel: 'glm-5.3',
+      cooldownMs: 200,
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    // The retry moves the child onto hh first, so the hh failure attributes
+    // to the child's memory route.
+    await expect(dispatch(ctx, child)).resolves.toEqual(hh)
+    await dispatchFailure(ctx, child, 'hh', 'SERVER', 503)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    // Cooldowns (200ms) expire: the child keeps its sticky fallback for life
+    // (assignment semantics), but new children take the recovered head route.
+    await new Promise(resolve => setTimeout(resolve, 250))
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+  })
+
+  it('hands over to a cross-provider fallback when credentials kill both candidate providers', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: '' }],
+      fallbackProvider: 'zai',
+      fallbackModel: 'glm-5.3',
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'INVALID_CREDENTIAL', 401)
+    await dispatchFailure(ctx, child, 'hh', 'INVALID_CREDENTIAL', 401)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(zai)
+  })
+
+  it('reports only the last hop of a multi-hop failover', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: '' }, { ...zai, reasoningEffort: '' }],
+      showNotice: true,
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, child)).resolves.toEqual(hh)
+    // hh fails before the pending sz→hh notice was emitted: the transcript
+    // must report only the final hop (hh→zai), never the intermediate one.
+    await dispatchFailure(ctx, child, 'hh', 'SERVER', 503)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    const notice = await dispatchPreStep(ctx, child)
+    expect(noticeText(notice)).toBe('[模型切换 model reassigned: hh/Qwen3.8-27B-FP8 冷却中（SERVER），本子智能体继续使用 zai/glm-5.3｜hh/Qwen3.8-27B-FP8 cooling (SERVER), continues zai/glm-5.3 — dsh-subagent-plus]')
+  })
+
+  it('applies the new candidate\'s reasoning effort on failover', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: 'xhigh' }],
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, child)).resolves.toEqual({ ...hh, reasoningEffort: 'xhigh' })
+  })
+})
+
 describe('pinned route failure hands over to the fallback (R9)', () => {
   const pinnedWithFallback = (overrides: Partial<plugin.PinConfig> = {}): plugin.PinConfig => ({
     ...spreadConfig({
