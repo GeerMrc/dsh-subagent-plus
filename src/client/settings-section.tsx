@@ -552,7 +552,7 @@ function EditorBelow({ state, controller, t }: EditorProps) {
               <AdvancedToggle title={t('advanced.showNotice')} help={t('advanced.showNoticeHelp')} checked={draft.showNotice} onChange={controller.setShowNotice} />
               <AdvancedToggle title={t('advanced.pinForkChildren')} help={t('advanced.pinForkChildrenHelp')} checked={draft.pinForkChildren} onChange={controller.setPinForkChildren} />
               <AdvancedToggle title={t('advanced.failOpen')} help={t('advanced.failOpenHelp')} checked={draft.failOpen} onChange={controller.setFailOpen} />
-              <AdvancedToggle title={t('advanced.autoRoute')} help={t('advanced.autoRouteHelp')} checked={draft.autoRoute} onChange={controller.setAutoRoute} />
+              <AdvancedToggle title={t('advanced.autoRoute')} help={t('advanced.autoRouteHelp')} checked={draft.autoRoute} onChange={controller.setAutoRoute} disabled={draft.strategy !== 'pinned'} />
               <div style={advancedRowStyle}>
                 <span style={advancedTitleStyle}>{t('advanced.cooldownMs')}</span>
                 <Info label={t('advanced.cooldownMsHelp')} text={t('advanced.cooldownMsHelp')} delayMs={400} />
