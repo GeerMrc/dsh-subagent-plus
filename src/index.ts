@@ -300,12 +300,17 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return applyOverride(resolved, override)
   })
 
+  // Prepend: the official llm-retry listener (normal mode) schedules its own
+  // retry without calling next(), vetoing downstream listeners until its
+  // retries are exhausted. Recording first keeps the health table current on
+  // every failed attempt, so the retry re-enters agent/request against a
+  // cooled route and the failover below takes effect mid-child.
   ctx.on('agent/request-error', async (payload, next): Promise<RequestErrorAction> => {
     const config = live.current()
     const routed = resolveStrategyPlan(config).kind === 'spread' || fallbackRouteOf(config) !== undefined
     if (routed && config.cooldownMs > 0) recordFailure(config, payload.agent, payload.provider, payload.failure)
     return next()
-  })
+  }, { prepend: true })
 
   ctx.on('agent/pre-step', async (payload, next): Promise<PreStepDecision> => {
     const decision = await next()

@@ -348,6 +348,27 @@ describe('spread strategies through a live context (S-06)', () => {
   })
 })
 
+describe('failure recording outranks an upstream retry decider (R9 P0)', () => {
+  it('records a vetoed failure and steers the next child away — the plugin must see retries', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('settings', {})
+    // llm-retry stand-in registered FIRST (production layer order), in normal
+    // mode it never calls next() for retryable codes — it vetoes downstream
+    // listeners until its retries are exhausted.
+    ctx.on('agent/request-error', async (): Promise<{ kind: 'retry' }> => ({ kind: 'retry' }))
+    // Priority strategy: every new child takes the head route while healthy —
+    // no rotation to mask the assertion.
+    await ctx.plugin(plugin, spreadConfig({ strategy: 'priority' }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    // The veto hid the failure from append-registered listeners; the plugin's
+    // recorder must still have run (prepend) and the next child must avoid sz.
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
+  })
+})
+
 describe('health-aware failover (S-07)', () => {
   it('cools a transiently failing route, moves the child on its retried request, and steers new children away', async () => {
     const ctx = await spreadContext(spreadConfig({}))
