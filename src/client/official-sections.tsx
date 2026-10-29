@@ -73,7 +73,9 @@ export function LimitsBlock(props: {
   )
 }
 
-/** The runtime-limits rows: two parsed numeric inputs writing the official keys. */
+/** The runtime-limits rows: the official limits geometry (SubagentLimitsFields
+ *  .limits grid) — two responsive one-fr columns with a 16px gutter — each cell
+ *  one horizontal row with a compact tabular-nums number input. */
 function LimitsBody(props: {
   state: NamespaceFormState<OfficialLimitsValue>
   controller: Pick<OfficialLimitsController, 'setMaxDepth' | 'setMaxActiveSubagents'>
@@ -82,31 +84,46 @@ function LimitsBody(props: {
   const { draft } = props.state
   if (draft === undefined) return null
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={cardHeadingStyle}>{props.t('takeover.maxDepth')}</span>
-        <span style={{ flex: 1 }} />
-        <input
-          className={`dsmp-input${props.state.invalid ? ' dsmp-invalid' : ''}`}
-          style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
-          type="number" min={0} step={1} inputMode="numeric"
-          value={String(draft.maxDepth)}
-          aria-label={props.t('takeover.maxDepth')}
-          onChange={event => { props.controller.setMaxDepth(event.target.value) }}
-        />
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={cardHeadingStyle}>{props.t('takeover.maxActive')}</span>
-        <span style={{ flex: 1 }} />
-        <input
-          className={`dsmp-input${props.state.invalid ? ' dsmp-invalid' : ''}`}
-          style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
-          type="number" min={1} step={1} inputMode="numeric"
-          value={String(draft.maxActiveSubagents)}
-          aria-label={props.t('takeover.maxActive')}
-          onChange={event => { props.controller.setMaxActiveSubagents(event.target.value) }}
-        />
-      </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', columnGap: 16, rowGap: 8 }}>
+      <LimitInputRow
+        label={props.t('takeover.maxDepth')}
+        value={String(draft.maxDepth)}
+        min={0}
+        invalid={props.state.invalid}
+        onChange={props.controller.setMaxDepth}
+      />
+      <LimitInputRow
+        label={props.t('takeover.maxActive')}
+        value={String(draft.maxActiveSubagents)}
+        min={1}
+        invalid={props.state.invalid}
+        onChange={props.controller.setMaxActiveSubagents}
+      />
+    </div>
+  )
+}
+
+/** One limits cell: label left, compact fixed-width number input right — a
+ *  one-to-three-digit integer never justifies a full-row input box. */
+function LimitInputRow(props: {
+  label: string
+  value: string
+  min: number
+  invalid: boolean
+  onChange: (text: string) => void
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+      <span style={cardHeadingStyle}>{props.label}</span>
+      <span style={{ flex: 1 }} />
+      <input
+        className={`dsmp-input${props.invalid ? ' dsmp-invalid' : ''}`}
+        style={{ ...inputStyle, width: 88, fontVariantNumeric: 'tabular-nums' }}
+        type="number" min={props.min} step={1} inputMode="numeric"
+        value={props.value}
+        aria-label={props.label}
+        onChange={event => { props.onChange(event.target.value) }}
+      />
     </div>
   )
 }

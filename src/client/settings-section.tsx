@@ -352,6 +352,7 @@ function EditorRoutes({ state, controller, t }: EditorProps) {
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
   const pinnedRoute = state.routes.find(route => route.provider === draft.provider && route.model === draft.model) ?? null
+  const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
   const pinnedHover = pinnedRoute === null && draft.provider === ''
     ? undefined
     : state.routes.find(route => route.provider === draft.provider && route.model === draft.model) !== undefined || pinnedRoute !== null
@@ -467,46 +468,46 @@ function EditorRoutes({ state, controller, t }: EditorProps) {
             {STRATEGY_KEYS.map(([id, key]) => <option key={id} value={id}>{t(key)}</option>)}
           </select>
         </div>
+
+        <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={cardHeadingStyle}>{t('fallback.title')}</span>
+          <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
+          <span style={{ flex: 1 }} />
+          <Tooltip label={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)} side="bottom" delayMs={200} maxWidth={360} portal>
+            <select
+              className="dsmp-select"
+              style={routeSelectStyle}
+              value={fallbackRoute === null ? '' : routeValue(fallbackRoute)}
+              aria-label={t('fallback.title')}
+              title={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)}
+              onChange={event => { controller.setFallbackRoute(routeFromValue(state, event.target.value)) }}
+            >
+              <option value="">{t('fallback.off')}</option>
+              {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
+            </select>
+          </Tooltip>
+          {draft.fallbackProvider !== ''
+            ? (
+              <EffortSelect
+                label={t('fallback.effort')} route={fallbackRoute ?? undefined} value={draft.fallbackReasoningEffort}
+                onChange={controller.setFallbackEffort}
+                defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')} staleTitle={t('list.unavailable')}
+              />
+              )
+            : null}
+        </div>
     </>
   )
 }
 
-/** The strategy card's page-level siblings: the fallback row, the advanced
- *  fold, and the validation lines. */
+/** The merged card's page-level siblings: the advanced fold and the
+ *  validation lines. */
 function EditorBelow({ state, controller, t }: EditorProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const draft = state.draft
   if (draft === undefined) return null
-  const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
   return (
     <>
-      <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={cardHeadingStyle}>{t('fallback.title')}</span>
-        <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
-        <span style={{ flex: 1 }} />
-        <Tooltip label={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)} side="bottom" delayMs={200} maxWidth={360} portal>
-          <select
-            className="dsmp-select"
-            style={routeSelectStyle}
-            value={fallbackRoute === null ? '' : routeValue(fallbackRoute)}
-            aria-label={t('fallback.title')}
-            title={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)}
-            onChange={event => { controller.setFallbackRoute(routeFromValue(state, event.target.value)) }}
-          >
-            <option value="">{t('fallback.off')}</option>
-            {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
-          </select>
-        </Tooltip>
-        {draft.fallbackProvider !== ''
-          ? (
-            <EffortSelect
-              label={t('fallback.effort')} route={fallbackRoute ?? undefined} value={draft.fallbackReasoningEffort}
-              onChange={controller.setFallbackEffort}
-              defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')} staleTitle={t('list.unavailable')}
-            />
-            )
-          : null}
-      </div>
       <div style={{ ...fieldRowStyle, flexDirection: 'column', gap: 0, padding: 0, border: 'none' }}>
         <button
           type="button" style={{ ...foldButtonStyle, width: '100%', padding: '12px 0', borderTop: '0.5px solid var(--dsw-alias-border-l2)' }} aria-expanded={advancedOpen}
@@ -533,7 +534,7 @@ function EditorBelow({ state, controller, t }: EditorProps) {
                 <span style={{ flex: 1 }} />
                 <input
                   className={`dsmp-input${state.cooldownInvalid ? ' dsmp-invalid' : ''}`}
-                  style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
+                  style={{ ...inputStyle, width: 120, fontVariantNumeric: 'tabular-nums' }}
                   defaultValue={String(draft.cooldownMs)}
                   inputMode="numeric"
                   aria-label={t('advanced.cooldownMs')}
