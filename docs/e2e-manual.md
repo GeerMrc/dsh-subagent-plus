@@ -29,7 +29,7 @@
 `pnpm-workspace.yaml`：`packages: ['.']` + `nodeLinker: hoisted` + `autoInstallPeers: false`。
 
 `cordis.patch.yml` 关键条目（完整模板见 git 历史或按此裁剪）：
-`llm-pi-ai`（providers：钉定目标 `sz/Qwen3.8-27B-FP8` + 主窗口用**不同** provider 如 `zai-coding-cn/glm-5.3`，差异可判别）；`agent-default-model` = 主窗口模型；`subagent-model-selection-settings` enabled + [sz 路由]（autoRoute 数据源）；`tool-subagent`（spawn/continuable，**不配 agentOptions**——验证 autoRoute 替代手工耦合）；`dsh-subagent-plus`（autoRoute 轮：provider/model 空串）；`webserver`：`host: 127.0.0.1` + `port: 8917`（host 为必填项，易漏）。
+`llm-pi-ai`（providers：钉定目标 `sz/Qwen3.8-27B-FP8` + 主窗口用**不同** provider 如 `zai-coding-cn/glm-5.3`，差异可判别）；`agent-default-model` = 主窗口模型；`tool-subagent`（spawn/continuable，**不配 agentOptions**——验证插件指派替代手工耦合）；`dsh-subagent-plus`（钉定轮：provider/model 显式 sz）；`webserver`：`host: 127.0.0.1` + `port: 8917`（host 为必填项，易漏）。注：ADR 0005 后官方授权清单零引用，profile 不再需要 `subagent-model-selection-settings` 数据源行（宿主组合若仍要求该行存在，按原方式保留即可，插件不读它）。
 
 建临时工作区（含 a.md/b.md 两个小文件）后 `pnpm install`。
 
@@ -56,7 +56,7 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | ③ | 主会话路由 = agent-default-model，不受影响 | 同上查主 session 目录 |
 | ④ | 子窗口徽章显示 `sz/Qwen3.8-27B-FP8`（两处：输入框右侧 + 会话头部） | DOM 快照搜 `子智能体当前模型` / 截图留档 |
 | ⑤ | 主窗口无徽章、模型选择器正常 | 快照 |
-| ⑥ | 显式配置轮：插件 provider/model 显式填 sz 后重启重跑 ①-④（autoRoute 语义的对照组） | 改 patch 后重启 |
+| ⑥ | 空配置轮：插件 provider/model/清单全部留空后重启派 1 子 Agent（「不指派、继承主会话模型」对照组） | 改 patch 后重启 |
 
 负路径（可选）：allowedModels 指向未注册路由 → failOpen warn + 子请求放行原路由（`routeRegistered` 负分支目前仅靠此手工验证；建议后续补 fake `llm` 单测，见审核 NOTE）。
 
@@ -81,7 +81,7 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 |---|---|---|
 | A 轮询 | 设置 → 子Agent增强 → 策略=轮询 → 保存 → 新会话派 2 子 Agent | 两子会话 `request/header` 分别 = 清单第 1/第 2 条；各 1 条双语文案 `[模型指派 model assigned: …（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]`；主会话不受影响 |
 | B 兜底降级 | 设置页 → 策略=优先级 → 清单添加两条指向 `http://127.0.0.1:9/v1` 的 provider → 兜底=某真实路由 → 保存 → 派 1 子 Agent（主 Agent 可能自动重试委派） | 死路由子会话 `end:error`（冷却记账）；最终子会话落兜底路由 + `[模型兜底 model fallback: …]`（双语文案）+ completed |
-| C 禁用回官方 | 设置页 → 高级折叠首项「仅停用路由指派」开 → 保存 → 新会话派 1 子 Agent（软关；bundle 级完全接管开关路径见 Flow E4，无保存步骤） | 子会话 `request/header` = 主窗口模型（继承）、无任何插件 notice |
+| C 空配置不指派 | 设置页 → 钉定路由清空 + 清单清空 + 兜底关闭 → 保存 → 新会话派 1 子 Agent（ADR 0005：页内无开关，空配置=不指派） | 子会话 `request/header` = 主窗口模型（继承）、无任何插件 notice；官方页保持隐藏（编辑面接管不变） |
 
 清理同第 5 节（workspace.json 按 `tables.workspaces.<uuid>.path` 字段定位删除并同步 `global.workspaceIds`）。
 
@@ -95,9 +95,9 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | # | 操作 | 通过标准 |
 |---|---|---|
 | E1 | 打开 `插件` 页 | 「已安装插件」出现 dsh-subagent-plus 且开关为开；「内置插件配置」**没有**「子智能体」卡（仅剩 Agent 循环/终端等） |
-| E2 | 设置 → 子 Agent 增强 | 页头有完全接管开关（开）；**无独立横幅、无独立运行限制卡**——运行限制是候选模型清单**同一张卡**的顶部子区（深度/并行两个数字输入；接管声明在其 ⓘ 悬停中）；**没有**「官方授权清单」区；高级折叠首项是「仅停用路由指派」（respectExplicit 与 autoRoute 按策略联动置灰：pinned 下 respectExplicit 置灰、非 pinned 下 autoRoute 置灰）；卡内策略行下方有**官方清单只读状态行**（显示条数与首条；官方开关停用时明示不取用）；cooldown 输入 88px 居中、上限 86400000（超限阻塞保存）；底部只有**一个**保存按钮 |
+| E2 | 设置 → 子 Agent 增强 | **页头无开关**（ADR 0005：唯一关闭入口=插件页）；**无独立横幅、无独立运行限制卡**——运行限制是候选模型清单**同一张卡**的顶部子区（深度/并行两个数字输入；接管声明在其 ⓘ 悬停中）；**没有**「官方授权清单」区、没有官方清单状态行；高级折叠首项是 respectExplicit（pinned 下置灰）；行标题与 ⓘ 图标同组不换行；cooldown 输入 88px 居中、上限 86400000（超限阻塞保存）；底部只有**一个**保存按钮 |
 | E3 | 运行限制改为 深度=3 / 并行=2 → 保存 | 保存按钮变已保存；`~/.dsh/profiles/pin-test/cordis.patch.yml` 出现 `subagent` 行 `maxDepth: 3`、`maxActiveSubagents: 2`（用户层覆写，官方命名空间同键落盘） |
-| E4 | 页头完全接管开关 → 确认关闭 | 出现确认条（含「本页将随之卸载」）；确认后本设置分区消失（hmr 即时；源码宿主需重启并显示 restart-required 提示）；`插件` 页 dsh-subagent-plus 开关变关 |
+| E4 | `插件` 页把 dsh-subagent-plus 开关关闭（**唯一关闭入口**，ADR 0005） | 本设置分区消失（hmr 即时；源码宿主需重启）；官方「子智能体」页回归 |
 | E5 | 重启宿主（源码宿主必须）→ `插件` 页 | 「内置插件配置」**回归**「子智能体」卡，最大递归深度=3 带「已覆盖」徽章、并行=2（值保留）；无 dsh-subagent-plus 分区 |
 | E6 | `插件` 页把 dsh-subagent-plus 开关打开 | 插件页/设置页回到 E1-E2 状态（官方页再次隐藏） |
 

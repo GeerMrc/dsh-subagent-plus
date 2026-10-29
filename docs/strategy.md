@@ -1,23 +1,21 @@
 # 子 Agent 多模型路由策略 / Child-agent multi-route strategy（v0.0.3）
 
-本文件是 `strategy` 配置的完整语义说明。不写 `strategy` 字段时插件行为与 v0.1.4 逐字节一致。
+本文件是 `strategy` 配置的完整语义说明（ADR 0005 后候选唯一来源为 `priority` 列表）。
 
-## 一、行为决策矩阵
+## 一、行为决策矩阵（ADR 0005：`priority` 列表是唯一候选来源，官方授权清单零引用）
 
-| 官方"允许 Agent 为子智能体选择模型"清单 | 插件配置 | 子 Agent 实际行为 |
-|---|---|---|
-| 关闭 / 未勾选 | 无配置 | 继承主窗口模型（官方默认） |
-| 关闭 / 未勾选 | `provider`+`model` 显式 | 全部钉定该路由 |
-| 勾 1 条 | 默认（`autoRoute: true`） | 全部钉定该条 |
-| 勾 N 条 | `strategy: pinned`（默认） | 全部钉定显式路由，否则清单第一条 |
-| 勾 N 条 | `strategy: round-robin` | 每委派一个子 Agent 按清单顺序领一条（进程级游标），领到即**终身粘住**；下一个子 Agent 领下一条 |
-| 勾 N 条 | `strategy: random` | 每个子 Agent 从不放回牌组随机领一条并粘住；清单变化自动重洗 |
-| 勾 N 条 | `strategy: priority` + `priority: [...]` | 默认全跑第一条健康路由；某路由故障进入冷却 → 后续子 Agent 自动降级到下一条；冷却期满自动恢复 |
-| 勾 N 条 | 轮询/随机/优先级 + `respectExplicit: true` | 主 Agent 委派时显式指派的路由被尊重；策略只分配"没指派"的子 Agent（钉定策略不吃此开关——它是强制指派） |
-| 勾 N 条 → 运行中改为空 | spread 策略且无 `priority` | 不分配，透传继承（一次 warn） |
-| 任意 | `subagent_fork` 子 Agent | 不受影响（`pinForkChildren` 默认 false；官方 KV cache 约束） |
+| 插件配置 | 子 Agent 实际行为 |
+|---|---|
+| 无配置（钉定空 + 清单空 + 无兜底） | 不指派，继承主会话模型（官方默认解析，页面明示） |
+| `provider`+`model` 显式（`strategy: pinned` 默认） | 全部钉定该路由；留空则不指派（继承主会话模型） |
+| `strategy: round-robin` | 每委派一个子 Agent 按清单顺序领一条（进程级游标），领到即**终身粘住**；下一个子 Agent 领下一条 |
+| `strategy: random` | 每个子 Agent 从不放回牌组随机领一条并粘住；清单变化自动重洗 |
+| `strategy: priority` | 默认全跑第一条健康路由；某路由故障进入冷却 → 后续子 Agent 自动降级到下一条；冷却期满自动恢复 |
+| 轮询/随机/优先级 + `respectExplicit: true` | 主 Agent 委派时显式指派的路由被尊重；策略只分配"没指派"的子 Agent（钉定策略不吃此开关——它是强制指派） |
+| spread 策略且清单运行中改为空 | 不分配，透传继承（一次 warn） |
+| `subagent_fork` 子 Agent | 不受影响（`pinForkChildren` 默认 false；官方 KV cache 约束） |
 
-候选来源：`priority` 非空时用它（顺序即优先级）；轮询/随机策略下 `priority` 为空时读官方清单（**存储顺序** = 历史已存顺序 + 新勾选按点击顺序追加；与设置页显示顺序无关）；`priority` 策略空清单**不回落**官方清单（无候选的降级态，仅兜底可用）。
+候选来源：`priority` 列表是唯一来源（ADR 0005；**存储顺序** = 历史已存顺序 + 新勾选按点击顺序追加，与设置页显示顺序无关）。清单为空 = 无候选（走兜底，否则不指派、继承主会话模型）——四种策略统一。
 
 ## 二、故障降级
 
@@ -40,12 +38,12 @@
   name: dsh-subagent-plus
   config:
     enabled: true
-    strategy: round-robin     # 候选 = 官方清单（存储顺序）
+    strategy: round-robin     # 候选 = priority 列表（存储顺序）
     cooldownMs: 120000
     showNotice: true
 ```
 
-优先级 + 故障降级（显式顺序，不依赖官方清单的存储顺序）：
+优先级 + 故障降级（显式顺序）：
 
 ```yaml
     strategy: priority
@@ -78,5 +76,5 @@
 5. 流构造期的同步失败不经 `agent/request-error`，健康表学不到；未注册路由由 `failOpen` 预检跳过。
 6. `retryPolicy.mode: 'always'` 的 provider 会持续重试，重试的 `agent/request` 仍会被换到健康路由，无饿死。
 7. 子 Agent 中途 failover 需对已积累前缀重新 prefill；若首请求即失败则零代价。
-8. 官方 per-call 校验用会话组合时的清单快照，插件候选读 live 设置——运行中改清单可能分叉；授权仍以官方为准。官方清单（ADR 0003 后无编辑面）现仅经本插件设置页的只读状态行可见（条数与首条；官方开关停用时明示两条桥接不取用）。
+8. `respectExplicit=true` 时官方授权清单仍管辖**父模型的显式指派**（会话组合时的快照，官方 spawn 前校验）——被拒的委派不产生子 Agent；插件候选不受官方清单约束（ADR 0005 零引用），只需在 LLM 目录注册。
 9. 失败事件只带 provider 不带 model：模型取该子 Agent 的记忆路由（provider 一致时）或其会话最新 `request/header`；两者都取不到则不记账（debug 日志）。
