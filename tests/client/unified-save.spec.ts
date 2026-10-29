@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { UnifiedSaveController, type SaveOutcome, type SaveParticipant } from '../../src/client/unified-save.js'
-import { OfficialLimitsController, type FieldSetOp, type NamespaceFormPort } from '../../src/client/official-surfaces.js'
+import {
+  OfficialAllowlistController,
+  OfficialLimitsController,
+  type FieldSetOp,
+  type NamespaceFormPort,
+} from '../../src/client/official-surfaces.js'
 import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from '../../src/client/settings-controller.js'
 import type { PinConfig } from '../../src/config.js'
 
@@ -101,18 +106,41 @@ function ownController(value: PinConfig): { controller: SettingsSectionControlle
 }
 
 describe('UnifiedSaveController', () => {
-  it('saves all namespaces in order (limits before self)', async () => {
-    const first = new StubParticipant('limits', ['saved'])
-    const second = new StubParticipant('self', ['saved'])
+  it('saves all three namespaces in order', async () => {
     const order: string[] = []
-    const record = (participant: StubParticipant): SaveParticipant => ({
-      key: participant.key,
-      save: async () => { order.push(participant.key); return participant.save() },
+    const participant = (key: string, outcome: SaveOutcome): SaveParticipant => ({
+      key,
+      save: async () => { order.push(key); return outcome },
     })
-    const controller = new UnifiedSaveController([record(first), record(second)])
+    const controller = new UnifiedSaveController([
+      participant('limits', 'saved'),
+      participant('allowlist', 'clean'),
+      participant('self', 'saved'),
+    ])
     await controller.save()
-    expect(order).toEqual(['limits', 'self'])
+    expect(order).toEqual(['limits', 'allowlist', 'self'])
     expect(controller.snapshot()).toMatchObject({ saving: false, saved: true })
+  })
+
+  it('allowlist edits commit through the unified save', async () => {
+    const limitsForm = new FakeForm({ maxDepth: 1, maxActiveSubagents: 8 })
+    const allowlistForm = new FakeForm({ enabled: true, allowedModels: [{ provider: 'p1', model: 'm1' }] })
+    const limits = new OfficialLimitsController(limitsForm)
+    const allowlist = new OfficialAllowlistController(allowlistForm)
+    limits.init()
+    allowlist.init()
+    const own = ownController(pinConfig())
+    allowlist.toggleRoute({ provider: 'p2', model: 'm2' })
+    const controller = new UnifiedSaveController([
+      { key: 'limits', save: limits.save },
+      { key: 'allowlist', save: allowlist.save },
+      { key: 'self', save: own.controller.save },
+    ])
+    await controller.save()
+    expect(limitsForm.mutateCalls).toHaveLength(0)
+    expect(allowlistForm.mutateCalls).toHaveLength(1)
+    expect(allowlistForm.value).toMatchObject({ allowedModels: [{ provider: 'p1', model: 'm1' }, { provider: 'p2', model: 'm2' }] })
+    expect(controller.snapshot()).toMatchObject({ saved: true })
   })
 
   it('partial failure stops later namespaces', async () => {

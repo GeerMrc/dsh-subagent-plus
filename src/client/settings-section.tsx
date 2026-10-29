@@ -16,8 +16,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
-import { TakeoverCard, type TakeoverControllers } from './takeover-card.tsx'
-import { bannerStyle, LimitsSection } from './official-sections.tsx'
+import { AllowlistSection, bannerStyle, LimitsSection, routeShort, Switch } from './official-sections.tsx'
+import type { TakeoverControllers } from './official-surfaces.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
@@ -50,8 +50,6 @@ import {
   selectStyle,
   settingsCss,
   statusTextStyle,
-  switchStyle,
-  switchThumbStyle,
 } from './settings-styles.ts'
 
 /** One strategy id paired with its locale key. */
@@ -65,11 +63,6 @@ const STRATEGY_KEYS = [
 type StrategyId = typeof STRATEGY_KEYS[number][0]
 
 const routeValue = (route: RouteOption): string => `${route.provider}\0${route.model}`
-
-/** Short closed-box label (the browser-plus translate pattern): the select
- *  stays compact; the full route rides the hover tooltip and the option title. */
-export const routeShort = (route: { providerName: string; modelName: string }): string =>
-  `${route.providerName} · ${route.modelName}`
 
 /** Full route text for hover tooltips and option titles. */
 const routeFull = (route: { providerName: string; modelName: string; provider: string; model: string }): string =>
@@ -197,23 +190,6 @@ function EffortSelect(props: {
   return stale ? <span title={props.value} style={{ display: 'inline-flex' }}>{select}</span> : select
 }
 
-export function Switch({ checked, onChange, label, title }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      title={title}
-      className="dsmp-switch"
-      style={switchStyle(checked)}
-      onClick={() => { onChange(!checked) }}
-    >
-      <span style={switchThumbStyle(checked)} />
-    </button>
-  )
-}
-
 /** Presentation component; every action is a controller call, every string a locale key.
  *  The page shell (header, takeover banner, limits card, single footer) renders
  *  while any section is servable: the own-namespace branch only gates the
@@ -223,13 +199,16 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
   const { t, controller, official, save } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
   const limits = useSyncExternalStore(official.limits.subscribe, official.limits.snapshot)
+  const allowlist = useSyncExternalStore(official.allowlist.subscribe, official.allowlist.snapshot)
   const saveState = useSyncExternalStore(save.subscribe, save.snapshot)
   const limitsDirty = limits.value !== undefined && limits.draft !== undefined
     && JSON.stringify(limits.value) !== JSON.stringify(limits.draft)
+  const allowlistDirty = allowlist.value !== undefined && allowlist.draft !== undefined
+    && JSON.stringify(allowlist.value) !== JSON.stringify(allowlist.draft)
   const ownBlocked = state.structural.length > 0 || state.degraded.length > 0 || state.cooldownInvalid
   const ownDirty = state.value !== undefined && state.draft !== undefined
     && JSON.stringify(state.value) !== JSON.stringify(state.draft)
-  const anyDirty = limitsDirty || ownDirty
+  const anyDirty = limitsDirty || allowlistDirty || ownDirty
   const anyBlocked = limits.invalid || ownBlocked
   const sectionTitle = (key: string): string =>
     key === 'limits' ? t('takeover.limitsTitle') : key === 'allowlist' ? t('takeover.allowlistTitle') : t('title')
@@ -263,7 +242,7 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
           : state.draft === undefined
             ? <p style={hintStyle}>…</p>
             : <Editor state={state} controller={controller} t={t} />}
-      <TakeoverCard t={t} allowlist={official.allowlist} routes={state.routes} />
+      <AllowlistSection state={allowlist} controller={official.allowlist} routes={state.routes} t={t} />
       <footer style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button
           type="button"

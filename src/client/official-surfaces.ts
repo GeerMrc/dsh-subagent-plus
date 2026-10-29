@@ -304,3 +304,9 @@ export class OfficialAllowlistController extends NamespaceFormController<Officia
     })
   }
 }
+
+/** The official controllers the settings page edits alongside its own form. */
+export interface TakeoverControllers {
+  limits: OfficialLimitsController
+  allowlist: OfficialAllowlistController
+}

@@ -16,8 +16,11 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { NS } from './locales.ts'
+import type { RouteOption } from './settings-controller.ts'
 import type {
   NamespaceFormState,
+  OfficialAllowlistController,
+  OfficialAllowlistValue,
   OfficialLimitsController,
   OfficialLimitsValue,
 } from './official-surfaces.ts'
@@ -29,6 +32,8 @@ import {
   inputStyle,
   invalidStyle,
   statusTextStyle,
+  switchStyle,
+  switchThumbStyle,
 } from './settings-styles.ts'
 
 /** Banner box: the takeover statement, distinct from plain hints. */
@@ -72,6 +77,29 @@ export function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>;
   if (state.valueInvalid) return <p style={invalidStyle}>{t('takeover.valueInvalid')}</p>
   return null
 }
+
+/** The 36×20 green-when-on switch shared with the main settings section. */
+export function Switch({ checked, onChange, label, title }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={title}
+      className="dsmp-switch"
+      style={switchStyle(checked)}
+      onClick={() => { onChange(!checked) }}
+    >
+      <span style={switchThumbStyle(checked)} />
+    </button>
+  )
+}
+
+/** Short closed-box label (the browser-plus translate pattern): the select
+ *  stays compact; the full route rides the hover tooltip and the option title. */
+export const routeShort = (route: { providerName: string; modelName: string }): string =>
+  `${route.providerName} · ${route.modelName}`
 
 /** The runtime-limits card: two parsed numeric inputs writing the official
  *  `subagent` namespace keys verbatim; sits above the candidate list. */
@@ -131,6 +159,84 @@ function LimitsBody(props: {
           onChange={event => { props.controller.setMaxActiveSubagents(event.target.value) }}
         />
       </div>
+    </div>
+  )
+}
+
+/** The official allowlist card: the enabled switch plus a route checklist
+ *  writing the official `subagent-model-selection-settings` keys verbatim; sits
+ *  after the strategy editor, before the footer. */
+export function AllowlistSection(props: {
+  state: NamespaceFormState<OfficialAllowlistValue>
+  controller: OfficialAllowlistController
+  routes: readonly RouteOption[]
+  t: PropsLocale<typeof NS>['t']
+}) {
+  const { state, controller, routes, t } = props
+  return (
+    <section style={cardStyle} aria-labelledby="dsmp-allowlist">
+      <SectionHeader title={t('takeover.allowlistTitle')} help={t('takeover.allowlistHelp')} saved={state.saved} savedLabel={t('action.saved')} />
+      <NsStatusLine state={state} t={t} />
+      {state.status === 'ready' && !state.valueInvalid && state.draft !== undefined
+        ? <AllowlistBody state={state} controller={controller} routes={routes} t={t} />
+        : null}
+    </section>
+  )
+}
+
+/** The official allowlist rows. Stored routes that left the catalogue stay
+ *  checked and tagged so a catalogue hiccup never silently deauthorizes a
+ *  route. */
+function AllowlistBody(props: {
+  state: NamespaceFormState<OfficialAllowlistValue>
+  controller: Pick<OfficialAllowlistController, 'setEnabled' | 'toggleRoute'>
+  routes: readonly RouteOption[]
+  t: PropsLocale<typeof NS>['t']
+}) {
+  const { draft } = props.state
+  if (draft === undefined) return null
+  const checked = (route: { provider: string; model: string }): boolean =>
+    draft.allowedModels.some(entry => entry.provider === route.provider && entry.model === route.model)
+  const storedMissing = draft.allowedModels.filter(entry =>
+    !props.routes.some(route => route.provider === entry.provider && route.model === entry.model))
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={cardHeaderRowStyle}>
+        <span style={cardHeadingStyle}>{props.t('takeover.allowlistEnabled')}</span>
+        <Info label={props.t('takeover.allowlistEnabledHelp')} text={props.t('takeover.allowlistEnabledHelp')} />
+        <span style={{ flex: 1 }} />
+        <Switch
+          checked={draft.enabled}
+          onChange={props.controller.setEnabled}
+          label={props.t('takeover.allowlistEnabled')}
+          title={props.t('takeover.allowlistEnabledHelp')}
+        />
+      </div>
+      {props.routes.map(route => (
+        <label key={`${route.provider}\0${route.model}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, lineHeight: 1.5, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={checked(route)}
+            onChange={() => { props.controller.toggleRoute({ provider: route.provider, model: route.model }) }}
+            aria-label={`${props.t('takeover.allowlistTitle')} ${route.provider}/${route.model}`}
+          />
+          <span>{routeShort(route)}</span>
+        </label>
+      ))}
+      {storedMissing.map(entry => (
+        <label key={`${entry.provider}\0${entry.model}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, lineHeight: 1.5, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked
+            onChange={() => { props.controller.toggleRoute(entry) }}
+            aria-label={`${props.t('takeover.allowlistTitle')} ${entry.provider}/${entry.model}`}
+          />
+          <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
+            {`${entry.provider}/${entry.model}${props.t('takeover.allowlistUnavailable')}`}
+          </span>
+        </label>
+      ))}
+      {draft.allowedModels.length === 0 ? <p style={hintStyle}>{props.t('takeover.allowlistEmpty')}</p> : null}
     </div>
   )
 }

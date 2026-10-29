@@ -30,8 +30,8 @@ import {
   OfficialLimitsController,
   type OfficialAllowlistValue,
   type OfficialLimitsValue,
+  type TakeoverControllers,
 } from './official-surfaces.ts'
-import type { TakeoverControllers } from './takeover-card.tsx'
 import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.js'
 import { UnifiedSaveController } from './unified-save.js'
 import { bindSettingsSection } from './settings-section.tsx'
@@ -107,10 +107,11 @@ export function apply(ctx: Context): void {
     limits: new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent'))),
     allowlist: new OfficialAllowlistController(asFormPort(ctx.configForms.get<OfficialAllowlistValue>('subagent-model-selection-settings'))),
   }
-  // One footer button, fixed commit order: the official limits namespace
-  // first, then (once migrated) the allowlist, the plugin's own form last.
+  // One footer button, fixed commit order: the two official namespaces
+  // first, the plugin's own form last.
   const save = new UnifiedSaveController([
     { key: 'limits', save: official.limits.save },
+    { key: 'allowlist', save: official.allowlist.save },
     { key: 'self', save: controller.save },
   ])
   ctx.effect(() => () => { controller.dispose(); official.limits.dispose(); official.allowlist.dispose(); save.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
