@@ -279,13 +279,15 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
           // "configured fallback always backs up" semantics as the spread
           // strategies; with no usable fallback the pin stays (all-dead keeps
           // the assigned route, like a spread child keeps its sticky one).
-          const pinFallback = async (verb: string): Promise<LlmCallConfig | undefined> => {
+          const pinFallback = async (verb: string): Promise<{ moved: false } | { moved: true; config: LlmCallConfig }> => {
             const fallback = await usableFallbackOf(config)
-            if (fallback === undefined) return undefined
+            if (fallback === undefined) return { moved: false }
             const fallbackOverride = pinnedRoute(resolved, fallback)
-            if (fallbackOverride === undefined) return undefined
+            // An undefined override means the child already runs the fallback
+            // — the handover is done; keep the resolved config as-is.
+            if (fallbackOverride === undefined) return { moved: true, config: resolved }
             logRouteOnce(ctx, agent, resolved, fallbackOverride, verb)
-            return applyOverride(resolved, fallbackOverride)
+            return { moved: true, config: applyOverride(resolved, fallbackOverride) }
           }
           if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
             // One line per lifetime: an unregistered pin fails every request,
@@ -299,11 +301,12 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
                 + `child requests fall back or keep their resolved route`,
               )
             }
-            return await pinFallback('fallback-routed (pin unavailable)') ?? resolved
+            const unavailable = await pinFallback('fallback-routed (pin unavailable)')
+            if (unavailable.moved) return unavailable.config
           }
           if (!healthyNow(config)(pin)) {
-            const moved = await pinFallback('fallback-routed (pin cooling)')
-            if (moved !== undefined) return moved
+            const cooling = await pinFallback('fallback-routed (pin cooling)')
+            if (cooling.moved) return cooling.config
           }
           logRouteOnce(ctx, agent, resolved, override, 'pinned')
           return applyOverride(resolved, override)

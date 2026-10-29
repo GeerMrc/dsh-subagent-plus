@@ -184,7 +184,7 @@ export const en: Record<LocaleKey, string> = {
   'list.moveDown': 'Move down',
   'list.unavailable': 'Currently unavailable (not in the catalogue)',
   'fallback.title': 'Fallback model',
-  'fallback.help': 'The last-resort route used when every candidate is unusable (cooling down or unregistered); independent of the list and optional. With an empty list it is the single fixed model. A fallback that repeats a listed route or is half-filled is ignored.',
+  'fallback.help': 'The last-resort route when every candidate is unusable (cooling; unregistered too with fail open) or the list is empty, independent of the list, optional. It also takes over a failing pinned route. A fallback repeating a listed route or half-filled stays unused.',
   'fallback.off': 'Off (no fallback)',
   'fallback.effort': 'Fallback reasoning effort (optional)',
   'advanced.title': 'Advanced',

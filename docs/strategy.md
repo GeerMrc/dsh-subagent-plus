@@ -7,7 +7,7 @@
 | 插件配置 | 子 Agent 实际行为 |
 |---|---|
 | 无配置（钉定空 + 清单空 + 无兜底） | 不指派，继承主会话模型（官方默认解析，页面明示） |
-| `provider`+`model` 显式（`strategy: pinned` 默认） | 全部钉定该路由；路由故障（冷却）或未注册被失败开放跳过时**由兜底接手**（无可用兜底则保持钉定）；留空则不指派（继承主会话模型） |
+| `provider`+`model` 显式（`strategy: pinned` 默认） | 全部钉定该路由；路由故障（冷却）或未注册被失败开放跳过时**由兜底接手**（兜底不可用：冷却场景保持钉定；未注册跳过场景保持官方解析路由）；留空则不指派（继承主会话模型） |
 | `strategy: round-robin` | 每委派一个子 Agent 按清单顺序领一条（进程级游标），领到即**终身粘住**；下一个子 Agent 领下一条 |
 | `strategy: random` | 每个子 Agent 从不放回牌组随机领一条并粘住；清单变化自动重洗 |
 | `strategy: priority` | 默认全跑第一条健康路由；某路由故障进入冷却 → 后续子 Agent 自动降级到下一条；冷却期满自动恢复 |
@@ -76,4 +76,4 @@
 6. `retryPolicy.mode: 'always'` 的 provider 会持续重试，重试的 `agent/request` 仍会被换到健康路由，无饿死。
 7. 子 Agent 中途 failover 需对已积累前缀重新 prefill；若首请求即失败则零代价。
 8. `respectExplicit=true` 时官方授权清单仍管辖**父模型的显式指派**（会话组合时的快照，官方 spawn 前校验）——被拒的委派不产生子 Agent；插件候选不受官方清单约束（ADR 0005 零引用），只需在 LLM 目录注册。
-9. 失败事件只带 provider 不带 model：模型取该子 Agent 的记忆路由（provider 一致时）或其会话最新 `request/header`；两者都取不到则不记账（debug 日志）。
+9. 失败事件只带 provider 不带 model：模型取该子 Agent 的记忆路由（provider 一致时；钉定子代无记忆，取钉定路由的 model）或其会话最新 `request/header`；两者都取不到则不记账（debug 日志）。
