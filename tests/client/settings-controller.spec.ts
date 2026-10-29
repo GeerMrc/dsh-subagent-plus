@@ -51,6 +51,12 @@ class FakeForm implements SettingsFormPort {
 
   failNextMutate(): void { this.#failNext = true }
 
+  /** Flip the served status and notify, as the host form does. */
+  setStatus(status: string): void {
+    this.status = status
+    this.#emit()
+  }
+
   #emit(): void {
     for (const listener of this.#listeners) listener()
   }
@@ -205,6 +211,20 @@ describe('SettingsSectionController', () => {
     controller.setCooldownMs('300000')
     expect(controller.snapshot().cooldownInvalid).toBe(false)
     expect(controller.snapshot().draft?.cooldownMs).toBe(300_000)
+  })
+
+  it('clears a stale cooldownInvalid flag when a flapped namespace returns with a clean value', async () => {
+    const { controller, form } = await harness()
+    controller.setCooldownMs('abc')
+    expect(controller.snapshot().cooldownInvalid).toBe(true)
+    form.setStatus('unavailable')
+    form.setStatus('ready')
+    // The reloaded draft is the committed value; the stale parse flag must
+    // not keep blocking saves after recovery.
+    expect(controller.snapshot().cooldownInvalid).toBe(false)
+    controller.setShowNotice(false)
+    await controller.save()
+    expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['showNotice'], value: false }], expectedRevision: 1 }])
   })
 
   it('shows unavailable when the host does not serve the namespace', async () => {

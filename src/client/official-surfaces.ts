@@ -166,6 +166,10 @@ export class NamespaceFormController<Value extends object> {
     this.#patch({ invalid })
   }
 
+  /** Clear per-field validity flags when a namespace reload hands back a clean
+   *  committed value; the base resets the shared `invalid` flag alongside. */
+  protected resetValidity(): void {}
+
   #sync = (): void => {
     const snapshot = this.#form.getSnapshot()
     const value = snapshot.status === 'ready' && this.#options.guard(snapshot.value) ? this.#options.copy(snapshot.value) : undefined
@@ -177,6 +181,11 @@ export class NamespaceFormController<Value extends object> {
     if (value !== undefined) {
       patch.draft = this.#options.copy(value)
       patch.conflict = false
+      // The reloaded draft is the committed value, so no invalid input
+      // survives the flap: input-validity flags from before it would keep
+      // the section blocked (red inputs, save gated) with nothing to fix.
+      patch.invalid = false
+      this.resetValidity()
     } else {
       // Not served (or unrecognizable): no editable draft may survive, or a
       // flapping namespace would keep offering stale edits (T7).
@@ -249,6 +258,11 @@ export class OfficialLimitsController extends NamespaceFormController<OfficialLi
 
   #publishValidity = (): void => {
     this.setInvalid(this.#depthInvalid || this.#activeInvalid)
+  }
+
+  protected override resetValidity(): void {
+    this.#depthInvalid = false
+    this.#activeInvalid = false
   }
 }
 

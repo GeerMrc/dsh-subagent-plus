@@ -380,6 +380,9 @@ export class SettingsSectionController {
     if (value !== undefined) {
       patch.draft = copyConfig(value)
       patch.conflict = false
+      // The reloaded draft is the committed value, so the cooldown parse
+      // flag from before a namespace flap must not keep the save blocked.
+      patch.cooldownInvalid = false
     }
     this.#patch(patch)
   }

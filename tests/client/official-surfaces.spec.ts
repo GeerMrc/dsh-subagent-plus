@@ -215,6 +215,20 @@ describe('OfficialLimitsController (T2 same-key writes into the official namespa
     await controller.save()
     expect(form.mutateCalls).toEqual([])
   })
+
+  it('clears a stale parse flag when a flapped namespace returns with a clean value', async () => {
+    const { controller, form } = limitsHarness({ maxDepth: 1, maxActiveSubagents: 8 })
+    controller.setMaxActiveSubagents('abc')
+    expect(controller.snapshot().invalid).toBe(true)
+    form.setStatus('unavailable')
+    form.setStatus('ready')
+    // The reloaded draft is the committed value; the stale per-field flag
+    // must not keep the section blocked after recovery.
+    expect(controller.snapshot().invalid).toBe(false)
+    controller.setMaxDepth('4')
+    await controller.save()
+    expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['maxDepth'], value: 4 }], expectedRevision: 1 }])
+  })
 })
 
 describe('T7 per-namespace availability (independent sections)', () => {
