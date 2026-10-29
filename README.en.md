@@ -88,7 +88,7 @@ Full semantics: [docs/strategy.md](docs/strategy.md) and [docs/settings.md](docs
 
 Full list in [docs/strategy.md](docs/strategy.md) §5: strategy/list changes affect the next decision point only; sticky failures end the current child (later assignments avoid the route); the health table and rotation cursor are process-local (reset on restart, shared across windows); remote (non-loopback) web sessions cannot reach the settings namespaces at all (the official memory persistence skips the mirror — sections turn unavailable) while the takeover switch keeps working; lean compositions without the settings/remote services fail the whole client half (badge included) loudly.
 
-**Deliberate deviation from official semantics (v0.3.0+)**: when a child's route is changed, the `maxTokens` inherited from the parent is **dropped** (official per-call model selection retains it) — the inherited budget is sized for the parent's model and can overflow the new model's limit, and the official runtime performs no clamping; once dropped, the runtime materialises the new model's default. Consequently an explicitly configured parent output budget does **not** propagate to rerouted children.
+**Deliberate deviation from official semantics (v0.0.3+)**: when a child's route is changed, the `maxTokens` inherited from the parent is **dropped** (official per-call model selection retains it) — the inherited budget is sized for the parent's model and can overflow the new model's limit, and the official runtime performs no clamping; once dropped, the runtime materialises the new model's default. Consequently an explicitly configured parent output budget does **not** propagate to rerouted children.
 
 ## Naming conventions (first-party standalone plugins)
 
