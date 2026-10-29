@@ -37,6 +37,14 @@
   fresh 安装静默空转问题）。
 - 留待：DOM 渲染级测试仍为既有技术债；Flow E 真机演练见 docs/e2e-manual.md
   （组合层 E1'/E3' 断言已在本地留证 dist-artifacts/e2e-v0.3.1/）。
+- 深度审核轮（R6，三路独立审计后修复）：failOpen 跳过未注册钉定时转录
+  notice 改为如实播报"保持原路由"（原版谎报钉定路由，与徽章矛盾）；命名空
+  间抖动恢复后 limits `invalid`/插件 `cooldownInvalid` 标志随干净值复位
+  （原版红框与保存阻塞残留）；页头开关 refresh 加操作世代守卫（并发旧响应
+  不再覆盖新状态，宿主 manifest 重启用后 restart-required 提示自动消退）；
+  官方清单状态行感知官方开关停用态；autoRoute 在非钉定策略下置灰（与
+  respectExplicit 对称）；README/手册/ADR 等 5 处 P1 文档失实与 16 处 P2
+  漂移修正；死状态字段与路由 id/键 10+5 处内联收敛（routeId/routeKey）。
 
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
