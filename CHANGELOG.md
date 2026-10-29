@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.3.1 (2026-10-29) — 接管面打磨：页头完全接管开关 + 主页面统一保存
+
+- feat(takeover): 页头开关升级为**完全接管开关**（bundle 级）：确认后经宿主
+  插件管理器 `setBundleEnabled` 整体禁用本插件——bundle 层随层移除，官方
+  「子智能体」设置页回归且配置值保留；「applied」即时卸载本页（hmr），
+  「restart-required」以提示留存，失败给出重试/插件页指引。开关状态镜像
+  `listBundles` 并跟随 `plugin-manager/changed` 事件，与插件页主开关同态。
+  插件管理面**探测式获取**（不进 inject）：无该面的组合降级为提示文案，
+  不再出现死设置页。
+- feat(takeover): 运行限制（maxDepth / maxActiveSubagents）区上移进主设置
+  卡顶部（候选模型清单上方），与官方页排版一致；授权清单区迁入主布局
+  （策略编辑器之后、页脚之前），独立接管卡删除。全页**单一保存按钮**按固定
+  顺序提交三个命名空间（`subagent` → `subagent-model-selection-settings` →
+  `dsh-subagent-plus`），各自修订栅栏：任一 ns 失活仅该区转 unavailable 并
+  从本次保存排除（接管期间不死锁）；任一已服务 ns 输入非法阻塞整次保存
+  （官方单表单语义）；首个冲突/传输失败中止后续 ns 并在页脚点名分区。
+- feat(takeover): 软路由开关（原页头 enabled）降级为高级选项「仅停用路由
+  指派（保留接管）」——v0.0.2 存量 `enabled:false` 语义原样保留（升级后
+  表现为高级项关闭 + 页头接管中）。
+- chore(deps): 全部 @deepseek-ai/dsh-* devDeps 对齐 0.2.1-rc.3（用户桌面
+  实际运行版本；peer 区间本就覆盖）；新增 dsh-plugin-manager types 依赖以
+  解析 `plugin-manager/changed` 事件键类型。typecheck/181 用例/build 全绿。
+- 已知事实：npm 上存在 0.3.0（2026-10-28 误发布，latest 仍指 0.0.2）；本
+  版本线自 0.3.1 起续接其上，manifest.spec 增加版本下限守卫防回退。
+- 留待：DOM 渲染级测试仍为既有技术债；Flow E 真机演练见 docs/e2e-manual.md。
+
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
 - feat(takeover): 启用期间官方「子智能体」设置页（纯编辑面）经 bundle patch

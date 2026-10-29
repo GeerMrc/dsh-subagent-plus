@@ -35,4 +35,19 @@ describe('plugin identity manifest (R-02)', () => {
   it('bumped past the 0.1.x install surface (file: reinstalls skip same versions)', () => {
     expect(pkg.version).not.toMatch(/^0\.1\./)
   })
+
+  it('keeps the version in lockstep with the CHANGELOG top entry', () => {
+    const changelog = readFileSync('CHANGELOG.md', 'utf8')
+    const topEntry = changelog.match(/^## v(\d+\.\d+\.\d+[^\s(]*)/m)
+    expect(topEntry, 'CHANGELOG must open with a "## v<x.y.z>" entry').not.toBeNull()
+    expect(pkg.version).toBe(topEntry?.[1])
+  })
+
+  it('never dips below an already-published npm version (0.3.0 is live)', () => {
+    // The takeover build leaked to npm as 0.3.0 (latest stays 0.0.2); the
+    // version line must continue above it — a lower number can never install
+    // over it through any semver range.
+    const [major, minor, patch] = pkg.version.split('.').map(Number)
+    expect(major === 0 && minor === 3 ? patch >= 1 : major > 0 || minor > 3).toBe(true)
+  })
 })
