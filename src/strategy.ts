@@ -426,7 +426,13 @@ export function explicitRouteOf(child: RouteFields, parent: RouteFields | undefi
  * @returns the bracketed one-line notice.
  */
 export function assignedNotice(label: string, strategy: SpreadStrategy): string {
-  return `[model assigned: every request from this child agent runs ${label} (strategy: ${strategy}, dsh-subagent-plus)]`
+  return `[模型指派 model assigned: 本子智能体所有请求运行 ${label}（策略：${strategyZh(strategy)}｜strategy: ${strategy}）— dsh-subagent-plus]`
+}
+
+/** Bilingual notices: the transcript is the only default-on feedback channel,
+ *  so zh and en ride the same bracketed line. */
+function strategyZh(strategy: SpreadStrategy): string {
+  return strategy === 'round-robin' ? '轮询' : strategy === 'random' ? '随机' : '优先级'
 }
 
 /**
@@ -436,7 +442,7 @@ export function assignedNotice(label: string, strategy: SpreadStrategy): string 
  * @returns the bracketed one-line notice.
  */
 export function fallbackNotice(label: string): string {
-  return `[model fallback: no usable candidate route; this child agent runs ${label} (dsh-subagent-plus)]`
+  return `[模型兜底 model fallback: 无可用候选路由，本子智能体运行 ${label}｜no usable candidate, runs ${label} — dsh-subagent-plus]`
 }
 
 /**
@@ -447,5 +453,5 @@ export function fallbackNotice(label: string): string {
  * @returns the bracketed one-line notice.
  */
 export function reassignedNotice(from: string, to: string, code: string): string {
-  return `[model reassigned: route ${from} is cooling down (${code}); this child agent continues with ${to} (dsh-subagent-plus)]`
+  return `[模型切换 model reassigned: ${from} 冷却中（${code}），本子智能体继续使用 ${to}｜${from} cooling (${code}), continues ${to} — dsh-subagent-plus]`
 }

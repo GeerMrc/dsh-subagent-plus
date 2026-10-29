@@ -148,7 +148,7 @@ describe('fallbackRouteOf / usableFallback (fallback adjudication)', () => {
 
   it('names the fallback in its notice', () => {
     expect(fallbackNotice('hh/x'))
-      .toBe('[model fallback: no usable candidate route; this child agent runs hh/x (dsh-subagent-plus)]')
+      .toBe('[模型兜底 model fallback: 无可用候选路由，本子智能体运行 hh/x｜no usable candidate, runs hh/x — dsh-subagent-plus]')
   })
 })
 
@@ -335,11 +335,11 @@ describe('explicitRouteOf (S-04)', () => {
 describe('notice text (S-08 helpers)', () => {
   it('names route and strategy', () => {
     expect(assignedNotice('sz/Qwen3.8-27B-FP8', 'round-robin'))
-      .toBe('[model assigned: every request from this child agent runs sz/Qwen3.8-27B-FP8 (strategy: round-robin, dsh-subagent-plus)]')
+      .toBe('[模型指派 model assigned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]')
   })
 
   it('names the cooled route, the code, and the replacement', () => {
     expect(reassignedNotice('sz/a', 'hh/a', 'RATE_LIMIT'))
-      .toBe('[model reassigned: route sz/a is cooling down (RATE_LIMIT); this child agent continues with hh/a (dsh-subagent-plus)]')
+      .toBe('[模型切换 model reassigned: sz/a 冷却中（RATE_LIMIT），本子智能体继续使用 hh/a｜sz/a cooling (RATE_LIMIT), continues hh/a — dsh-subagent-plus]')
   })
 })

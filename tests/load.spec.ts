@@ -379,13 +379,13 @@ describe('spread notices (S-08)', () => {
     const child = newChild()
     await dispatch(ctx, child)
     const assigned = await dispatchPreStep(ctx, child)
-    expect(noticeText(assigned)).toBe('[model assigned: every request from this child agent runs sz/Qwen3.8-27B-FP8 (strategy: round-robin, dsh-subagent-plus)]')
+    expect(noticeText(assigned)).toBe('[模型指派 model assigned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]')
     const again = await dispatchPreStep(ctx, child, 3)
     expect(again.kind === 'enter' && again.messages.length).toBe(0)
     await dispatchFailure(ctx, child, 'sz', 'TIMEOUT')
     await expect(dispatch(ctx, child)).resolves.toEqual(hh)
     const reassigned = await dispatchPreStep(ctx, child, 4)
-    expect(noticeText(reassigned)).toBe('[model reassigned: route sz/Qwen3.8-27B-FP8 is cooling down (TIMEOUT); this child agent continues with hh/Qwen3.8-27B-FP8 (dsh-subagent-plus)]')
+    expect(noticeText(reassigned)).toBe('[模型切换 model reassigned: sz/Qwen3.8-27B-FP8 冷却中（TIMEOUT），本子智能体继续使用 hh/Qwen3.8-27B-FP8｜sz/Qwen3.8-27B-FP8 cooling (TIMEOUT), continues hh/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
     const settled = await dispatchPreStep(ctx, child, 5)
     expect(settled.kind === 'enter' && settled.messages.length).toBe(0)
   })
@@ -472,7 +472,7 @@ describe('fallback route (adjudication after candidates)', () => {
     }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
     const notice = await dispatchPreStep(ctx, newChild())
-    expect(noticeText(notice)).toBe('[model fallback: no usable candidate route; this child agent runs hh/Qwen3.8-27B-FP8 (dsh-subagent-plus)]')
+    expect(noticeText(notice)).toBe('[模型兜底 model fallback: 无可用候选路由，本子智能体运行 hh/Qwen3.8-27B-FP8｜no usable candidate, runs hh/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
   })
 
   it('answers for a spread strategy when every candidate is cooling', async () => {
@@ -485,7 +485,7 @@ describe('fallback route (adjudication after candidates)', () => {
     await dispatchFailure(ctx, onHh, 'hh', 'SERVER', 503)
     await expect(dispatch(ctx, newChild())).resolves.toEqual(zai)
     const notice = await dispatchPreStep(ctx, newChild())
-    expect(noticeText(notice)).toContain('[model fallback:')
+    expect(noticeText(notice)).toContain('model fallback')
   })
 
   it('moves a cooling child onto the fallback only after every candidate is out', async () => {
@@ -500,8 +500,8 @@ describe('fallback route (adjudication after candidates)', () => {
     await dispatchFailure(ctx, onHh, 'hh', 'SERVER', 503)
     await expect(dispatch(ctx, onSz)).resolves.toEqual(zai)
     const notice = await dispatchPreStep(ctx, onSz, 3)
-    expect(noticeText(notice)).toContain('is cooling down')
-    expect(noticeText(notice)).toContain('continues with zai/glm-5.3')
+    expect(noticeText(notice)).toContain('cooling (')
+    expect(noticeText(notice)).toContain('continues zai/glm-5.3')
   })
 
   it('passes through when the fallback is cooling too', async () => {

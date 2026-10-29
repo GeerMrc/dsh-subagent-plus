@@ -356,7 +356,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       let target: PinRoute | undefined
       if (pin !== undefined) {
         target = pin
-        text = `[model pinned: every request from this child agent runs ${label(pin)} (dsh-subagent-plus)]`
+        text = `[模型钉定 model pinned: 本子智能体所有请求运行 ${label(pin)}｜every request runs ${label(pin)} — dsh-subagent-plus]`
       } else {
         const fallback = fallbackRouteOf(config)
         if (fallback !== undefined && healthyNow(config)(fallback)
