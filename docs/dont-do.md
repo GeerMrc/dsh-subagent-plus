@@ -41,3 +41,15 @@
 
 - **"文档与实现一致" ≠ "产品模型对用户自洽"**：R6 审核把所有文案对齐到了当时的实现（部分接管+双桥接），逐条"一致"但整体叙事自相矛盾（"完整替代"却保留官方清单桥接；"100% 接管"却有三种关法）。两轮用户实测连续命中。产品级审核必须加一个独立镜头：**让一个不知道内部实现的用户读三句话——装了以后谁在管路由？怎么关？空配置会怎样？**三句话答不出唯一答案即存在叙事分歧。
 - **决策留下的"兼容承诺"要随产品演进重新审**：v0.0.2 `enabled:false` 零迁移承诺（ADR 0002 D1）在二元化裁定后成为叙事负担——软开关的存在本身制造了第三态。兼容承诺不是永恒义务，推翻时要走 ADR 并把翻转写进升级注记（0005 先例）。
+
+## npm 认证与删除（0.3.0 物理移除轮沉淀，2026-11-02）
+
+- **npm 2026-01 起彻底关闭新 TOTP 注册**（官方 staff 在 community discussion #182325 确认 "users can no longer config new TOTP 2fa methods"）：账号 2FA 页没有"验证器应用"入口是设计而非故障，别再找；现行唯一体系是通行密钥/安全密钥（WebAuthn，仅网页端配置）。
+- **恢复码不能当 `--otp` 用**：64 位 hex 恢复码实测被 EOTP 拒绝；恢复码只用于网页端账号自救（丢第二因子时登录）。
+- **发布/删除类写操作的正解 = npm ≥ 11.7 ＋ 通行密钥浏览器审批**：命令在**用户交互终端**执行 → 打印/弹开 `https://www.npmjs.com/auth/cli/<id>` → Touch ID 确认 → 终端自动继续，全程零动态码。npm < 11.7 或无 TTY 环境（agent shell）直接 EOTP 退出，打印的 URL 随进程消亡、转交他人无效。node 20 下 `npm i -g npm@11` 可升到 11.21.1。
+- **bypass-2FA granular token 别为发布而建**：对 unpublish 类操作当场被拒；2026-07-31 起敏感操作（建删 token/包权限等）受限；**2027-01 起失去直接发布资格**。CI 无人值守发布的官方替代是 trusted publishing（OIDC）。
+- **连续敏感操作触发账号临时冻结**（"temporarily suspended due to a recent security-sensitive action"，写操作 403、读操作不受影响、包对外服务不受影响）：实测多次 unpublish 失败＋建 token＋2FA 开关切换后触发，约 24-72h 自动解除；冻结期间任何触碰都可能重置冷却——失败后停手，隔天再试。
+- **72h 窗口不是铁截止**：发布 72h 后单版本 unpublish 仍可行（前提包 0 依赖方）；网页端无删除入口，物理删除只有 CLI unpublish 与工单（https://www.npmjs.com/support）两条路。
+- **npmjs 操作必须显式 `--registry https://registry.npmjs.org`**（本机默认 npmmirror）。
+- **聊天截图通道把图片压到 ~562px**：整页截图里的二维码不可解码；传二维码/密钥必须 Cmd+Shift+4 紧裁二维码块或直接复制文本。
+- **CI 发布链的 token 有效期检查**：release.yml 的 `secrets.NPM_TOKEN` 指向的令牌可能已被账号清理（2026-11 用户清理过）；且该类 token 2027-01 失去直接发布资格。每次发 tag 前先确认 secret 指向的令牌仍存在有效；2026-12 前完成 trusted publishing（OIDC）迁移或改走人工终端发布。
