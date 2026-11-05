@@ -23,11 +23,13 @@
 
 ## §6 发布链失败恢复（§4–§5 预留）
 
+**标准发布链（v0.0.3 起，npm 人工通道）**：推 main → 单独推 tag → CI 四门＋GitHub Release（附 tgz）→ 用户交互终端 `npm publish ./dist-artifacts/<pkg>.tgz --registry https://registry.npmjs.org --access public`（npm ≥ 11.7＋通行密钥 Touch ID；发布物为 tag 树重打包产物）→ registry 三验：`npm view dsh-subagent-plus versions` 含新版本且 `latest` 指向它、新版本 tarball HTTP 200、旧 latest tarball 仍 200。
+
 | 中断态 | 恢复 |
 |---|---|
 | build/pack 失败 | 修复后**删除远端 tag 重推**（同 tag 重推不重跑） |
 | release create 瞬时失败 | Actions 页面 Re-run |
-| Release 已建但 publish 失败 | `gh release delete <tag>` 后 Re-run；或手工 `npm publish ./dist-artifacts/<pkg>.tgz --registry https://registry.npmjs.org`（必须显式 --registry） |
+| npm 上架失败（用户终端） | 多为认证/风控：按 dont-do「npm 认证与删除」冷却 24-72h 再试，冻结期间勿连续触碰；GitHub Release 已建无需重建，直接补跑 `npm publish`（必须显式 `--registry`） |
 | 已发布需改内容 | bump 版本重走全链；**禁止** force 覆写已发布版本 |
 
 **首批推送事故预防**：workflow 文件首次出现在远端时，同批推送的 tag 不触发 workflow——先推 main（workflow 落库），再单独推 tag；`npm pack --pack-destination` 要求目标目录存在（打包脚本已内置 mkdir）；`npm publish` 参数必须带 `./` 前缀（裸含斜杠名会被解析为 GitHub spec）。

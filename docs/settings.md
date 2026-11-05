@@ -30,7 +30,7 @@
 - Host 日志：`assigned (round-robin) child agent onto …`、`route "sz/…" failed (RATE_LIMIT); cooling down …`、`… continues with "hh/…"`。
 - 端到端回归流程见 `docs/e2e-manual.md`（Flow A/B/C：改策略/配兜底+死路由降级/空配置不指派对照；**Flow E：接管面**——官方页隐藏/统一保存写入官方命名空间/页头无开关断言/重启回归）。
 
-## 推理强度下拉（v0.2.0）
+## 推理强度下拉
 
 - 选项来自**所选模型自身**的档位配置（目录 reasoning）：如 qwen 系 `Off/Low/Medium/Xhigh`、zai 系 `Low/High/Max`、无档位模型（如部分 Kimi）不显示下拉（钉定/兜底处显示禁用态）。
 - 首项恒为「**默认**」（短标签，收窄占位）——不写该键，由 DSH 物化模型默认档位；**悬停选框**显示详情「跟随模型默认档位（当前：<档名>）」。

@@ -1,5 +1,5 @@
 /**
- * One save button for every namespace this settings page edits (v0.3.1 D2):
+ * One save button for every namespace this settings page edits (ADR 0002 D2):
  * the plugin's own form plus each absorbed official form commit in a fixed
  * order behind their own revision fences. Availability is per namespace — a
  * namespace the host does not serve is excluded from the run instead of

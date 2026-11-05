@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.0.3 (2026-10-29) — 官方子智能体全面接管（纯二进制，ADR 0005）
+## v0.0.3 (2026-11-06) — 官方子智能体全面接管（纯二进制，ADR 0005）
 
 - feat(takeover)!: **安装即 100% 接管，二态互斥（用户裁定，ADR 0005）**：编辑面
   （官方「子智能体」设置页隐藏 + 运行限制同键直写官方 `subagent` 命名空间）与
@@ -47,7 +47,12 @@
   前即被丢弃）。③ failover 更新 `via`、四个盲区测试补齐（兜底粘住语义/跨 provider 凭据
   降级/多跳只报末跳/换路携带新候选档位）。
 - 留待：DOM 渲染级测试仍为既有技术债；Flow E 真机演练见 docs/e2e-manual.md
-  （组合层 E1'/E3' 断言已在本地留证 dist-artifacts/e2e-v0.3.1/）。
+  （组合层 E1'/E3' 断言留证已随 0.3.0 回滚归档于本地 archive/v0.3.0-takeover 分支）。
+- chore(release): 发布通道调整（R10 独立审核后）——release workflow 不再自动
+  `npm publish`（NPM_TOKEN secret 只写不可验、bypass-2FA token 2027-01 起停发，
+  dont-do「npm 认证与删除」）：CI 保留四门＋GitHub Release（tgz），npm 上架由
+  用户终端 Touch ID 审批发布；AGENTS 发版流程与 upgrade.md §6 同步改写。
+  人工实测门：用户桌面端实测通过（2026-11-06）。
 
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 

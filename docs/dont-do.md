@@ -52,4 +52,4 @@
 - **72h 窗口不是铁截止**：发布 72h 后单版本 unpublish 仍可行（前提包 0 依赖方）；网页端无删除入口，物理删除只有 CLI unpublish 与工单（https://www.npmjs.com/support）两条路。
 - **npmjs 操作必须显式 `--registry https://registry.npmjs.org`**（本机默认 npmmirror）。
 - **聊天截图通道把图片压到 ~562px**：整页截图里的二维码不可解码；传二维码/密钥必须 Cmd+Shift+4 紧裁二维码块或直接复制文本。
-- **CI 发布链的 token 有效期检查**：release.yml 的 `secrets.NPM_TOKEN` 指向的令牌可能已被账号清理（2026-11 用户清理过）；且该类 token 2027-01 失去直接发布资格。每次发 tag 前先确认 secret 指向的令牌仍存在有效；2026-12 前完成 trusted publishing（OIDC）迁移或改走人工终端发布。
+- **CI 发布链的 token 有效期检查**：release.yml 的 `secrets.NPM_TOKEN` 指向的令牌可能已被账号清理（2026-11 用户清理过）；且该类 token 2027-01 失去直接发布资格。每次发 tag 前先确认 secret 指向的令牌仍存在有效；2026-12 前完成 trusted publishing（OIDC）迁移或改走人工终端发布。（处置：v0.0.3 起 release.yml 已删除 npm publish 步骤、改走用户终端 Touch ID 发布——2026-12 OIDC 迁移死线随之解除；若未来恢复 CI 无人值守发布再启用 OIDC。）
