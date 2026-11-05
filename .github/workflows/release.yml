@@ -1,11 +1,14 @@
 # Release chain: a pushed v* tag runs the same four gates as a local release,
-# then creates the GitHub Release with the tarball attached. npm publishing is
-# deliberately NOT automated (2026-11-06): account 2FA is passkey-only, the
-# NPM_TOKEN secret value cannot be re-verified, and bypass-2FA tokens lose
-# direct publish rights in 2027-01 (docs/dont-do.md "npm 认证与删除").
-# Publish manually from a user terminal after this workflow greens:
-#   npm publish ./dist-artifacts/dsh-subagent-plus-<ver>.tgz \
-#     --registry https://registry.npmjs.org --access public
+# creates the GitHub Release with the tarball attached, then publishes to npm
+# via trusted publishing (OIDC) — no stored npm token. Requirements
+# (docs.npmjs.com/trusted-publishers): id-token: write, npm CLI >= 11.5.1 on
+# Node >= 22.14 (the runner's bundled npm is too old — upgraded below), and a
+# trusted-publisher binding on npmjs.com: package Settings → Trusted
+# publishing → GitHub Actions (owner GeerMrc, repo dsh-subagent-plus, workflow
+# release.yml, "Allow npm publish" on). The binding expires unless the first
+# successful publish happens within 2 days — create it on release day. If the
+# OIDC publish fails, publish manually from a user terminal (docs/upgrade.md
+# §6) — the GitHub Release is already created at that point.
 # Kept lessons from real incidents (dsh-websearch session-38): release create
 # falls back to upload so a re-run after a half-created release still works.
 name: release
@@ -14,6 +17,7 @@ on:
     tags: ['v*']
 permissions:
   contents: write
+  id-token: write # required for npm trusted publishing (OIDC)
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -24,6 +28,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm test
@@ -34,3 +39,8 @@ jobs:
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes dist-artifacts/*.tgz || gh release upload "$GITHUB_REF_NAME" dist-artifacts/*.tgz --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+      # Trusted publishing needs npm >= 11.5.1; the Node 22 image bundles 10.x.
+      # npm@11 is pinned by major: npm 12 may raise the Node floor and break
+      # release day (pair badly with the 2-day binding window).
+      - run: npm install -g npm@11
+      - run: npm publish ./dist-artifacts/dsh-subagent-plus-*.tgz --registry https://registry.npmjs.org --access public

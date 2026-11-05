@@ -23,13 +23,15 @@
 
 ## §6 发布链失败恢复（§4–§5 预留）
 
-**标准发布链（v0.0.3 起，npm 人工通道）**：推 main → 单独推 tag → CI 四门＋GitHub Release（附 tgz）→ 用户交互终端 `npm publish ./dist-artifacts/<pkg>.tgz --registry https://registry.npmjs.org --access public`（npm ≥ 11.7＋通行密钥 Touch ID；发布物为 tag 树重打包产物）→ registry 三验：`npm view dsh-subagent-plus versions` 含新版本且 `latest` 指向它、新版本 tarball HTTP 200、旧 latest tarball 仍 200。
+**标准发布链（v0.0.4 起，OIDC 信任发布）**：发布日在 npmjs.com 包 Settings → Trusted publishing 绑定 GitHub Actions（owner=GeerMrc / repo=dsh-subagent-plus / workflow=release.yml / 开启 Allow npm publish；**绑定 2 天内未首发即过期**）→ 推 main → 单独推 tag → CI 四门＋GitHub Release（附 tgz）＋**npm publish（OIDC，无 token）** → registry 三验：`npm view` versions/latest、`dist.shasum` 与本地 tarball 逐字节一致、新旧 tarball HTTP 200。
+
+**OIDC 发布失败（ENEEDAUTH/E403）排查序**：workflow 文件名大小写与扩展名精确一致（release.yml）；`id-token: write` 在位；runner 为 GitHub 托管（自托管不支持）；`package.json` `repository.url` 与仓库精确一致；npm ≥ 11.5.1 / Node ≥ 22.14（workflow 已内置升级步）。**绑定不可编辑**——字段写错只能删除重建（重建会刷新 2 天首发窗口）；每包最多 10 个绑定。
 
 | 中断态 | 恢复 |
 |---|---|
 | build/pack 失败 | 修复后**删除远端 tag 重推**（同 tag 重推不重跑） |
-| release create 瞬时失败 | Actions 页面 Re-run |
-| npm 上架失败（用户终端） | 多为认证/风控：按 dont-do「npm 认证与删除」冷却 24-72h 再试，冻结期间勿连续触碰；GitHub Release 已建无需重建，直接补跑 `npm publish`（必须显式 `--registry`） |
+| release create 瞬时失败 | Actions 页面 Re-run——**注意 Re-run 会重跑整个 job 含 npm publish**：版本可能已在库（上次实际成功/在途事务已定稿），先 `npm view` 核实再决定 Re-run 或直接收工 |
+| npm 上架失败（OIDC 或终端） | OIDC 侧按上方排查序；人工兜底（Release 已建，仅缺 npm）：用户终端 `npm publish ./dist-artifacts/<pkg>.tgz --registry https://registry.npmjs.org --access public`（npm ≥ 11.7＋通行密钥 Touch ID；**token 短时效——报 E404 假象＝`npm whoami` 验 token、失效重新 `npm login` 后立即发布**；多为认证/风控时按 dont-do「npm 认证与删除」冷却 24-72h） |
 | 已发布需改内容 | bump 版本重走全链；**禁止** force 覆写已发布版本 |
 
 **首批推送事故预防**：workflow 文件首次出现在远端时，同批推送的 tag 不触发 workflow——先推 main（workflow 落库），再单独推 tag；`npm pack --pack-destination` 要求目标目录存在（打包脚本已内置 mkdir）；`npm publish` 参数必须带 `./` 前缀（裸含斜杠名会被解析为 GitHub spec）。

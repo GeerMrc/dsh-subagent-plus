@@ -52,7 +52,7 @@
 - **72h 窗口不是铁截止**：发布 72h 后单版本 unpublish 仍可行（前提包 0 依赖方）；网页端无删除入口，物理删除只有 CLI unpublish 与工单（https://www.npmjs.com/support）两条路。
 - **npmjs 操作必须显式 `--registry https://registry.npmjs.org`**（本机默认 npmmirror）。
 - **聊天截图通道把图片压到 ~562px**：整页截图里的二维码不可解码；传二维码/密钥必须 Cmd+Shift+4 紧裁二维码块或直接复制文本。
-- **CI 发布链的 token 有效期检查**：release.yml 的 `secrets.NPM_TOKEN` 指向的令牌可能已被账号清理（2026-11 用户清理过）；且该类 token 2027-01 失去直接发布资格。每次发 tag 前先确认 secret 指向的令牌仍存在有效；2026-12 前完成 trusted publishing（OIDC）迁移或改走人工终端发布。（处置：v0.0.3 起 release.yml 已删除 npm publish 步骤、改走用户终端 Touch ID 发布——2026-12 OIDC 迁移死线随之解除；若未来恢复 CI 无人值守发布再启用 OIDC。）
+- **CI 发布链的 token 有效期检查**：release.yml 的 `secrets.NPM_TOKEN` 指向的令牌可能已被账号清理（2026-11 用户清理过）；且该类 token 2027-01 失去直接发布资格。每次发 tag 前先确认 secret 指向的令牌仍存在有效；2026-12 前完成 trusted publishing（OIDC）迁移或改走人工终端发布。（处置：v0.0.3 当轮删除 NPM_TOKEN 自动 publish、走用户终端 Touch ID 发布；v0.0.4 起切换 **trusted publishing（OIDC）**恢复全自动——绑定须发布日当天建（2 天内未首发即过期）、workflow 需 `id-token: write`＋npm ≥ 11.5.1；人工终端通道保留为兜底。）
 - **npm 网页登录 token 是短时效的**（v0.0.3 发布实测，2026-11-06）：11-02 login 的 token 四天后 `npm whoami` 401 失效；**死 token 的 publish 报 E404 "could not be found or you do not have permission"（权限遮蔽假象）而非 401**——勿误判为包归属/权限问题，先 `npm whoami` 验 token，失效就重新 `npm login`（浏览器 Touch ID）后**立即**在同终端发布。
 - **publish 撞上在途事务报 E409 "Cannot publish over previously staged version"**：同版本有发布事务已上传未定稿（另一终端在跑/浏览器仪式刚完成在收尾）。勿盲目重试——等几秒用 `npm view <pkg> versions dist-tags --json` 查最终态（注意 **curl 裸查 packument 可能命中 CDN 陈旧缓存**，以带凭证的 npm view 为准），成功则收工，未成功再排查。
 - **发布验证三验以 npm view ＋ shasum 对物为准**：`dist.shasum` 与本地 tarball 的 shasum 逐字节一致才能确认"上的是这份产物"；tarball HTTP 200 与版本清单作旁证。

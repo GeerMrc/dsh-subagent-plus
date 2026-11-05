@@ -22,16 +22,16 @@
 
 > **人工实测门（2026-10-29 用户指令，最高优先级）**：任何推送远端（main/tag/分支）或发布新版本之前，必须先由**用户本人完成本地实测验证**（web 端/桌面端实际跑过新功能与回归路径）并**明确同意**。技术四门与独立复查通过≠可发布；未经同意一律停在本地。
 
-> **npm 发布通道（2026-11-02 定型，2026-11-06 起人工通道为现行口径，详见 [docs/dont-do.md](docs/dont-do.md) "npm 认证与删除"节）**：npmjs 写操作 = npm ≥ 11.7 ＋ 通行密钥浏览器审批，由**用户交互终端**执行（agent 无 TTY 环境必 EOTP 失败）；不建 bypass-2FA granular token；恢复码不能当 `--otp`；一切 npmjs 操作显式 `--registry https://registry.npmjs.org`。失败重试须节制（连续敏感操作触发账号临时冻结）。v0.0.3 起 release workflow **不自动 npm publish**（NPM_TOKEN secret 只写不可验，bypass-2FA token 2027-01 失去发布资格）——npm 上架一律走用户终端 Touch ID 发布；未来如需 CI 无人值守，迁移 trusted publishing（OIDC）。
+> **npm 发布通道（2026-11-02 定型，2026-11-06 起 OIDC 为主、终端为兜底，详见 [docs/dont-do.md](docs/dont-do.md) "npm 认证与删除"节）**：npmjs 写操作 = npm ≥ 11.7 ＋ 通行密钥浏览器审批，由**用户交互终端**执行（agent 无 TTY 环境必 EOTP 失败）；不建 bypass-2FA granular token；恢复码不能当 `--otp`；一切 npmjs 操作显式 `--registry https://registry.npmjs.org`；token 短时效——publish 报 E404 假象＝先 `npm whoami`、失效重新 `npm login`。失败重试须节制（连续敏感操作触发账号临时冻结）。CI 发布走 **trusted publishing（OIDC）**（v0.0.4 起，取代已删除的 NPM_TOKEN secret——bypass-2FA token 2027-01 失去发布资格）：workflow 需 `id-token: write`＋npm ≥ 11.5.1＋`repository.url` 与仓库精确一致；**npmjs.com 的 trusted publisher 绑定必须发布日当天建**（绑定后 2 天内未发生首次成功发布即过期），字段 owner=GeerMrc / repo=dsh-subagent-plus / workflow=release.yml / 开启 Allow npm publish。
 
 1. 发版门：`pnpm run typecheck` + `pnpm test` + `pnpm run build` + `pnpm run pack:artifact` 全绿（CI 同款）。
 2. **人工实测门**：把 tarball 交给用户装进本地实测环境（临时 profile 或桌面端），用户确认功能与回归通过并明示"同意发布"。
 3. CHANGELOG 顶部加版本条目（日期标题、诚实标注含未达项）。
 4. bump `package.json` version → 提交 → 打**附注 tag** `v<x.y.z>`（message 含定档说明：本轮内容与版本线理由）。
 5. 推送 main → **单独推送 tag**（首批 workflow 落库与 tag 不同批，避免 GitHub 不触发）。
-6. tag 推送 = 发布确认点：release workflow 自动跑同款四门 → GitHub Release（附 tgz）；**不 npm publish**（v0.0.3 起）。
-7. **npm 上架＝用户终端发布**：`npm publish ./dist-artifacts/dsh-subagent-plus-<ver>.tgz --registry https://registry.npmjs.org --access public`（npm ≥ 11.7，浏览器 Touch ID 审批）。发布物必须为 tag 树的重打包产物——docs 随包发布，文档提交后必须重跑 `pnpm run pack:artifact`。
-8. **registry 三验**：`npm view dsh-subagent-plus versions` 含新版本且 `latest` 指向它；新版本 tarball HTTP 200；旧 latest tarball 仍 200。
+6. **发布日当天先建 OIDC 绑定**：npmjs.com → 包 Settings → Trusted publishing → 选 GitHub Actions，字段 owner=GeerMrc / repo=dsh-subagent-plus / workflow=release.yml / 开启 **Allow npm publish**（绑定后 2 天内未首发即过期，勿提前建）。
+7. tag 推送 = 发布确认点：release workflow 自动跑同款四门 → GitHub Release（附 tgz）→ **npm publish（OIDC 信任发布，无 token）**。
+8. **registry 三验**：`npm view dsh-subagent-plus versions` 含新版本且 `latest` 指向它；`dist.shasum` 与本地 tarball 逐字节一致；新旧 tarball 200。OIDC 发布失败时**人工兜底**＝用户终端 `npm publish ./dist-artifacts/dsh-subagent-plus-<ver>.tgz --registry https://registry.npmjs.org --access public`（npm ≥ 11.7＋Touch ID；发布物必须为 tag 树重打包产物——docs 随包发布，文档提交后必须重跑 `pnpm run pack:artifact`）。
 9. 发布链失败恢复见 [docs/upgrade.md](docs/upgrade.md) §6。
 
 ## 本地开发纪律
