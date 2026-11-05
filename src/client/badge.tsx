@@ -1,10 +1,11 @@
 /**
- * Read-only pinned-model badge for delegated sessions. Registered on two
- * session-scope list seats (`conversation.input.right` beside the official
- * model selector, and `conversation.session.header.utilities` so one-shot
- * read-only child windows keep the badge even when the composer is taken
- * over). Renders nothing on top-level sessions — their model stays owned by
- * the official selector — and nothing until the session has a readable route.
+ * Read-only pinned-model badge for delegated sessions, registered on the
+ * one session-scope seat `conversation.input.right` beside the official
+ * model selector (the former `conversation.session.header.utilities` seat
+ * is gone since 0.2.5; one-shot read-only child windows have no composer
+ * and therefore no badge — the transcript notice is their channel).
+ * Renders nothing on top-level sessions — their model stays owned by the
+ * official selector — and nothing until the session has a readable route.
  * @module dsh-subagent-plus/client/badge
  */
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -15,6 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import { badgeRoute } from './badge-logic.ts'
+import { routeId } from '../pin.js'
 import { NS } from './locales.ts'
 import { badgeEffortStyle, badgeRouteStyle, badgeStyle } from './styles.ts'
 
@@ -26,7 +28,7 @@ export function PinBadge({ useSession, useProjection, t }: PinBadgeProps) {
   const projection = useProjection('modelSelection')
   const route = badgeRoute(subagent, projection)
   if (route === undefined) return null
-  const routeLabel = `${route.provider}/${route.model}`
+  const routeLabel = routeId(route)
   const fullLabel = route.effort === undefined ? routeLabel : `${routeLabel} · ${route.effort}`
   return (
     <span data-dsmp-badge style={badgeStyle} title={fullLabel} aria-label={t('badge.aria')}>

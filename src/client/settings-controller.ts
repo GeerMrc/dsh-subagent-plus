@@ -14,9 +14,13 @@
  */
 import { validateStrategyConfig, type Strategy } from '../strategy.js'
 import type { PinConfig } from '../config.js'
+import type { SaveOutcome } from './unified-save.js'
 
 /** Maximum candidate routes; mirrors the schema bound. */
 export const MAX_ROUTES = 5
+
+/** Cooldown upper bound: 24h — beyond it a route is effectively frozen forever. */
+const MAX_COOLDOWN_MS = 86_400_000
 
 /** One reasoning effort a model supports, from the catalogue. */
 export interface EffortOption {
@@ -75,17 +79,12 @@ export interface SettingsFormPort {
   mutate(ops: readonly FieldSetOp[], expectedRevision?: number): Promise<boolean>
 }
 
-/** Render-ready state for the section component. */
+/** Render-ready state for the section component. Save outcome feedback
+ *  (saved/failed/conflict) is the unified footer's domain; this controller
+ *  only reports it through the save() return value. */
 export interface SettingsUiState {
   /** `unavailable` hides the editor (the host does not serve the namespace). */
   status: 'loading' | 'ready' | 'unavailable'
-  /** The last save hit the revision fence; the form reloaded the newer value. */
-  conflict: boolean
-  saving: boolean
-  /** One-shot success feedback flag, cleared by the next action. */
-  saved: boolean
-  /** One-shot failure feedback flag, cleared by the next action. */
-  saveFailed: boolean
   /** The committed value, when ready. */
   value: PinConfig | undefined
   /** The form is ready but its value is not a recognizable plugin config
@@ -111,7 +110,7 @@ export interface SettingsUiState {
 }
 
 function isPinConfig(value: unknown): value is PinConfig {
-  return typeof value === 'object' && value !== null && typeof (value as PinConfig).enabled === 'boolean'
+  return typeof value === 'object' && value !== null && typeof (value as PinConfig).strategy === 'string'
 }
 
 function copyConfig(value: PinConfig): PinConfig {
@@ -206,7 +205,7 @@ export class SettingsSectionController {
     this.#form = form
     this.#catalog = catalog
     this.#state = {
-      status: 'loading', conflict: false, saving: false, saved: false, saveFailed: false,
+      status: 'loading',
       value: undefined, valueInvalid: false, draft: undefined, structural: [], degraded: [], cooldownInvalid: false,
       routes: [], addableRoutes: [], atLimit: false, catalogFailed: false,
     }
@@ -257,36 +256,36 @@ export class SettingsSectionController {
   }
 
   #catalogInFlight = false
+  /** Re-entry guard for save(); the footer's `saving` is the unified
+   *  controller's state, not this controller's. */
+  #saving = false
 
-  /** Discard the draft and mirror the committed value again. */
-  reset = (): void => {
-    this.#patch({ draft: this.#state.value === undefined ? undefined : copyConfig(this.#state.value) })
-  }
-
-  /** Commit every changed field behind the revision fence; the shared validation gates the write. */
-  save = async (): Promise<void> => {
+  /** Commit every changed field behind the revision fence; the shared validation gates the write.
+   *  The returned outcome drives the unified footer (see unified-save.ts). */
+  save = async (): Promise<SaveOutcome> => {
     const { value, draft } = this.#state
-    if (value === undefined || draft === undefined || this.#state.saving) return
-    if (this.#state.structural.length > 0 || this.#state.degraded.length > 0 || this.#state.cooldownInvalid) return
+    if (value === undefined || draft === undefined) return 'unavailable'
+    if (this.#saving) return 'clean'
+    if (this.#state.structural.length > 0 || this.#state.degraded.length > 0 || this.#state.cooldownInvalid) return 'blocked'
     const ops = fieldOps(value, draft)
-    if (ops.length === 0) return
-    this.#patch({ saving: true, saved: false, saveFailed: false, conflict: false })
+    if (ops.length === 0) return 'clean'
+    this.#saving = true
     let accepted: boolean
     try {
       // The form's contract: transport failures reject — a rejected save must
-      // release the button and surface `saveFailed`, never strand `saving`.
+      // report 'failed', never strand the in-flight guard.
       accepted = await this.#form.mutate(ops, this.#form.getSnapshot().revision)
     } catch {
-      if (this.#disposed) return
-      this.#patch({ saving: false, saveFailed: true })
-      return
+      if (this.#disposed) return 'failed'
+      this.#saving = false
+      return 'failed'
     }
-    if (this.#disposed) return
+    this.#saving = false
+    if (this.#disposed) return accepted ? 'saved' : 'conflict'
     this.#sync()
-    this.#patch(accepted ? { saving: false, saved: true } : { saving: false, conflict: true })
+    return accepted ? 'saved' : 'conflict'
   }
 
-  setEnabled = (enabled: boolean): void => { this.#edit(draft => { draft.enabled = enabled }) }
   setStrategy = (strategy: Strategy): void => { this.#edit(draft => { draft.strategy = strategy }) }
   setPinnedRoute = (route: RouteOption | null): void => {
     this.#edit(draft => {
@@ -335,7 +334,6 @@ export class SettingsSectionController {
   setShowNotice = (value: boolean): void => { this.#edit(draft => { draft.showNotice = value }) }
   setPinForkChildren = (value: boolean): void => { this.#edit(draft => { draft.pinForkChildren = value }) }
   setFailOpen = (value: boolean): void => { this.#edit(draft => { draft.failOpen = value }) }
-  setAutoRoute = (value: boolean): void => { this.#edit(draft => { draft.autoRoute = value }) }
   /** Parse and store the cooldown; an invalid parse sets `cooldownInvalid` and keeps the old number. */
   setCooldownMs = (text: string): void => {
     const trimmed = text.trim()
@@ -343,8 +341,13 @@ export class SettingsSectionController {
       this.#patch({ cooldownInvalid: true })
       return
     }
+    const parsed = Number(trimmed)
+    if (parsed > MAX_COOLDOWN_MS) {
+      this.#patch({ cooldownInvalid: true })
+      return
+    }
     this.#patch({ cooldownInvalid: false })
-    this.#edit(draft => { draft.cooldownMs = Number(trimmed) })
+    this.#edit(draft => { draft.cooldownMs = parsed })
   }
 
   #edit = (edit: (draft: PinConfig) => void): void => {
@@ -353,8 +356,7 @@ export class SettingsSectionController {
     edit(draft)
     // Rebuild the state object: useSyncExternalStore skips notifications when
     // the snapshot identity is unchanged, so in-place mutation hides edits.
-    // Editing also retires the one-shot save feedback.
-    this.#patch({ saved: false, saveFailed: false })
+    this.#patch({})
   }
 
   #sync = (): void => {
@@ -367,7 +369,9 @@ export class SettingsSectionController {
     }
     if (value !== undefined) {
       patch.draft = copyConfig(value)
-      patch.conflict = false
+      // The reloaded draft is the committed value, so the cooldown parse
+      // flag from before a namespace flap must not keep the save blocked.
+      patch.cooldownInvalid = false
     }
     this.#patch(patch)
   }

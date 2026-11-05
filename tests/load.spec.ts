@@ -20,18 +20,16 @@ function fakeAgent(view: AgentLike): Agent {
   return view as Agent
 }
 
-async function loadedContext(): Promise<Context> {
+async function loadedContext(overrides: Record<string, unknown> = {}): Promise<Context> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(plugin, {
-    enabled: true,
     provider: 'sz',
     model: 'Qwen3.8-27B-FP8',
     reasoningEffort: '',
     pinForkChildren: false,
     failOpen: true,
     showNotice: true,
-    autoRoute: false,
     strategy: 'pinned',
     priority: [],
     respectExplicit: false,
@@ -39,6 +37,7 @@ async function loadedContext(): Promise<Context> {
     fallbackProvider: '',
     fallbackModel: '',
     fallbackReasoningEffort: '',
+    ...overrides,
   })
   return ctx
 }
@@ -82,6 +81,28 @@ describe('plugin load through cordis', () => {
     })
   })
 
+  it('drops the parent-sized maxTokens when the route changes (T6 known deviation)', async () => {
+    const ctx = await loadedContext()
+    const resolved = await ctx.waterfall(
+      'agent/request',
+      { agent: childAgent, turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ ...seed, maxTokens: 131072 }),
+    )
+    // The inherited budget is sized for the parent's model; dropping it lets
+    // the runtime materialise the pinned model's own defaultMaxTokens.
+    expect(resolved).toEqual({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+  })
+
+  it('keeps maxTokens on an effort-only override of the same route', async () => {
+    const ctx = await loadedContext({ reasoningEffort: 'high' })
+    const resolved = await ctx.waterfall(
+      'agent/request',
+      { agent: childAgent, turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'medium' as ReasoningEffortId, maxTokens: 9999 }),
+    )
+    expect(resolved).toEqual({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'high' as ReasoningEffortId, maxTokens: 9999 })
+  })
+
   it('leaves top-level requests untouched', async () => {
     const ctx = await loadedContext()
     await expect(dispatch(ctx, topAgent)).resolves.toEqual(seed)
@@ -103,12 +124,19 @@ describe('plugin load through cordis', () => {
   })
 })
 
+describe('legacy residue (R7 binary takeover)', () => {
+  it('routes children even when a legacy enabled:false key persists in the config', async () => {
+    const residue = { enabled: false }
+    const ctx = await loadedContext(residue)
+    await expect(dispatch(ctx, childAgent)).resolves.toEqual({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+  })
+})
+
 describe('visible pinned-model notice', () => {  it('adds one transcript notice to a child agent, naming the pinned route', async () => {
     const ctx = await loadedContext()
     const decision = await dispatchPreStep(ctx, childAgent)
     expect(decision.kind).toBe('enter')
-    expect(noticeText(decision)).toContain('sz/Qwen3.8-27B-FP8')
-    expect(noticeText(decision)).toContain('dsh-subagent-plus')
+    expect(noticeText(decision)).toBe('[模型钉定 model pinned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8｜every request runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
     const again = await dispatchPreStep(ctx, childAgent, 3)
     expect(again.kind === 'enter' && again.messages.length).toBe(0)
   })
@@ -132,6 +160,55 @@ describe('visible pinned-model notice', () => {  it('adds one transcript notice 
   })
 })
 
+describe('pinned notice vs registration', () => {
+  const unregisteredPinConfig: plugin.PinConfig = {
+    provider: 'sz',
+    model: 'Qwen3.8-27B-FP8',
+    reasoningEffort: '',
+    pinForkChildren: false,
+    failOpen: true,
+    showNotice: true,
+    strategy: 'pinned',
+    priority: [],
+    respectExplicit: false,
+    cooldownMs: 120_000,
+    fallbackProvider: '',
+    fallbackModel: '',
+    fallbackReasoningEffort: '',
+  }
+
+  it('names the skip when failOpen keeps the resolved route (no false pinned claim)', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    // Only hh is registered: the sz pin is the unregistered route.
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, unregisteredPinConfig)
+    const decision = await dispatchPreStep(ctx, newChild())
+    expect(decision.kind).toBe('enter')
+    expect(noticeText(decision)).toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/Qwen3.8-27B-FP8 未注册，本子智能体保持原路由｜pinned route sz/Qwen3.8-27B-FP8 unregistered, this child keeps its resolved route — dsh-subagent-plus]')
+  })
+
+  it('still claims the pin when failOpen is off (the override applies and fails loudly)', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, { ...unregisteredPinConfig, failOpen: false })
+    const decision = await dispatchPreStep(ctx, newChild())
+    expect(noticeText(decision)).toBe('[模型钉定 model pinned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8｜every request runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+  })
+
+  it('skipped notice dedupes per child like the pinned one', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, unregisteredPinConfig)
+    const agent = newChild()
+    await dispatchPreStep(ctx, agent)
+    const again = await dispatchPreStep(ctx, agent, 3)
+    expect(again.kind === 'enter' && again.messages.length).toBe(0)
+  })
+})
+
 /** Structural stand-in for the official `subagentModelSelection` settings. */
 const officialSettings = {
   enabled: true,
@@ -142,14 +219,12 @@ const officialSettings = {
 }
 
 const autoRouteConfig: plugin.PinConfig = {
-  enabled: true,
   provider: '',
   model: '',
   reasoningEffort: '',
   pinForkChildren: false,
   failOpen: true,
   showNotice: false,
-  autoRoute: true,
   strategy: 'pinned',
   priority: [],
   respectExplicit: false,
@@ -159,25 +234,21 @@ const autoRouteConfig: plugin.PinConfig = {
   fallbackReasoningEffort: '',
 }
 
-describe('autoRoute through a live context', () => {
-  it('pins onto the first official allowed route when provider/model are unset', async () => {
+describe('legacy residue: autoRoute (R7 binary takeover)', () => {
+  it('ignores a legacy autoRoute:true key when the pinned route is empty', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     ctx.provide('subagentModelSelection', officialSettings)
-    await ctx.plugin(plugin, autoRouteConfig)
-    await expect(dispatch(ctx, childAgent)).resolves.toEqual({ provider: 'sz', model: 'auto-picked' })
-    await expect(dispatch(ctx, topAgent)).resolves.toEqual(seed)
-  })
-
-  it('pins nothing without the settings service', async () => {
-    const ctx = new Context()
-    contexts.push(ctx)
-    await ctx.plugin(plugin, autoRouteConfig)
+    const residue = { autoRoute: true }
+    await ctx.plugin(plugin, { ...autoRouteConfig, ...residue })
+    // No adoption of the official first entry: the child keeps its resolved route.
     await expect(dispatch(ctx, childAgent)).resolves.toEqual(seed)
   })
 })
 
-/** Fresh official settings per test: the spread strategies read this list in stored order. */
+/** Fresh official settings per test. The plugin never reads this service (ADR 0005); these
+ *  provides are a regression tripwire — if the official-list reader ever comes back, the
+ *  empty-list and autoRoute-residue cases above flip red. */
 function allowList(...routes: { provider: string; model: string }[]): typeof officialSettings {
   const settings = {
     enabled: true,
@@ -194,16 +265,17 @@ const hh = { provider: 'hh', model: 'Qwen3.8-27B-FP8' }
 
 function spreadConfig(overrides: Partial<plugin.PinConfig>): plugin.PinConfig {
   return {
-    enabled: true,
     provider: '',
     model: '',
     reasoningEffort: '',
     pinForkChildren: false,
     failOpen: true,
     showNotice: true,
-    autoRoute: true,
     strategy: 'round-robin',
-    priority: [],
+    priority: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    ],
     respectExplicit: false,
     cooldownMs: 120_000,
     fallbackProvider: '',
@@ -264,16 +336,36 @@ describe('spread strategies through a live context (S-06)', () => {
     await expect(dispatch(ctx, newChild())).resolves.toEqual({ ...hh, reasoningEffort: 'high' })
   })
 
-  it('passes requests through when the official list is disabled and no priority is configured', async () => {
-    const settings = allowList(sz, hh)
-    settings.enabled = false
-    const ctx = await spreadContext(spreadConfig({}), settings)
+  it('keeps children on their resolved route when the candidate list is empty and no fallback is configured', async () => {
+    const ctx = await spreadContext(spreadConfig({ priority: [] }))
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
   })
 
   it('ignores the top-level provider/model fields under a spread strategy', async () => {
     const ctx = await spreadContext(spreadConfig({ provider: 'zai', model: 'glm-5.3' }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+  })
+})
+
+describe('failure recording outranks an upstream retry decider (R9 P0)', () => {
+  it('records a vetoed failure and steers the next child away — the plugin must see retries', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('settings', {})
+    // llm-retry stand-in registered FIRST (production layer order), in normal
+    // mode it never calls next() for retryable codes — it vetoes downstream
+    // listeners until its retries are exhausted.
+    ctx.on('agent/request-error', async (): Promise<{ kind: 'retry' }> => ({ kind: 'retry' }))
+    // Priority strategy: every new child takes the head route while healthy —
+    // no rotation to mask the assertion.
+    await ctx.plugin(plugin, spreadConfig({ strategy: 'priority' }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    // The veto hid the failure from append-registered listeners; the plugin's
+    // recorder must still have run (prepend) and the next child must avoid sz.
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
   })
 })
 
@@ -356,13 +448,13 @@ describe('spread notices (S-08)', () => {
     const child = newChild()
     await dispatch(ctx, child)
     const assigned = await dispatchPreStep(ctx, child)
-    expect(noticeText(assigned)).toBe('[model assigned: every request from this child agent runs sz/Qwen3.8-27B-FP8 (strategy: round-robin, dsh-subagent-plus)]')
+    expect(noticeText(assigned)).toBe('[模型指派 model assigned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]')
     const again = await dispatchPreStep(ctx, child, 3)
     expect(again.kind === 'enter' && again.messages.length).toBe(0)
     await dispatchFailure(ctx, child, 'sz', 'TIMEOUT')
     await expect(dispatch(ctx, child)).resolves.toEqual(hh)
     const reassigned = await dispatchPreStep(ctx, child, 4)
-    expect(noticeText(reassigned)).toBe('[model reassigned: route sz/Qwen3.8-27B-FP8 is cooling down (TIMEOUT); this child agent continues with hh/Qwen3.8-27B-FP8 (dsh-subagent-plus)]')
+    expect(noticeText(reassigned)).toBe('[模型切换 model reassigned: sz/Qwen3.8-27B-FP8 冷却中（TIMEOUT），本子智能体继续使用 hh/Qwen3.8-27B-FP8｜sz/Qwen3.8-27B-FP8 cooling (TIMEOUT), continues hh/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
     const settled = await dispatchPreStep(ctx, child, 5)
     expect(settled.kind === 'enter' && settled.messages.length).toBe(0)
   })
@@ -423,19 +515,149 @@ describe('configuration gates (structural fail-loud, cross-field degrade)', () =
     await expect(ctx.plugin(plugin, spreadConfig({ strategy: 'round-robin', priority: six }))).rejects.toThrow()
   })
 
-  it('loads a priority strategy with no routes and keeps children on their resolved route (degraded, restart-safe)', async () => {
-    const ctx = await spreadContext(spreadConfig({ strategy: 'priority' }))
+  it('loads a priority strategy with no routes and keeps children on their resolved route (not assigned)', async () => {
+    const ctx = await spreadContext(spreadConfig({ strategy: 'priority', priority: [] }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
   })
 
-  it('keeps degrading softly when disabled, even with structurally invalid routes', async () => {
+  it('refuses structurally invalid routes even when a legacy enabled:false key persists', async () => {
     const ctx = new Context()
     contexts.push(ctx)
-    await expect(ctx.plugin(plugin, spreadConfig({
-      enabled: false,
-      priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'sz', model: 'a', reasoningEffort: '' }],
-    }))).resolves.toBeDefined()
+    const residue = { enabled: false }
+    await expect(ctx.plugin(plugin, {
+      ...spreadConfig({ priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'sz', model: 'a', reasoningEffort: '' }] }),
+      ...residue,
+    })).rejects.toThrow()
+  })
+})
+
+describe('failover blind spots (R9 C2)', () => {
+  const zai = { provider: 'zai', model: 'glm-5.3' }
+
+  it('returns a child from the fallback to a recovered candidate', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: '' }],
+      fallbackProvider: 'zai',
+      fallbackModel: 'glm-5.3',
+      cooldownMs: 200,
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    // The retry moves the child onto hh first, so the hh failure attributes
+    // to the child's memory route.
+    await expect(dispatch(ctx, child)).resolves.toEqual(hh)
+    await dispatchFailure(ctx, child, 'hh', 'SERVER', 503)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    // Cooldowns (200ms) expire: the child keeps its sticky fallback for life
+    // (assignment semantics), but new children take the recovered head route.
+    await new Promise(resolve => setTimeout(resolve, 250))
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+  })
+
+  it('hands over to a cross-provider fallback when credentials kill both candidate providers', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: '' }],
+      fallbackProvider: 'zai',
+      fallbackModel: 'glm-5.3',
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'INVALID_CREDENTIAL', 401)
+    await dispatchFailure(ctx, child, 'hh', 'INVALID_CREDENTIAL', 401)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(zai)
+  })
+
+  it('reports only the last hop of a multi-hop failover', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: '' }, { ...zai, reasoningEffort: '' }],
+      showNotice: true,
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, child)).resolves.toEqual(hh)
+    // hh fails before the pending sz→hh notice was emitted: the transcript
+    // must report only the final hop (hh→zai), never the intermediate one.
+    await dispatchFailure(ctx, child, 'hh', 'SERVER', 503)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    const notice = await dispatchPreStep(ctx, child)
+    expect(noticeText(notice)).toBe('[模型切换 model reassigned: hh/Qwen3.8-27B-FP8 冷却中（SERVER），本子智能体继续使用 zai/glm-5.3｜hh/Qwen3.8-27B-FP8 cooling (SERVER), continues zai/glm-5.3 — dsh-subagent-plus]')
+  })
+
+  it('applies the new candidate\'s reasoning effort on failover', async () => {
+    const ctx = await spreadContext(spreadConfig({
+      strategy: 'priority',
+      priority: [{ ...sz, reasoningEffort: '' }, { ...hh, reasoningEffort: 'xhigh' }],
+    }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, child)).resolves.toEqual({ ...hh, reasoningEffort: 'xhigh' })
+  })
+})
+
+describe('pinned route failure hands over to the fallback (R9)', () => {
+  const pinnedWithFallback = (overrides: Partial<plugin.PinConfig> = {}): plugin.PinConfig => ({
+    ...spreadConfig({
+      strategy: 'pinned',
+      provider: 'sz',
+      model: 'Qwen3.8-27B-FP8',
+      priority: [],
+      fallbackProvider: 'hh',
+      fallbackModel: 'Qwen3.8-27B-FP8',
+    }),
+    ...overrides,
+  })
+
+  it('routes children to the fallback while the pinned route is cooling', async () => {
+    const ctx = await spreadContext(pinnedWithFallback())
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
+    // The same child's next request also lands on the fallback.
+    await expect(dispatch(ctx, child)).resolves.toEqual(hh)
+  })
+
+  it('falls back when the pinned route is unregistered and failOpen skips it', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llmWith(() => [hh]))
+    await ctx.plugin(plugin, pinnedWithFallback())
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
+  })
+
+  it('keeps the cooling pinned route when the fallback is unusable too', async () => {
+    const ctx = await spreadContext(pinnedWithFallback())
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await dispatchFailure(ctx, newChild(), 'hh', 'SERVER', 503)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+  })
+
+  it('never hands over on health when cooldownMs is 0', async () => {
+    const ctx = await spreadContext(pinnedWithFallback({ cooldownMs: 0 }))
+    const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+  })
+
+  it('notifies truthfully when the fallback takes over a cooling pin', async () => {
+    const ctx = await spreadContext(pinnedWithFallback({ showNotice: true }))
+    const child = newChild()
+    await dispatch(ctx, child)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    const notice = await dispatchPreStep(ctx, newChild())
+    expect(noticeText(notice)).toBe('[模型钉定兜底 model pin fallback: 钉定路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 hh/Qwen3.8-27B-FP8｜pinned route sz/Qwen3.8-27B-FP8 unavailable, runs fallback hh/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
   })
 })
 
@@ -444,12 +666,12 @@ describe('fallback route (adjudication after candidates)', () => {
 
   it('answers for a pinned config with no pinned route (single-model entry)', async () => {
     const ctx = await spreadContext(spreadConfig({
-      strategy: 'pinned', provider: '', model: '', autoRoute: false,
+      strategy: 'pinned', provider: '', model: '', priority: [],
       fallbackProvider: 'hh', fallbackModel: 'Qwen3.8-27B-FP8',
     }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
     const notice = await dispatchPreStep(ctx, newChild())
-    expect(noticeText(notice)).toBe('[model fallback: no usable candidate route; this child agent runs hh/Qwen3.8-27B-FP8 (dsh-subagent-plus)]')
+    expect(noticeText(notice)).toBe('[模型兜底 model fallback: 无可用候选路由，本子智能体运行 hh/Qwen3.8-27B-FP8｜no usable candidate, runs hh/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
   })
 
   it('answers for a spread strategy when every candidate is cooling', async () => {
@@ -462,7 +684,7 @@ describe('fallback route (adjudication after candidates)', () => {
     await dispatchFailure(ctx, onHh, 'hh', 'SERVER', 503)
     await expect(dispatch(ctx, newChild())).resolves.toEqual(zai)
     const notice = await dispatchPreStep(ctx, newChild())
-    expect(noticeText(notice)).toContain('[model fallback:')
+    expect(noticeText(notice)).toContain('model fallback')
   })
 
   it('moves a cooling child onto the fallback only after every candidate is out', async () => {
@@ -477,8 +699,8 @@ describe('fallback route (adjudication after candidates)', () => {
     await dispatchFailure(ctx, onHh, 'hh', 'SERVER', 503)
     await expect(dispatch(ctx, onSz)).resolves.toEqual(zai)
     const notice = await dispatchPreStep(ctx, onSz, 3)
-    expect(noticeText(notice)).toContain('is cooling down')
-    expect(noticeText(notice)).toContain('continues with zai/glm-5.3')
+    expect(noticeText(notice)).toContain('cooling (')
+    expect(noticeText(notice)).toContain('continues zai/glm-5.3')
   })
 
   it('passes through when the fallback is cooling too', async () => {
@@ -496,7 +718,7 @@ describe('fallback route (adjudication after candidates)', () => {
   })
 
   it('ignores a half-filled fallback (degraded)', async () => {
-    const ctx = await spreadContext(spreadConfig({ strategy: 'pinned', provider: '', model: '', autoRoute: false, fallbackProvider: 'hh' }))
+    const ctx = await spreadContext(spreadConfig({ strategy: 'pinned', provider: '', model: '', fallbackProvider: 'hh' }))
     await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
   })
 
@@ -515,7 +737,7 @@ describe('fallback route (adjudication after candidates)', () => {
 
   it('records fallback-provider failures for a pinned config and clears the fallback while cooling', async () => {
     const ctx = await spreadContext(spreadConfig({
-      strategy: 'pinned', provider: '', model: '', autoRoute: false,
+      strategy: 'pinned', provider: '', model: '', priority: [],
       fallbackProvider: 'sz', fallbackModel: 'Qwen3.8-27B-FP8',
     }))
     const child = newChild()
@@ -525,17 +747,9 @@ describe('fallback route (adjudication after candidates)', () => {
   })
 })
 
-describe('soft switch softens invalid spread configuration (review P2-1)', () => {
-  it('loads with enabled:false even when the priority strategy has no routes', async () => {
-    const ctx = new Context()
-    contexts.push(ctx)
-    await expect(ctx.plugin(plugin, spreadConfig({ enabled: false, strategy: 'priority' }))).resolves.toBeDefined()
-  })
-})
-
 describe('review P1-2/P1-3: inert disable and pinned attribution', () => {
-  it('stays inert on request-error while disabled, so re-enabling starts from clean health', async () => {
-    const entry = spreadConfig({ enabled: false, fallbackProvider: 'zai', fallbackModel: 'glm-5.3' })
+  it('records request-error health regardless of a legacy enabled residue', async () => {
+    const entry: { [key: string]: unknown } = { ...spreadConfig({ fallbackProvider: 'zai', fallbackModel: 'glm-5.3' }), enabled: false }
     const ctx = new Context()
     contexts.push(ctx)
     ctx.provide('subagentModelSelection', allowList(sz, hh))
@@ -545,9 +759,9 @@ describe('review P1-2/P1-3: inert disable and pinned attribution', () => {
     ctx.provide('settings', {})
     plugin.apply(ctx, entry)
     const child = newChild()
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
     await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
-    entry.enabled = true
-    await expect(dispatch(ctx, newChild())).resolves.toEqual(sz)
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
   })
 
   it('attributes a pinned-route failure to the pinned model, not the same-provider fallback', async () => {

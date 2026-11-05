@@ -1,6 +1,6 @@
 /**
  * dsh-subagent-plus client half entry: registers the locale dictionaries,
- * the read-only pinned-model badge on two session-scope list seats, and the
+ * the read-only pinned-model badge on its session-scope list seat, and the
  * plugin's settings section. The bundle body is wrapped by the tsdown banner
  * into the `window.__ModuleLoader__.load({ id, factory })` contract.
  *
@@ -25,7 +25,9 @@ import type { PinConfig } from '../config.js'
 import type { CatalogGroup } from './settings-controller.js'
 import { PinBadge } from './badge.tsx'
 import { en, NS, zh } from './locales.ts'
-import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.ts'
+import { OfficialLimitsController, type OfficialLimitsValue } from './official-surfaces.ts'
+import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.js'
+import { UnifiedSaveController } from './unified-save.js'
 import { bindSettingsSection } from './settings-section.tsx'
 import { PAGE_STYLE_CSS } from './settings-styles.ts'
 
@@ -91,21 +93,35 @@ export function apply(ctx: Context): void {
     },
   }
   const controller = new SettingsSectionController(form, catalog)
-  ctx.effect(() => () => { controller.dispose() }, 'dsh-subagent-plus: settings form subscription')
+  // Takeover surface (ADR 0003): the runtime-limits namespace is absorbed
+  // into the settings card through the same keys — disabling this plugin
+  // restores the official page with these values. The model-selection
+  // allowlist has no editing face: the candidate list is the replacement.
+  const limits = new OfficialLimitsController(asFormPort(ctx.configForms.get<OfficialLimitsValue>('subagent')))
+  // One footer button, fixed commit order: the official limits namespace
+  // first, the plugin's own form last.
+  const save = new UnifiedSaveController([
+    { key: 'limits', save: limits.save },
+    { key: 'self', save: controller.save },
+  ])
+  ctx.effect(() => () => { controller.dispose(); limits.dispose(); save.dispose() }, 'dsh-subagent-plus: settings form subscriptions')
   // The catalogue is not part of the settings document: adapters come and go,
   // and a commit elsewhere can change which routes exist.
   ctx.effect(() => ctx.remote.$on('llm/adapters-updated', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: adapter invalidations')
   ctx.effect(() => ctx.remote.$on('settings/document-updated', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: settings invalidations')
   ctx.effect(() => ctx.on('connection/reset', () => { void controller.refreshCatalog() }), 'dsh-subagent-plus: connection generation')
-  // The section stays mounted only while the host serves this namespace.
+  // The section stays mounted only while the host serves this namespace. The
+  // official-surface controllers bind alongside: their own availability is
+  // per-namespace (T7), independent of this plugin's namespace.
   ctx.effect(() => ctx.configForms.whileServed([NS], () => {
     controller.init()
+    limits.init()
     return ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: NS,
       order: 17,
       label: () => t('nav'),
       locale: NS,
-    }, bindSettingsSection(controller)))
+    }, bindSettingsSection(controller, limits, save)))
   }), 'dsh-subagent-plus: settings section')
 }

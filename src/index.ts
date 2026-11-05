@@ -14,8 +14,9 @@
  *
  * Routes apply on the `agent/request` waterfall after deeper listeners, so an
  * explicit per-call selection made by the delegating model is also
- * overridden unless `respectExplicit` is on — this plugin is a deliberate
- * assignment, not an allowlist. A spread strategy decides once per child on
+ * overridden; a spread strategy honours it when `respectExplicit` is on
+ * (the pinned strategy is a deliberate forced assignment, not an allowlist).
+ * A spread strategy decides once per child on
  * its first request and keeps that route for the child's lifetime; only a
  * route entering cooldown moves the child to the next healthy candidate, and
  * the configured fallback route answers when no candidate is usable.
@@ -41,14 +42,12 @@ import type { LlmCallConfig, LlmFailure, ReasoningEffortId } from '@deepseek-ai/
 import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 // Ambient `AgentOptions.subagentDepth` augmentation owned by the subagent runtime.
 import type {} from '@deepseek-ai/dsh-subagent'
-// Ambient `ctx.subagentModelSelection` service augmentation (optional at runtime).
-import type {} from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import {
   childDepthOf,
   isForkedChild,
   pinnedRoute,
   resolvePinRoute,
-  type OfficialModelSelectionSettings,
+  routeId,
   type PinOverride,
   type PinRoute,
   type RouteFields,
@@ -61,8 +60,12 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
+  pinnedNotice,
+  pinFallbackNotice,
+  pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
+  routeKey,
   RouteHealth,
   selectChildRoute,
   usableFallback,
@@ -104,13 +107,12 @@ interface SpreadDecision {
 type Decision = { kind: 'explicit'; route: PinRoute } | SpreadDecision
 
 export function apply(ctx: Context, entry: PinConfigRuntime): void {
-  // Structural problems refuse to load (softened when disabled: the hooks
-  // stay inert, so the plugin loads anyway); cross-field combinations that a
+  // Structural problems refuse to load; cross-field combinations that a
   // settings page could persist degrade with a warning instead of throwing —
   // throwing on load would brick the plugin on the next Host restart.
   const boot = materializeConfig(entry)
   const bootReport = validateStrategyConfig(boot)
-  if (boot.enabled && bootReport.structural.length > 0) {
+  if (bootReport.structural.length > 0) {
     throw new Error(bootReport.structural.join('; '))
   }
   const warnedDegraded = new Set<string>()
@@ -140,35 +142,8 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   let noCandidateWarned = false
   let unregisteredPinWarned = false
 
-  // Read per use: the official preference is volatile and may change while
-  // the Host runs, and the read costs two getters next to a full LLM request.
-  const readSettings = (): OfficialModelSelectionSettings | undefined => {
-    try {
-      // Structural read of the optional host service; the official face is
-      // not a compile-time peer of this plugin.
-      return ctx.get('subagentModelSelection') as OfficialModelSelectionSettings | undefined
-    } catch {
-      return undefined
-    }
-  }
-  const resolvePin = (config: PinConfig): PinRoute | undefined => {
-    try {
-      return resolvePinRoute(config, readSettings())
-    } catch {
-      logSettingsFailureOnce(ctx)
-      return undefined
-    }
-  }
-  const candidatesOf = (config: PinConfig): PinRoute[] => {
-    const plan = resolveStrategyPlan(config)
-    if (plan.kind !== 'spread') return []
-    try {
-      return candidateRoutes(plan, config, readSettings())
-    } catch {
-      logSettingsFailureOnce(ctx)
-      return []
-    }
-  }
+  const resolvePin = (config: PinConfig): PinRoute | undefined => resolvePinRoute(config)
+  const candidatesOf = (config: PinConfig): PinRoute[] => candidateRoutes(config)
   const usableCandidates = async (config: PinConfig): Promise<PinRoute[]> => {
     const all = candidatesOf(config)
     if (!config.failOpen) return all
@@ -224,22 +199,31 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (plan.kind !== 'spread' || config.cooldownMs === 0) return
     const cooling = health.cooldown(decision.route, Date.now())
     if (cooling === undefined) return
-    const next = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
-      ?? await usableFallbackOf(config)
+    const nextCandidate = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
+    const next = nextCandidate ?? await usableFallbackOf(config)
     if (next === undefined || routeKeyEquals(next, decision.route)) return
     decision.pendingFailover = { from: decision.route, to: next, code: cooling.code }
     ctx.logger.warn(
-      `dsh-subagent-plus: route "${label(decision.route)}" is cooling down (${cooling.code}); `
-      + `child agent continues with "${label(next)}"`,
+      `dsh-subagent-plus: route "${routeId(decision.route)}" is cooling down (${cooling.code}); `
+      + `child agent continues with "${routeId(next)}"`,
     )
     decision.route = next
+    // Keep `via` truthful for the redundant-notice suppression and any future
+    // consumer: a hop onto a candidate is a strategy assignment, onto the
+    // fallback a fallback one.
+    decision.via = nextCandidate !== undefined ? 'strategy' : 'fallback'
   }
 
   const recordFailure = (config: PinConfig, agent: Agent, provider: string, failure: LlmFailure): void => {
     const failureClass = classifyFailure(failure.code, failure.status)
     if (failureClass === 'ignore') return
     const fallback = fallbackRouteOf(config)
-    if (!candidatesOf(config).some(route => route.provider === provider) && fallback?.provider !== provider) return
+    const failurePlan = resolveStrategyPlan(config)
+    const failurePin = failurePlan.kind === 'pinned' ? resolvePin(config) : undefined
+    // The provider gate covers every route this configuration can assign:
+    // candidates, the fallback, and — under the pinned strategy — the pin.
+    if (!candidatesOf(config).some(route => route.provider === provider)
+      && fallback?.provider !== provider && failurePin?.provider !== provider) return
     const now = Date.now()
     const until = now + Math.max(failure.providerRetryAfterMs ?? 0, config.cooldownMs)
     if (failureClass === 'sticky-provider') {
@@ -269,7 +253,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       return
     }
     health.markRoute({ provider, model }, until, failure.code)
-    ctx.logger.warn(`dsh-subagent-plus: route "${provider}/${model}" failed (${failure.code}); cooling down for ${until - now}ms`)
+    ctx.logger.warn(`dsh-subagent-plus: route "${routeId({ provider, model })}" failed (${failure.code}); cooling down for ${until - now}ms`)
   }
 
   // Adapter sets change at runtime: a memoized-registered route may have been
@@ -285,12 +269,26 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const config = live.current()
     if (!config.pinForkChildren && isForkedChild(agent)) return resolved
     const plan = resolveStrategyPlan(config)
-    if (plan.kind === 'off') return resolved
     if (plan.kind === 'pinned') {
       const pin = resolvePin(config)
       if (pin !== undefined) {
         const override = pinnedRoute(resolved, pin)
         if (override !== undefined) {
+          // An unusable pin (unregistered under failOpen, or cooling while a
+          // fallback is usable) hands over to the fallback — the same
+          // "configured fallback always backs up" semantics as the spread
+          // strategies; with no usable fallback the pin stays (all-dead keeps
+          // the assigned route, like a spread child keeps its sticky one).
+          const pinFallback = async (verb: string): Promise<{ moved: false } | { moved: true; config: LlmCallConfig }> => {
+            const fallback = await usableFallbackOf(config)
+            if (fallback === undefined) return { moved: false }
+            const fallbackOverride = pinnedRoute(resolved, fallback)
+            // An undefined override means the child already runs the fallback
+            // — the handover is done; keep the resolved config as-is.
+            if (fallbackOverride === undefined) return { moved: true, config: resolved }
+            logRouteOnce(ctx, agent, resolved, fallbackOverride, verb)
+            return { moved: true, config: applyOverride(resolved, fallbackOverride) }
+          }
           if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
             // One line per lifetime: an unregistered pin fails every request,
             // and the registration cache below memoizes only successes, so
@@ -299,11 +297,16 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
             if (!unregisteredPinWarned) {
               unregisteredPinWarned = true
               ctx.logger.warn(
-                `dsh-subagent-plus: pinned route "${pin.provider}/${pin.model}" is not registered; `
-                + `child requests keep their resolved route`,
+                `dsh-subagent-plus: pinned route "${routeId(pin)}" is not registered; `
+                + `child requests fall back or keep their resolved route`,
               )
             }
-            return resolved
+            const unavailable = await pinFallback('fallback-routed (pin unavailable)')
+            if (unavailable.moved) return unavailable.config
+          }
+          if (!healthyNow(config)(pin)) {
+            const cooling = await pinFallback('fallback-routed (pin cooling)')
+            if (cooling.moved) return cooling.config
           }
           logRouteOnce(ctx, agent, resolved, override, 'pinned')
           return applyOverride(resolved, override)
@@ -327,20 +330,22 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return applyOverride(resolved, override)
   })
 
+  // Prepend: the official llm-retry listener (normal mode) schedules its own
+  // retry without calling next(), vetoing downstream listeners until its
+  // retries are exhausted. Recording first keeps the health table current on
+  // every failed attempt, so the retry re-enters agent/request against a
+  // cooled route and the failover below takes effect mid-child.
   ctx.on('agent/request-error', async (payload, next): Promise<RequestErrorAction> => {
     const config = live.current()
-    // Fully inert while disabled: official-routing traffic must not pollute
-    // the health table the next enablement would consult.
-    if (!config.enabled) return next()
     const routed = resolveStrategyPlan(config).kind === 'spread' || fallbackRouteOf(config) !== undefined
     if (routed && config.cooldownMs > 0) recordFailure(config, payload.agent, payload.provider, payload.failure)
     return next()
-  })
+  }, { prepend: true })
 
   ctx.on('agent/pre-step', async (payload, next): Promise<PreStepDecision> => {
     const decision = await next()
     const config = live.current()
-    if (!config.enabled || !config.showNotice) return decision
+    if (!config.showNotice) return decision
     if (decision.kind === 'reject' || payload.signal.aborted) return decision
     // The loop skips an empty first step and an emptied offered continuation.
     if (decision.messages.length === 0 && (payload.step === 1 || payload.messages.length > 0)) {
@@ -351,22 +356,45 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (!config.pinForkChildren && isForkedChild(agent)) return decision
     const plan = resolveStrategyPlan(config)
     if (plan.kind !== 'spread') {
-      const pin = plan.kind === 'off' ? undefined : resolvePin(config)
+      const pin = resolvePin(config)
       let text: string | undefined
       let target: PinRoute | undefined
       if (pin !== undefined) {
-        target = pin
-        text = `[model pinned: every request from this child agent runs ${label(pin)} (dsh-subagent-plus)]`
+        // Mirrors the request-side usability decision: an unusable pin
+        // (unregistered under failOpen, or cooling) with a usable fallback
+        // must be reported as the fallback actually running.
+        if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
+          const fallback = await usableFallbackOf(config)
+          if (fallback !== undefined) {
+            target = fallback
+            text = pinFallbackNotice(routeId(pin), routeId(fallback))
+          } else {
+            target = pin
+            text = pinSkippedNotice(routeId(pin))
+          }
+        } else if (!healthyNow(config)(pin)) {
+          const fallback = await usableFallbackOf(config)
+          if (fallback !== undefined) {
+            target = fallback
+            text = pinFallbackNotice(routeId(pin), routeId(fallback))
+          } else {
+            target = pin
+            text = pinnedNotice(routeId(pin))
+          }
+        } else {
+          target = pin
+          text = pinnedNotice(routeId(pin))
+        }
       } else {
         const fallback = fallbackRouteOf(config)
         if (fallback !== undefined && healthyNow(config)(fallback)
           && (!config.failOpen || await routeRegistered(ctx, fallback.provider, fallback.model))) {
           target = fallback
-          text = fallbackNotice(label(fallback))
+          text = fallbackNotice(routeId(fallback))
         }
       }
       if (target === undefined || text === undefined) return decision
-      const targetLabel = label(target)
+      const targetLabel = routeId(target)
       if (noticedLabel.get(agent) === targetLabel) return decision
       noticedLabel.set(agent, targetLabel)
       const notice = createUserMessage({
@@ -381,7 +409,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (routing.pendingFailover !== undefined) {
       const { from, to, code } = routing.pendingFailover
       routing.pendingFailover = undefined
-      text = reassignedNotice(label(from), label(to), code)
+      text = reassignedNotice(routeId(from), routeId(to), code)
       // The reassignment names the new route; its plain assignment notice is redundant.
       routing.noticed.add(assignmentText(routing, routing.route))
     } else {
@@ -391,7 +419,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     routing.noticed.add(text)
     const notice = createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(label(routing.route)) },
+      source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(routeId(routing.route)) },
     })
     return { ...decision, messages: [...decision.messages, notice] }
   })
@@ -400,16 +428,12 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
 /** The transcript line naming how one decision's current route was assigned. */
 function assignmentText(decision: SpreadDecision, route: PinRoute): string {
   return decision.via === 'fallback'
-    ? fallbackNotice(label(route))
-    : assignedNotice(label(route), decision.strategy)
+    ? fallbackNotice(routeId(route))
+    : assignedNotice(routeId(route), decision.strategy)
 }
 
 function routeKeyEquals(left: PinRoute, right: PinRoute): boolean {
   return left.provider === right.provider && left.model === right.model
-}
-
-function label(route: { provider: string; model: string }): string {
-  return `${route.provider}/${route.model}`
 }
 
 function applyOverride(resolved: LlmCallConfig, override: PinOverride): LlmCallConfig {
@@ -418,12 +442,19 @@ function applyOverride(resolved: LlmCallConfig, override: PinOverride): LlmCallC
     // fails loudly when the provider resolves the effort for this request.
     return { ...resolved, reasoningEffort: override.reasoningEffort as ReasoningEffortId }
   }
+  // A route change drops BOTH inherited per-request knobs: the effort (the
+  // official delegation precedent) and the maxTokens — the inherited budget is
+  // sized for the parent's model and the runtime materialises the selected
+  // model's own default only when the field is absent. Dropping maxTokens is
+  // a documented deviation from official delegation semantics (README known
+  // behaviour): an explicitly configured parent budget does not propagate to a
+  // rerouted child.
+  const { reasoningEffort: _droppedEffort, maxTokens: _droppedTokens, ...rest } = resolved
   if (override.reasoningEffort === undefined) {
-    const { reasoningEffort: _dropped, ...rest } = resolved
     return { ...rest, provider: override.provider, model: override.model }
   }
   return {
-    ...resolved,
+    ...rest,
     provider: override.provider,
     model: override.model,
     reasoningEffort: override.reasoningEffort as ReasoningEffortId,
@@ -451,20 +482,11 @@ function parentRouteOf(ctx: Context, agent: Agent): RouteFields | undefined {
 /** One notice per agent per distinct pin target (pinned strategy and fallback). */
 const noticedLabel = new WeakMap<object, string>()
 
-/** One debug line for the lifetime of the process when the official settings read fails. */
-let settingsFailureLogged = false
-
-function logSettingsFailureOnce(ctx: Context): void {
-  if (settingsFailureLogged) return
-  settingsFailureLogged = true
-  ctx.logger.debug('dsh-subagent-plus: reading the subagent model-selection settings failed; this request keeps its resolved route')
-}
-
 /** Successful validations are memoized; failures retry on later requests. */
 const registeredRoutes = new Set<string>()
 
 async function routeRegistered(ctx: Context, provider: string, model: string): Promise<boolean> {
-  if (registeredRoutes.has(`${provider}\0${model}`)) return true
+  if (registeredRoutes.has(routeKey({ provider, model }))) return true
   const llm = ctx.get('llm')
   if (llm === undefined) return true
   try {
@@ -474,7 +496,7 @@ async function routeRegistered(ctx: Context, provider: string, model: string): P
   } catch {
     return false
   }
-  registeredRoutes.add(`${provider}\0${model}`)
+  registeredRoutes.add(routeKey({ provider, model }))
   return true
 }
 
@@ -489,12 +511,12 @@ function logRouteOnce(
   verb: string,
 ): void {
   const target = override.kind === 'route'
-    ? label(override)
+    ? routeId(override)
     : `effort ${override.reasoningEffort}`
   if (lastRouteLabel.get(agent) === target) return
   lastRouteLabel.set(agent, target)
   const from = resolved.provider === undefined || resolved.model === undefined
     ? 'unset'
-    : `${resolved.provider}/${resolved.model}`
+    : routeId(resolved)
   ctx.logger.info(`dsh-subagent-plus: ${verb} child agent onto ${target} (was ${from})`)
 }

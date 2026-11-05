@@ -1,7 +1,8 @@
 /**
- * The plugin's settings section: one header switch (takeover, default on),
- * one model card whose bottom row carries the assignment strategy, a fallback
- * card, and an advanced fold. Every edit lands in a local draft and one Save
+ * The plugin's settings section: one model card whose bottom row carries the
+ * assignment strategy, a fallback row, and an advanced fold (no in-page
+ * switches — ADR 0005: the Plugins page toggle is the only off entrance).
+ * Every edit lands in a local draft and one Save
  * commits the changed fields atomically behind the shared config form's
  * revision fence.
  *
@@ -12,10 +13,15 @@
  *
  * @module dsh-subagent-plus/client/settings-section
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
+import { LimitsBlock } from './official-sections.tsx'
+import type { OfficialLimitsController } from './official-surfaces.js'
+import { routeId } from '../pin.js'
+import { routeKey } from '../strategy.js'
+import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
@@ -61,7 +67,7 @@ const STRATEGY_KEYS = [
 
 type StrategyId = typeof STRATEGY_KEYS[number][0]
 
-const routeValue = (route: RouteOption): string => `${route.provider}\0${route.model}`
+const routeValue: (route: { provider: string; model: string }) => string = routeKey
 
 /** Short closed-box label (the browser-plus translate pattern): the select
  *  stays compact; the full route rides the hover tooltip and the option title. */
@@ -70,7 +76,7 @@ const routeShort = (route: { providerName: string; modelName: string }): string 
 
 /** Full route text for hover tooltips and option titles. */
 const routeFull = (route: { providerName: string; modelName: string; provider: string; model: string }): string =>
-  `${route.providerName} · ${route.provider}/${route.model} — ${route.modelName}`
+  `${route.providerName} · ${routeId(route)} — ${route.modelName}`
 
 /** Hover ⓘ: the dsh-websearch pattern — Tooltip wraps a borderless help-cursor anchor. */
 function Info({ label, text, delayMs }: { label: string; text: string; delayMs: number }) {
@@ -194,7 +200,8 @@ function EffortSelect(props: {
   return stale ? <span title={props.value} style={{ display: 'inline-flex' }}>{select}</span> : select
 }
 
-function Switch({ checked, onChange, label, title }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string }) {
+/** The 36×20 green-when-on switch (advanced rows). */
+function Switch({ checked, onChange, label, title, disabled }: { checked: boolean; onChange: (value: boolean) => void; label: string; title?: string; disabled?: boolean }) {
   return (
     <button
       type="button"
@@ -203,33 +210,71 @@ function Switch({ checked, onChange, label, title }: { checked: boolean; onChang
       aria-label={label}
       title={title}
       className="dsmp-switch"
-      style={switchStyle(checked)}
-      onClick={() => { onChange(!checked) }}
+      style={{ ...switchStyle(checked), ...(disabled ? { opacity: 0.45, cursor: 'default' } : {}) }}
+      disabled={disabled}
+      onClick={() => { if (!disabled) onChange(!checked) }}
     >
       <span style={switchThumbStyle(checked)} />
     </button>
   )
 }
 
-/** Presentation component; every action is a controller call, every string a locale key. */
-export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController }) {
-  const { t, controller } = props
+/** Presentation component; every action is a controller call, every string a locale key.
+ *  The page shell (header, merged limits+strategy card, single footer) renders
+ *  while any section is servable: the own-namespace branch only
+ *  gates the strategy half of the merged card, never the limits block (T7 — no
+ *  deadlock while the official page is hidden). */
+export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; save: UnifiedSaveController }) {
+  const { t, controller, save } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
+  const limitsState = useSyncExternalStore(props.limits.subscribe, props.limits.snapshot)
+  const saveState = useSyncExternalStore(save.subscribe, save.snapshot)
+  const limitsDirty = limitsState.value !== undefined && limitsState.draft !== undefined
+    && JSON.stringify(limitsState.value) !== JSON.stringify(limitsState.draft)
+  const ownBlocked = state.structural.length > 0 || state.degraded.length > 0 || state.cooldownInvalid
+  const ownDirty = state.value !== undefined && state.draft !== undefined
+    && JSON.stringify(state.value) !== JSON.stringify(state.draft)
+  const ownReady = state.status === 'ready' && !state.valueInvalid && state.draft !== undefined
+  const anyDirty = limitsDirty || ownDirty
+  const anyBlocked = limitsState.invalid || ownBlocked
+  const sectionTitle = (key: string): string => key === 'limits' ? t('takeover.limitsTitle') : t('title')
   return (
     <div data-dsmp-settings style={rootStyle}>
       <style>{settingsCss}</style>
-      {state.status === 'unavailable'
-        ? <p style={invalidStyle}>{t('status.unavailable')}</p>
-        : state.valueInvalid
-          ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
-          : state.draft === undefined
-            ? <p style={hintStyle}>…</p>
-          : (
-              <>
-                {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
-                <Editor state={state} controller={controller} t={t} />
-              </>
-              )}
+      <header>
+        <div style={pageHeaderRowStyle}>
+          <h3 style={pageHeadingStyle}>{t('title')}</h3>
+        </div>
+        <p style={pageDescriptionStyle}>{t('description')}</p>
+      </header>
+      {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
+      <section style={cardStyle} aria-labelledby="dsmp-limits">
+        <LimitsBlock state={limitsState} controller={props.limits} t={t} />
+        <div style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {state.status === 'unavailable'
+            ? <p style={invalidStyle}>{t('status.unavailable')}</p>
+            : state.valueInvalid
+              ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
+              : state.draft === undefined
+                ? <p style={hintStyle}>…</p>
+                : <EditorRoutes state={state} controller={controller} t={t} />}
+        </div>
+      </section>
+      {ownReady ? <EditorBelow state={state} controller={controller} t={t} /> : null}
+      <footer style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          style={saveButtonStyle(!anyDirty || anyBlocked || saveState.saving)}
+          disabled={!anyDirty || anyBlocked || saveState.saving}
+          onClick={() => { void save.save() }}
+        >
+          {saveState.saving ? t('action.saving') : t('action.save')}
+        </button>
+        {saveState.saved ? <span style={statusTextStyle('success')}>{t('action.saved')}</span> : null}
+        {saveState.blockedAt !== undefined ? <span style={statusTextStyle('error')}>{t('save.blockedAt').replace('{section}', sectionTitle(saveState.blockedAt))}</span> : null}
+        {saveState.failedAt !== undefined ? <span style={statusTextStyle('error')}>{t('save.failedAt').replace('{section}', sectionTitle(saveState.failedAt))}</span> : null}
+        {saveState.conflictAt !== undefined ? <span style={statusTextStyle('warn')}>{t('save.conflictAt').replace('{section}', sectionTitle(saveState.conflictAt))}</span> : null}
+      </footer>
     </div>
   )
 }
@@ -240,8 +285,11 @@ type EditorProps = {
   t: PropsLocale<typeof NS>['t']
 }
 
-function Editor({ state, controller, t }: EditorProps) {
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+/** The strategy half of the merged card: the candidate/pinned header row,
+ *  the route list, the add row, and the strategy row. No card wrapper — the
+ *  merged card in SettingsSection owns the single border. */
+function EditorRoutes(props: EditorProps) {
+  const { state, controller, t } = props
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -249,29 +297,12 @@ function Editor({ state, controller, t }: EditorProps) {
   const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
   const pinnedHover = pinnedRoute === null && draft.provider === ''
     ? undefined
-    : state.routes.find(route => route.provider === draft.provider && route.model === draft.model) !== undefined || pinnedRoute !== null
-      ? routeFull(pinnedRoute ?? { providerName: draft.provider, modelName: draft.model, provider: draft.provider, model: draft.model })
-      : `${draft.provider}/${draft.model}`
-  const blocked = state.structural.length > 0 || state.degraded.length > 0 || state.cooldownInvalid
-  const dirty = state.value !== undefined && JSON.stringify(state.value) !== JSON.stringify(draft)
+    : pinnedRoute !== null
+      ? routeFull(pinnedRoute)
+      : routeId(draft)
 
   return (
     <>
-      <header>
-        <div style={pageHeaderRowStyle}>
-          <h3 style={pageHeadingStyle}>{t('title')}</h3>
-          <span style={{ flex: 1 }} />
-          <Switch
-            checked={draft.enabled}
-            onChange={controller.setEnabled}
-            label={draft.enabled ? t('status.active') : t('status.disabled')}
-            title={t('status.officialNote')}
-          />
-        </div>
-        <p style={pageDescriptionStyle}>{t('description')}</p>
-      </header>
-
-      <section style={cardStyle} aria-labelledby="dsmp-routes">
         <div style={cardHeaderRowStyle}>
           <h4 id="dsmp-routes" style={cardHeadingStyle}>
             {draft.strategy === 'pinned' ? t('strategy.pinnedRoute') : t('list.title')}
@@ -289,7 +320,7 @@ function Editor({ state, controller, t }: EditorProps) {
                   <select
                     className="dsmp-select"
                     style={routeSelectStyle}
-                    value={pinnedRoute === null && draft.provider === '' ? '' : pinnedRoute !== null ? routeValue(pinnedRoute) : `${draft.provider}\0${draft.model}`}
+                    value={pinnedRoute === null && draft.provider === '' ? '' : routeValue(pinnedRoute !== null ? pinnedRoute : draft)}
                     aria-label={t('strategy.pinnedRoute')}
                     title={pinnedHover ?? t('strategy.pinnedPlaceholder')}
                     onChange={event => { controller.setPinnedRoute(routeFromValue(state, event.target.value)) }}
@@ -319,12 +350,12 @@ function Editor({ state, controller, t }: EditorProps) {
               {listed.length === 0 ? <p style={hintStyle}>{t('list.empty')}</p> : null}
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {listed.map((route, index) => (
-                  <div key={`${route.provider}\0${route.model}`} className="dsmp-hover" style={listRowStyle}>
+                  <div key={routeValue(route)} className="dsmp-hover" style={listRowStyle}>
                     <span style={indexChipStyle}>{index + 1}</span>
                     <RowNameCell
                       label={`${route.providerName} · ${route.modelName}`}
-                      sub={`${route.provider}/${route.model}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
-                      popupLabel={`${t('list.rowActions')} ${route.provider}/${route.model}`}
+                      sub={`${routeId(route)}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
+                      popupLabel={`${t('list.rowActions')} ${routeId(route)}`}
                       index={index} count={listed.length}
                       moveUp={t('list.moveUp')} moveDown={t('list.moveDown')} remove={t('list.remove')}
                       onMove={delta => { controller.moveRoute(index, delta) }}
@@ -333,7 +364,7 @@ function Editor({ state, controller, t }: EditorProps) {
                     {route.available && route.efforts !== undefined && route.efforts.length > 0
                       ? (
                         <EffortSelect
-                          label={`${t('strategy.effort')} ${route.provider}/${route.model}`} route={route}
+                          label={`${t('strategy.effort')} ${routeId(route)}`} route={route}
                           value={draft.priority[index]?.reasoningEffort ?? ''}
                           onChange={value => { controller.setRouteEffort(index, value) }}
                           defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')}
@@ -366,8 +397,10 @@ function Editor({ state, controller, t }: EditorProps) {
             )}
 
         <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={cardHeadingStyle}>{t('strategy.label')}</span>
-          <Info label={t('strategy.help')} text={t('strategy.help')} delayMs={400} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+            <span style={cardHeadingStyle}>{t('strategy.label')}</span>
+            <Info label={t('strategy.help')} text={t('strategy.help')} delayMs={400} />
+          </span>
           <span style={{ flex: 1 }} />
           <select
             className="dsmp-select"
@@ -379,35 +412,50 @@ function Editor({ state, controller, t }: EditorProps) {
             {STRATEGY_KEYS.map(([id, key]) => <option key={id} value={id}>{t(key)}</option>)}
           </select>
         </div>
-      </section>
 
-      <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={cardHeadingStyle}>{t('fallback.title')}</span>
-        <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
-        <span style={{ flex: 1 }} />
-        <Tooltip label={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)} side="bottom" delayMs={200} maxWidth={360} portal>
-          <select
-            className="dsmp-select"
-            style={routeSelectStyle}
-            value={fallbackRoute === null ? '' : routeValue(fallbackRoute)}
-            aria-label={t('fallback.title')}
-            title={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)}
-            onChange={event => { controller.setFallbackRoute(routeFromValue(state, event.target.value)) }}
-          >
-            <option value="">{t('fallback.off')}</option>
-            {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
-          </select>
-        </Tooltip>
-        {draft.fallbackProvider !== ''
-          ? (
-            <EffortSelect
-              label={t('fallback.effort')} route={fallbackRoute ?? undefined} value={draft.fallbackReasoningEffort}
-              onChange={controller.setFallbackEffort}
-              defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')} staleTitle={t('list.unavailable')}
-            />
-            )
-          : null}
-      </div>
+        <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+            <span style={cardHeadingStyle}>{t('fallback.title')}</span>
+            <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
+          </span>
+          <span style={{ flex: 1 }} />
+          <Tooltip label={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)} side="bottom" delayMs={200} maxWidth={360} portal>
+            <select
+              className="dsmp-select"
+              style={routeSelectStyle}
+              value={fallbackRoute === null ? '' : routeValue(fallbackRoute)}
+              aria-label={t('fallback.title')}
+              title={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)}
+              onChange={event => { controller.setFallbackRoute(routeFromValue(state, event.target.value)) }}
+            >
+              <option value="">{t('fallback.off')}</option>
+              {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
+            </select>
+          </Tooltip>
+          {draft.fallbackProvider !== ''
+            ? (
+              <EffortSelect
+                label={t('fallback.effort')} route={fallbackRoute ?? undefined} value={draft.fallbackReasoningEffort}
+                onChange={controller.setFallbackEffort}
+                defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')} staleTitle={t('list.unavailable')}
+              />
+              )
+            : null}
+        </div>
+
+    </>
+  )
+}
+
+
+/** The merged card's page-level siblings: the advanced fold and the
+ *  validation lines. */
+function EditorBelow({ state, controller, t }: EditorProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const draft = state.draft
+  if (draft === undefined) return null
+  return (
+    <>
       <div style={{ ...fieldRowStyle, flexDirection: 'column', gap: 0, padding: 0, border: 'none' }}>
         <button
           type="button" style={{ ...foldButtonStyle, width: '100%', padding: '12px 0', borderTop: '0.5px solid var(--dsw-alias-border-l2)' }} aria-expanded={advancedOpen}
@@ -422,18 +470,19 @@ function Editor({ state, controller, t }: EditorProps) {
         {advancedOpen
           ? (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <AdvancedToggle title={t('advanced.respectExplicit')} help={t('advanced.respectExplicitHelp')} checked={draft.respectExplicit} onChange={controller.setRespectExplicit} />
+              <AdvancedToggle title={t('advanced.respectExplicit')} help={t('advanced.respectExplicitHelp')} checked={draft.respectExplicit} onChange={controller.setRespectExplicit} disabled={draft.strategy === 'pinned'} />
               <AdvancedToggle title={t('advanced.showNotice')} help={t('advanced.showNoticeHelp')} checked={draft.showNotice} onChange={controller.setShowNotice} />
               <AdvancedToggle title={t('advanced.pinForkChildren')} help={t('advanced.pinForkChildrenHelp')} checked={draft.pinForkChildren} onChange={controller.setPinForkChildren} />
               <AdvancedToggle title={t('advanced.failOpen')} help={t('advanced.failOpenHelp')} checked={draft.failOpen} onChange={controller.setFailOpen} />
-              <AdvancedToggle title={t('advanced.autoRoute')} help={t('advanced.autoRouteHelp')} checked={draft.autoRoute} onChange={controller.setAutoRoute} />
               <div style={advancedRowStyle}>
-                <span style={advancedTitleStyle}>{t('advanced.cooldownMs')}</span>
-                <Info label={t('advanced.cooldownMsHelp')} text={t('advanced.cooldownMsHelp')} delayMs={400} />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+                  <span style={advancedTitleStyle}>{t('advanced.cooldownMs')}</span>
+                  <Info label={t('advanced.cooldownMsHelp')} text={t('advanced.cooldownMsHelp')} delayMs={400} />
+                </span>
                 <span style={{ flex: 1 }} />
                 <input
                   className={`dsmp-input${state.cooldownInvalid ? ' dsmp-invalid' : ''}`}
-                  style={{ ...inputStyle, height: 32, width: 'auto', minWidth: 0 }}
+                  style={{ ...inputStyle, width: 88, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
                   defaultValue={String(draft.cooldownMs)}
                   inputMode="numeric"
                   aria-label={t('advanced.cooldownMs')}
@@ -441,39 +490,28 @@ function Editor({ state, controller, t }: EditorProps) {
                 />
               </div>
               {state.cooldownInvalid ? <p style={invalidStyle}>{t('advanced.cooldownInvalid')}</p> : null}
+              {draft.strategy === 'pinned' && draft.fallbackProvider === '' ? <p style={hintStyle}>{t('advanced.cooldownInactive')}</p> : null}
             </div>
             )
           : null}
       </div>
       {state.structural.map(message => <p key={message} style={invalidStyle}>{t('invalid.structural').replace('{message}', message.replace('dsh-subagent-plus: ', ''))}</p>)}
       {state.degraded.map(message => <p key={message} style={statusTextStyle('warn')}>{t('invalid.degraded').replace('{message}', message.replace('dsh-subagent-plus: ', ''))}</p>)}
-
-      <footer style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          type="button"
-          style={saveButtonStyle(!dirty || blocked || state.saving)}
-          disabled={!dirty || blocked || state.saving}
-          onClick={() => { void controller.save() }}
-        >
-          {state.saving ? t('action.saving') : t('action.save')}
-        </button>
-        {state.saved ? <span style={statusTextStyle('success')}>{t('action.saved')}</span> : null}
-        {state.saveFailed ? <span style={statusTextStyle('error')}>{t('action.failed')}</span> : null}
-        {state.conflict ? <span style={statusTextStyle('warn')}>{t('action.conflict')}</span> : null}
-      </footer>
     </>
   )
 }
 
 /** One advanced row: single compact line — title + hover ⓘ left, green switch right;
  *  the explanation lives only in the ⓘ tooltip. */
-function AdvancedToggle(props: { title: string; help: string; checked: boolean; onChange: (value: boolean) => void }) {
+function AdvancedToggle(props: { title: string; help: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return (
-    <div style={advancedRowStyle}>
-      <span style={advancedTitleStyle}>{props.title}</span>
-      <Info label={props.help} text={props.help} delayMs={400} />
+    <div style={{ ...advancedRowStyle, ...(props.disabled ? { opacity: 0.55 } : {}) }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+        <span style={advancedTitleStyle}>{props.title}</span>
+        <Info label={props.help} text={props.help} delayMs={400} />
+      </span>
       <span style={{ flex: 1 }} />
-      <Switch checked={props.checked} onChange={props.onChange} label={props.title} />
+      <Switch checked={props.checked} onChange={props.onChange} label={props.title} disabled={props.disabled} />
     </div>
   )
 }
@@ -484,9 +522,9 @@ function routeFromValue(state: SettingsUiState, value: string): RouteOption | nu
   return state.routes.find(route => route.provider === provider && route.model === model) ?? null
 }
 
-/** Bind factory closing over the controller, mirroring the badge registration. */
-export function bindSettingsSection(controller: SettingsSectionController) {
+/** Bind factory closing over the controllers, mirroring the badge registration. */
+export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, save: UnifiedSaveController) {
   return function BoundSettingsSection(props: PropsLocale<typeof NS>) {
-    return <SettingsSection {...props} controller={controller} />
+    return <SettingsSection {...props} controller={controller} limits={limits} save={save} />
   }
 }

@@ -35,4 +35,19 @@ describe('plugin identity manifest (R-02)', () => {
   it('bumped past the 0.1.x install surface (file: reinstalls skip same versions)', () => {
     expect(pkg.version).not.toMatch(/^0\.1\./)
   })
+
+  it('keeps the version in lockstep with the CHANGELOG top entry', () => {
+    const changelog = readFileSync('CHANGELOG.md', 'utf8')
+    const topEntry = changelog.match(/^## v(\d+\.\d+\.\d+[^\s(]*)/m)
+    expect(topEntry, 'CHANGELOG must open with a "## v<x.y.z>" entry').not.toBeNull()
+    expect(pkg.version).toBe(topEntry?.[1])
+  })
+
+  it('stays on the 0.0.x release line above 0.0.2 (ADR 0004)', () => {
+    // The npm 0.3.0 package is an orphaned accidental publish (2026-10-28),
+    // not part of this product line; releases continue 0.0.2 -> 0.0.3 -> …
+    // and every version that ships has passed the user's real-test gate.
+    expect(pkg.version).toMatch(/^0\.0\.\d+$/)
+    expect(Number(pkg.version.split('.')[2])).toBeGreaterThan(2)
+  })
 })

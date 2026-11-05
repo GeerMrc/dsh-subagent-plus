@@ -12,14 +12,17 @@
 ## 版本策略
 
 - 独立 semver 线，不跟随 DSH 宿主版本。
-- **patch**（0.0.x）：缺陷修复、UI 打磨、文档——常态迭代。
-- **minor**（0.x.0）：新功能或行为面扩展；升 minor 须在 `docs/decisions/` 记录一条决策说明（轻量 ADR：背景/决策/影响）。
+- **产品线固定 0.0.x**（见下条与 ADR 0004）：patch 号连续递增承载缺陷修复、UI 打磨、文档与新功能；不存在 minor 通道（任何 0.x.0 形式都在禁止之列）。重大行为面扩展仍在 `docs/decisions/` 记录一条决策说明（轻量 ADR：背景/决策/影响），但不因此升 minor。
 - **非功能性变更不 bump**：纯文档、注释、重构（测试全绿且行为不变）不动版本号。
-- 同版本号重打包陷阱：`file:`/tarball 循环开发中同版本换包会被 pnpm 跳过——**内容变更必须先 bump 再 pack**；调试期确需同版本重装，删 `node_modules/<pkg>` 后 `pnpm install --force`（并 `pnpm store prune` 清缓存副本）。
+- **版本号只在发布时推进（2026-10-29 用户指令）**：一个细节完善/一轮打磨 ≠ 一次版本更新；日常轮次用规范 commit 管理，本地 tarball 迭代复用当前版本号。仅当用户批准发布（人工实测门通过）时才 bump → CHANGELOG 定稿 → 附注 tag，一次完成。
+- **产品线固定 0.0.x 连续递增**（0.0.2 → 0.0.3 → …）；npm 上的 0.3.0 为误发孤儿包（ADR 0004），不属于本线，禁止在其上续号或以任何 0.x/0.3.x 形式发布。
+- 同版本号重打包陷阱：`file:`/tarball 循环开发中同版本换包会被 pnpm 跳过——重装删 `node_modules/<pkg>` 后 `pnpm install --force`（并 `pnpm store prune` 清缓存副本），并用 grep 安装产物内容确认。
 
 ## 发版流程
 
 > **人工实测门（2026-10-29 用户指令，最高优先级）**：任何推送远端（main/tag/分支）或发布新版本之前，必须先由**用户本人完成本地实测验证**（web 端/桌面端实际跑过新功能与回归路径）并**明确同意**。技术四门与独立复查通过≠可发布；未经同意一律停在本地。
+
+> **npm 发布通道（2026-11-02 定型，详见 [docs/dont-do.md](docs/dont-do.md) "npm 认证与删除"节）**：npmjs 写操作 = npm ≥ 11.7 ＋ 通行密钥浏览器审批，由**用户交互终端**执行（agent 无 TTY 环境必 EOTP 失败）；不建 bypass-2FA granular token；恢复码不能当 `--otp`；一切 npmjs 操作显式 `--registry https://registry.npmjs.org`。失败重试须节制（连续敏感操作触发账号临时冻结）。CI 发布依赖 `secrets.NPM_TOKEN`：发 tag 前确认其指向的令牌仍存在有效；2027-01 起 bypass-2FA token 失去直接发布资格，届时须迁移 trusted publishing（OIDC）或改走人工终端发布。
 
 1. 发版门：`pnpm run typecheck` + `pnpm test` + `pnpm run build` + `pnpm run pack:artifact` 全绿（CI 同款）。
 2. **人工实测门**：把 tarball 交给用户装进本地实测环境（临时 profile 或桌面端），用户确认功能与回归通过并明示"同意发布"。

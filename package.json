@@ -1,6 +1,6 @@
 {
   "name": "dsh-subagent-plus",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Route every delegated child agent by strategy: pin one LLM route, or spread children over candidate routes (round-robin / random / priority) with health-aware failover, a fallback route, and a settings page",
   "license": "MIT",
   "type": "module",
@@ -23,7 +23,8 @@
     "CHANGELOG.md",
     "README.md",
     "README.en.md",
-    "LICENSE"
+    "LICENSE",
+    "docs"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -51,7 +52,7 @@
     "build:client": "tsdown -c tsdown.client.config.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
     "test": "vitest run",
-    "pack:artifact": "pnpm run build && pnpm pack --pack-destination dist-artifacts"
+    "pack:artifact": "pnpm run build && mkdir -p dist-artifacts && pnpm pack --pack-destination dist-artifacts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1-rc.1 <5",
@@ -62,20 +63,19 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-remotes": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-settings": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-subagent": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tool-subagent": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-api-remotes": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-session": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-settings": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-subagent": "0.2.1-rc.3",
     "@deepseek-ai/schemastery": "3.18.4",
     "@types/node": "^22.20.0",
     "@types/react": "^18.3.31",

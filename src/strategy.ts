@@ -5,7 +5,7 @@
  * explicit-route test. Clock and randomness are injected so every rule is
  * unit-testable without a live Host.
  */
-import type { OfficialModelSelectionSettings, PinRoute, RouteFields } from './pin.js'
+import { routeId, type PinRoute, type RouteFields } from './pin.js'
 
 /** Closed set of selection strategies; `pinned` is the v0.1.x single-route behaviour. */
 export const STRATEGIES = ['pinned', 'round-robin', 'random', 'priority'] as const
@@ -28,15 +28,13 @@ export interface PriorityEntryView {
 
 /** Structural view of the configuration fields the strategy engine reads. */
 export interface StrategyConfigView {
-  /** Whether child routing is active at all. */
-  enabled: boolean
   /** Top-level provider id; only the `pinned` strategy reads it. */
   provider: string
   /** Top-level model id; only the `pinned` strategy reads it. */
   model: string
   /** Selection strategy. */
   strategy: Strategy
-  /** Ordered candidate routes; empty falls back to the official allowed-model list. */
+  /** Ordered candidate routes; empty leaves the strategy with no candidates. */
   priority: readonly PriorityEntryView[]
   /** Whether a route the delegating model chose explicitly is left untouched. */
   respectExplicit: boolean
@@ -52,32 +50,27 @@ export interface StrategyConfigView {
 
 /** How one configuration routes children. */
 export type StrategyPlan =
-  | { kind: 'off' }
   | { kind: 'pinned' }
   | {
     kind: 'spread'
     strategy: SpreadStrategy
-    /** Where candidate routes come from. */
-    source: 'priority' | 'official'
     /** True when top-level provider/model fields are set but ignored by this strategy. */
     ignoredRoute: boolean
   }
 
 /**
- * Resolve the routing plan for a configuration. `pinned` keeps the complete
- * v0.1.x resolution (explicit route, then `autoRoute`); a spread strategy
- * takes its candidates from `priority` when set, else from the official
- * allowed-model list, and ignores the top-level provider/model fields.
+ * Resolve the routing plan for a configuration. `pinned` keeps the single
+ * explicit route; a spread strategy takes its candidates from `priority`
+ * (the sole routing source — ADR 0005) and ignores the top-level
+ * provider/model fields.
  * @param config - structural configuration view.
- * @returns the plan; `off` when the plugin is disabled.
+ * @returns the plan.
  */
 export function resolveStrategyPlan(config: StrategyConfigView): StrategyPlan {
-  if (!config.enabled) return { kind: 'off' }
   if (config.strategy === 'pinned') return { kind: 'pinned' }
   return {
     kind: 'spread',
     strategy: config.strategy,
-    source: config.priority.length > 0 ? 'priority' : 'official',
     ignoredRoute: config.provider !== '' || config.model !== '',
   }
 }
@@ -86,7 +79,7 @@ export function resolveStrategyPlan(config: StrategyConfigView): StrategyPlan {
 export interface ValidationReport {
   /** Refuse-to-load problems: an over-long `priority`, half-filled entries, repeated routes. */
   structural: string[]
-  /** Cross-field combinations that load but behave as if unset: an empty `priority` list under the `priority` strategy, a half-filled or duplicate fallback. */
+  /** Cross-field combinations that load but behave as if unset: a half-filled or duplicate fallback. */
   degraded: string[]
 }
 
@@ -95,10 +88,10 @@ export interface ValidationReport {
  * routes, a priority entry missing its provider or model, a repeated route)
  * refuse to load. Cross-field combinations that a settings page could
  * persist degrade instead of throwing — throwing here would brick the plugin
- * on the next Host restart, so an empty `priority` list under the `priority`
- * strategy resolves to no candidates (fallback route, then the resolved
- * route) and a half-filled or duplicate fallback stays unused. Shared with
- * the settings page, which blocks both classes before writing.
+ * on the next Host restart, so an empty `priority` list resolves to no
+ * candidates (fallback route, then the resolved route — the legitimate
+ * not-assigned state) and a half-filled or duplicate fallback stays unused.
+ * Shared with the settings page, which blocks both classes before writing.
  * @param config - structural configuration view.
  * @returns the structural and degraded findings.
  */
@@ -116,13 +109,10 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
     }
     const key = routeKey(entry)
     if (seen.has(key)) {
-      structural.push(`dsh-subagent-plus: priority repeats route "${entry.provider}/${entry.model}"`)
+      structural.push(`dsh-subagent-plus: priority repeats route "${routeId(entry)}"`)
     }
     seen.add(key)
   })
-  if (config.strategy === 'priority' && config.priority.length === 0) {
-    degraded.push('dsh-subagent-plus: strategy "priority" lists no candidate routes; children use the fallback route when configured, otherwise keep their resolved route')
-  }
   const fallbackHalfFilled = (config.fallbackProvider === '') !== (config.fallbackModel === '')
   if (fallbackHalfFilled) {
     degraded.push('dsh-subagent-plus: fallback needs both provider and model; it stays unused')
@@ -173,35 +163,18 @@ export function routeKey(route: { provider: string; model: string }): string {
   return `${route.provider}\0${route.model}`
 }
 
-/**
- * Candidate routes for a spread plan, in priority order.
- * @param plan - a spread plan.
- * @param config - structural configuration view (for `priority`).
- * @param settings - official settings face, when the Host provides one;
- * `current()` failures propagate.
- * @returns the ordered candidates; empty when nothing is configured or the
- * official list is disabled or absent.
+/** The candidate routes of one configuration: the `priority` list in stored
+ *  order — the sole routing source (ADR 0005); an empty list leaves every
+ *  spread strategy with no candidates.
+ * @param config - structural configuration view.
+ * @returns the ordered candidates; empty when nothing is configured.
  */
-export function candidateRoutes(
-  plan: Extract<StrategyPlan, { kind: 'spread' }>,
-  config: StrategyConfigView,
-  settings: OfficialModelSelectionSettings | undefined,
-): PinRoute[] {
-  if (plan.source === 'priority') {
-    return config.priority.map(entry => ({
-      provider: entry.provider,
-      model: entry.model,
-      ...entry.reasoningEffort === '' ? {} : { reasoningEffort: entry.reasoningEffort },
-    }))
-  }
-  // The `priority` strategy never falls back to the official list: its stored
-  // order is undocumented ordering, so an empty list is the degraded
-  // "no candidates" state rather than a silent source switch.
-  if (plan.strategy === 'priority') return []
-  if (settings === undefined || typeof settings.current !== 'function') return []
-  const current = settings.current()
-  if (!current.enabled) return []
-  return current.allowedModels.map(route => ({ provider: route.provider, model: route.model }))
+export function candidateRoutes(config: StrategyConfigView): PinRoute[] {
+  return config.priority.map(entry => ({
+    provider: entry.provider,
+    model: entry.model,
+    ...entry.reasoningEffort === '' ? {} : { reasoningEffort: entry.reasoningEffort },
+  }))
 }
 
 /** Mutable cursor and deck state shared by every selection under one plugin instance. */
@@ -426,7 +399,13 @@ export function explicitRouteOf(child: RouteFields, parent: RouteFields | undefi
  * @returns the bracketed one-line notice.
  */
 export function assignedNotice(label: string, strategy: SpreadStrategy): string {
-  return `[model assigned: every request from this child agent runs ${label} (strategy: ${strategy}, dsh-subagent-plus)]`
+  return `[模型指派 model assigned: 本子智能体所有请求运行 ${label}（策略：${strategyZh(strategy)}｜strategy: ${strategy}）— dsh-subagent-plus]`
+}
+
+/** Bilingual notices: the transcript is the only default-on feedback channel,
+ *  so zh and en ride the same bracketed line. */
+function strategyZh(strategy: SpreadStrategy): string {
+  return strategy === 'round-robin' ? '轮询' : strategy === 'random' ? '随机' : '优先级'
 }
 
 /**
@@ -436,7 +415,38 @@ export function assignedNotice(label: string, strategy: SpreadStrategy): string 
  * @returns the bracketed one-line notice.
  */
 export function fallbackNotice(label: string): string {
-  return `[model fallback: no usable candidate route; this child agent runs ${label} (dsh-subagent-plus)]`
+  return `[模型兜底 model fallback: 无可用候选路由，本子智能体运行 ${label}｜no usable candidate, runs ${label} — dsh-subagent-plus]`
+}
+
+/**
+ * Transcript notice naming the pinned route a child is forced onto.
+ * @param label - `provider/model` of the pinned route.
+ * @returns the bracketed one-line notice.
+ */
+export function pinnedNotice(label: string): string {
+  return `[模型钉定 model pinned: 本子智能体所有请求运行 ${label}｜every request runs ${label} — dsh-subagent-plus]`
+}
+
+/**
+ * Transcript notice for an unusable pinned route (cooling, or unregistered
+ * and skipped by failOpen) that handed the child over to the fallback.
+ * @param pinLabel - `provider/model` of the unusable pinned route.
+ * @param fallbackLabel - `provider/model` of the fallback now in use.
+ * @returns the bracketed one-line notice.
+ */
+export function pinFallbackNotice(pinLabel: string, fallbackLabel: string): string {
+  return `[模型钉定兜底 model pin fallback: 钉定路由 ${pinLabel} 当前不可用（冷却或未注册），本子智能体改用兜底 ${fallbackLabel}｜pinned route ${pinLabel} unavailable, runs fallback ${fallbackLabel} — dsh-subagent-plus]`
+}
+
+/**
+ * Transcript notice for a pin that failOpen skipped because the route is not
+ * registered: the child keeps its resolved route, so the notice names the skip
+ * instead of claiming the unregistered pin runs.
+ * @param label - `provider/model` of the unregistered pinned route.
+ * @returns the bracketed one-line notice.
+ */
+export function pinSkippedNotice(label: string): string {
+  return `[模型钉定跳过 model pin skipped: 钉定路由 ${label} 未注册，本子智能体保持原路由｜pinned route ${label} unregistered, this child keeps its resolved route — dsh-subagent-plus]`
 }
 
 /**
@@ -447,5 +457,5 @@ export function fallbackNotice(label: string): string {
  * @returns the bracketed one-line notice.
  */
 export function reassignedNotice(from: string, to: string, code: string): string {
-  return `[model reassigned: route ${from} is cooling down (${code}); this child agent continues with ${to} (dsh-subagent-plus)]`
+  return `[模型切换 model reassigned: ${from} 冷却中（${code}），本子智能体继续使用 ${to}｜${from} cooling (${code}), continues ${to} — dsh-subagent-plus]`
 }

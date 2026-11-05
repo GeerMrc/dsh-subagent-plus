@@ -51,6 +51,12 @@ class FakeForm implements SettingsFormPort {
 
   failNextMutate(): void { this.#failNext = true }
 
+  /** Flip the served status and notify, as the host form does. */
+  setStatus(status: string): void {
+    this.status = status
+    this.#emit()
+  }
+
   #emit(): void {
     for (const listener of this.#listeners) listener()
   }
@@ -69,14 +75,12 @@ const catalog: CatalogPort = {
 
 function baseConfig(): PinConfig {
   return {
-    enabled: true,
     provider: '',
     model: '',
     reasoningEffort: '',
     pinForkChildren: false,
     failOpen: true,
     showNotice: true,
-    autoRoute: true,
     strategy: 'pinned',
     priority: [],
     respectExplicit: false,
@@ -142,18 +146,18 @@ describe('SettingsSectionController', () => {
     expect(controller.snapshot().draft?.priority.length).toBeLessThanOrEqual(MAX_ROUTES)
   })
 
-  it('blocks the save when the shared validation reports structural or degraded findings (P0 gate)', async () => {
+  it('saves an empty candidate list (not assigned) but blocks on degraded findings (P0 gate)', async () => {
     const { controller, form } = await harness()
     controller.setStrategy('priority')
-    expect(controller.snapshot().degraded.length).toBeGreaterThan(0)
-    await controller.save()
-    expect(form.mutateCalls).toEqual([])
+    // An empty list is the legitimate not-assigned state — saving goes through.
+    await expect(controller.save()).resolves.toBe('saved')
+    // A fallback repeating a listed route stays unused: degraded blocks the save.
     controller.setStrategy('random')
-    controller.setFallbackRoute(szRoute)
     controller.addRoute(szRoute)
+    controller.setFallbackRoute(szRoute)
     expect(controller.snapshot().degraded.length).toBeGreaterThan(0)
     await controller.save()
-    expect(form.mutateCalls).toEqual([])
+    expect(form.mutateCalls).toHaveLength(1)
   })
 
   it('saves changed fields atomically behind the revision fence and reloads the committed value', async () => {
@@ -161,29 +165,35 @@ describe('SettingsSectionController', () => {
     controller.setStrategy('round-robin')
     controller.addRoute(szRoute)
     controller.setFallbackRoute(hhRoute)
-    await controller.save()
+    await expect(controller.save()).resolves.toBe('saved')
     expect(form.mutateCalls).toHaveLength(1)
     expect(form.mutateCalls[0]?.expectedRevision).toBe(1)
     const paths = form.mutateCalls[0]?.ops.map(op => op.path.join('.')).sort()
     expect(paths).toEqual(['fallbackModel', 'fallbackProvider', 'priority', 'strategy'])
     expect(controller.snapshot().value?.strategy).toBe('round-robin')
     expect(controller.snapshot().draft).toEqual(controller.snapshot().value)
-    expect(controller.snapshot().saved).toBe(true)
   })
 
   it('marks a conflict and reloads when the revision fence rejects the write', async () => {
     const { controller, form } = await harness()
     controller.setStrategy('random')
     form.failNextMutate()
-    await controller.save()
-    expect(controller.snapshot().conflict).toBe(true)
-    expect(controller.snapshot().saved).toBe(false)
+    await expect(controller.save()).resolves.toBe('conflict')
     // The next save carries the reloaded revision.
     controller.setStrategy('priority')
-    controller.snapshot() // no-op read
-    await controller.save()
-    const last = form.mutateCalls.at(-1)
-    expect(last?.expectedRevision).toBe(form.revision)
+    const before = form.revision
+    await expect(controller.save()).resolves.toBe('saved')
+    expect(form.mutateCalls.at(-1)?.expectedRevision).toBe(before)
+  })
+
+  it('rejects a cooldown above the 24h cap and accepts the boundary', async () => {
+    const { controller } = await harness()
+    controller.setCooldownMs('86400001')
+    expect(controller.snapshot().cooldownInvalid).toBe(true)
+    expect(controller.snapshot().draft?.cooldownMs).toBe(baseConfig().cooldownMs)
+    controller.setCooldownMs('86400000')
+    expect(controller.snapshot().cooldownInvalid).toBe(false)
+    expect(controller.snapshot().draft?.cooldownMs).toBe(86_400_000)
   })
 
   it('flags an invalid cooldown text and blocks the save', async () => {
@@ -195,6 +205,38 @@ describe('SettingsSectionController', () => {
     controller.setCooldownMs('300000')
     expect(controller.snapshot().cooldownInvalid).toBe(false)
     expect(controller.snapshot().draft?.cooldownMs).toBe(300_000)
+  })
+
+  it('clears a stale cooldownInvalid flag when a flapped namespace returns with a clean value', async () => {
+    const { controller, form } = await harness()
+    controller.setCooldownMs('abc')
+    expect(controller.snapshot().cooldownInvalid).toBe(true)
+    form.setStatus('unavailable')
+    form.setStatus('ready')
+    // The reloaded draft is the committed value; the stale parse flag must
+    // not keep blocking saves after recovery.
+    expect(controller.snapshot().cooldownInvalid).toBe(false)
+    controller.setShowNotice(false)
+    await controller.save()
+    expect(form.mutateCalls).toEqual([{ ops: [{ op: 'set', path: ['showNotice'], value: false }], expectedRevision: 1 }])
+  })
+
+  it('recognizes a committed snapshot from hosts that never carried the legacy enabled key', async () => {
+    const form = new FakeForm(baseConfig())
+    const controller = new SettingsSectionController(form, catalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('not ready') })
+    expect(controller.snapshot().valueInvalid).toBe(false)
+    expect(controller.snapshot().draft?.strategy).toBe('pinned')
+    controller.dispose()
+  })
+
+  it('never writes back residue keys the schema no longer knows', async () => {
+    const residue = { legacyPause: false }
+    const { controller, form } = await harness({ ...baseConfig(), ...residue })
+    controller.setCooldownMs('90000')
+    await expect(controller.save()).resolves.toBe('saved')
+    expect(form.mutateCalls[0]?.ops).toEqual([{ op: 'set', path: ['cooldownMs'], value: 90_000 }])
   })
 
   it('shows unavailable when the host does not serve the namespace', async () => {
@@ -210,21 +252,14 @@ describe('SettingsSectionController', () => {
 })
 
 describe('save transport failures (review P1-1)', () => {
-  it('releases the saving state and surfaces saveFailed when mutate rejects', async () => {
+  it('reports failed when mutate rejects and saves once the transport recovers', async () => {
     const { controller, form } = await harness()
     controller.setStrategy('random')
     const original = form.mutate.bind(form)
     form.mutate = async () => { throw new Error('transport down') }
-    await controller.save()
-    expect(controller.snapshot().saving).toBe(false)
-    expect(controller.snapshot().saveFailed).toBe(true)
+    await expect(controller.save()).resolves.toBe('failed')
     form.mutate = original
-    await controller.save()
-    expect(controller.snapshot().saved).toBe(true)
-    // Editing retires the one-shot feedback.
-    controller.setStrategy('priority')
-    expect(controller.snapshot().saved).toBe(false)
-    expect(controller.snapshot().saveFailed).toBe(false)
+    await expect(controller.save()).resolves.toBe('saved')
   })
 })
 

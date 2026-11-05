@@ -8,6 +8,9 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
+  pinnedNotice,
+  pinFallbackNotice,
+  pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
   RouteHealth,
@@ -19,7 +22,6 @@ import {
 } from '../src/strategy.js'
 
 const base: StrategyConfigView = {
-  enabled: true,
   provider: '',
   model: '',
   strategy: 'pinned',
@@ -41,28 +43,17 @@ const sequence = (...values: number[]): (() => number) => {
 }
 
 describe('resolveStrategyPlan (S-01)', () => {
-  it('is off when disabled regardless of strategy', () => {
-    expect(resolveStrategyPlan({ ...base, enabled: false, strategy: 'round-robin' })).toEqual({ kind: 'off' })
-  })
-
   it('keeps the legacy pinned plan by default, with or without an explicit route', () => {
     expect(resolveStrategyPlan(base)).toEqual({ kind: 'pinned' })
     expect(resolveStrategyPlan({ ...base, provider: 'sz', model: 'm' })).toEqual({ kind: 'pinned' })
   })
 
-  it('spreads from the official list when priority is empty, and flags ignored top-level fields', () => {
+  it('spreads regardless of the priority list, and flags ignored top-level fields', () => {
     expect(resolveStrategyPlan({ ...base, strategy: 'round-robin' })).toEqual({
-      kind: 'spread', strategy: 'round-robin', source: 'official', ignoredRoute: false,
+      kind: 'spread', strategy: 'round-robin', ignoredRoute: false,
     })
     expect(resolveStrategyPlan({ ...base, strategy: 'random', provider: 'sz' })).toEqual({
-      kind: 'spread', strategy: 'random', source: 'official', ignoredRoute: true,
-    })
-  })
-
-  it('spreads from priority when configured', () => {
-    const priority = [{ provider: 'sz', model: 'a', reasoningEffort: '' }]
-    expect(resolveStrategyPlan({ ...base, strategy: 'priority', priority })).toEqual({
-      kind: 'spread', strategy: 'priority', source: 'priority', ignoredRoute: false,
+      kind: 'spread', strategy: 'random', ignoredRoute: true,
     })
   })
 })
@@ -94,12 +85,6 @@ describe('validateStrategyConfig (structural vs degraded, anti-brick)', () => {
       ...base,
       priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'sz', model: 'a', reasoningEffort: 'low' }],
     }).structural[0]).toMatch(/repeats route "sz\/a"/)
-  })
-
-  it('degrades a priority strategy with no routes instead of throwing (restart-safe)', () => {
-    const report = validateStrategyConfig({ ...base, strategy: 'priority' })
-    expect(report.structural).toEqual([])
-    expect(report.degraded[0]).toMatch(/strategy "priority" lists no candidate routes/)
   })
 
   it('degrades a half-filled fallback', () => {
@@ -148,41 +133,35 @@ describe('fallbackRouteOf / usableFallback (fallback adjudication)', () => {
 
   it('names the fallback in its notice', () => {
     expect(fallbackNotice('hh/x'))
-      .toBe('[model fallback: no usable candidate route; this child agent runs hh/x (dsh-subagent-plus)]')
+      .toBe('[模型兜底 model fallback: 无可用候选路由，本子智能体运行 hh/x｜no usable candidate, runs hh/x — dsh-subagent-plus]')
+  })
+})
+
+describe('validateStrategyConfig: empty list is a legitimate not-assigned state (R7)', () => {
+  it('reports no degraded finding for an empty list under any strategy', () => {
+    for (const strategy of ['pinned', 'round-robin', 'random', 'priority'] as const) {
+      expect(validateStrategyConfig({ ...base, strategy }).degraded).toEqual([])
+    }
   })
 })
 
 describe('candidateRoutes (S-01)', () => {
-  const spread = { kind: 'spread', strategy: 'round-robin', source: 'official', ignoredRoute: false } as const
-
-  it('maps priority entries and drops empty effort', () => {
+    it('maps priority entries and drops empty effort', () => {
     const config = {
       ...base,
       strategy: 'round-robin' as const,
       priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'hh', model: 'b', reasoningEffort: 'high' }],
     }
-    expect(candidateRoutes({ ...spread, source: 'priority' }, config, undefined)).toEqual([
+    expect(candidateRoutes(config)).toEqual([
       { provider: 'sz', model: 'a' },
       { provider: 'hh', model: 'b', reasoningEffort: 'high' },
     ])
   })
 
-  it('reads the official allowed list in stored order, empty when disabled or absent', () => {
-    const settings = { current: () => ({ enabled: true, allowedModels: [sz, hh] }) }
-    expect(candidateRoutes(spread, base, settings)).toEqual([sz, hh])
-    expect(candidateRoutes(spread, base, { current: () => ({ enabled: false, allowedModels: [sz] }) })).toEqual([])
-    expect(candidateRoutes(spread, base, undefined)).toEqual([])
-  })
-
-  it('propagates a throwing current()', () => {
-    const settings = { current: (): never => { throw new Error('empty list') } }
-    expect(() => candidateRoutes(spread, base, settings)).toThrow('empty list')
-  })
-
-  it('resolves no candidates for the priority strategy with an empty list, even with an official list present (degraded)', () => {
-    const settings = { current: () => ({ enabled: true, allowedModels: [sz, hh] }) }
-    const plan = { kind: 'spread', strategy: 'priority', source: 'official', ignoredRoute: false } as const
-    expect(candidateRoutes(plan, { ...base, strategy: 'priority' }, settings)).toEqual([])
+  it('resolves no candidates for an empty list under every spread strategy', () => {
+    for (const strategy of ['round-robin', 'random', 'priority'] as const) {
+      expect(candidateRoutes({ ...base, strategy })).toEqual([])
+    }
   })
 })
 
@@ -335,11 +314,26 @@ describe('explicitRouteOf (S-04)', () => {
 describe('notice text (S-08 helpers)', () => {
   it('names route and strategy', () => {
     expect(assignedNotice('sz/Qwen3.8-27B-FP8', 'round-robin'))
-      .toBe('[model assigned: every request from this child agent runs sz/Qwen3.8-27B-FP8 (strategy: round-robin, dsh-subagent-plus)]')
+      .toBe('[模型指派 model assigned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]')
   })
 
   it('names the cooled route, the code, and the replacement', () => {
     expect(reassignedNotice('sz/a', 'hh/a', 'RATE_LIMIT'))
-      .toBe('[model reassigned: route sz/a is cooling down (RATE_LIMIT); this child agent continues with hh/a (dsh-subagent-plus)]')
+      .toBe('[模型切换 model reassigned: sz/a 冷却中（RATE_LIMIT），本子智能体继续使用 hh/a｜sz/a cooling (RATE_LIMIT), continues hh/a — dsh-subagent-plus]')
+  })
+
+  it('names the pinned route', () => {
+    expect(pinnedNotice('sz/Qwen3.8-27B-FP8'))
+      .toBe('[模型钉定 model pinned: 本子智能体所有请求运行 sz/Qwen3.8-27B-FP8｜every request runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+  })
+
+  it('names the unusable pin and the fallback that took over', () => {
+    expect(pinFallbackNotice('sz/a', 'hh/b'))
+      .toBe('[模型钉定兜底 model pin fallback: 钉定路由 sz/a 当前不可用（冷却或未注册），本子智能体改用兜底 hh/b｜pinned route sz/a unavailable, runs fallback hh/b — dsh-subagent-plus]')
+  })
+
+  it('names the skipped pin and the kept resolved route', () => {
+    expect(pinSkippedNotice('sz/a'))
+      .toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/a 未注册，本子智能体保持原路由｜pinned route sz/a unregistered, this child keeps its resolved route — dsh-subagent-plus]')
   })
 })
