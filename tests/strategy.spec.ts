@@ -8,6 +8,9 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
+  isValidTeammateName,
+  matchByName,
+  type NameMapEntryView,
   pinnedNotice,
   pinFallbackNotice,
   pinSkippedNotice,
@@ -335,5 +338,64 @@ describe('notice text (S-08 helpers)', () => {
   it('names the skipped pin and the kept resolved route', () => {
     expect(pinSkippedNotice('sz/a'))
       .toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/a 未注册，本子智能体保持原路由｜pinned route sz/a unregistered, this child keeps its resolved route — dsh-subagent-plus]')
+  })
+})
+
+const nm = (name: string, route: PinRoute, reasoningEffort = ''): NameMapEntryView =>
+  ({ name, provider: route.provider, model: route.model, reasoningEffort })
+
+describe('by-name mapping (S-09)', () => {
+  it('accepts official lower-kebab teammate names and rejects everything else', () => {
+    for (const name of ['a', 'researcher', 'dev-2', 'r2d2', 'a'.repeat(64)]) {
+      expect(isValidTeammateName(name)).toBe(true)
+    }
+    for (const name of ['', 'lead', 'Lead', 'dev_2', '-dev', 'dev-', 'dev--2', 'dev 2', 'a'.repeat(65)]) {
+      expect(isValidTeammateName(name)).toBe(false)
+    }
+  })
+
+  it('matches exactly by name and returns the first hit', () => {
+    const map = [nm('researcher', sz), nm('coder', zai)]
+    expect(matchByName('researcher', map)).toEqual(map[0])
+    expect(matchByName('coder', map)).toEqual(map[1])
+    expect(matchByName('reviewer', map)).toBeUndefined()
+    expect(matchByName('Researcher', map)).toBeUndefined()
+    expect(matchByName('researcher', [])).toBeUndefined()
+  })
+
+  it('accepts a valid map, including routes that overlap the priority list', () => {
+    const report = validateStrategyConfig({
+      ...base, nameMap: [nm('researcher', sz), nm('coder', zai)],
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    })
+    expect(report.structural).toEqual([])
+    expect(report.degraded).toEqual([])
+  })
+
+  it('keeps accepting configurations without a nameMap (v0.0.3 parity)', () => {
+    expect(validateStrategyConfig(base).structural).toEqual([])
+  })
+
+  it('refuses duplicate names, half-filled routes, and illegal names', () => {
+    const dup = validateStrategyConfig({ ...base, nameMap: [nm('dev', sz), nm('dev', zai)] })
+    expect(dup.structural).toHaveLength(1)
+    expect(dup.structural[0]).toContain('"dev"')
+
+    const half = validateStrategyConfig({
+      ...base, nameMap: [{ name: 'dev', provider: 'sz', model: '', reasoningEffort: '' }],
+    })
+    expect(half.structural[0]).toContain('nameMap[0]')
+
+    for (const bad of ['lead', 'Dev', 'a'.repeat(65)]) {
+      const report = validateStrategyConfig({ ...base, nameMap: [nm(bad, sz)] })
+      expect(report.structural).toHaveLength(1)
+      expect(report.structural[0]).toContain(bad === 'a'.repeat(65) ? '64' : `"${bad}"`)
+    }
+  })
+
+  it('refuses maps longer than 16 entries', () => {
+    const long = Array.from({ length: 17 }, (_, i) => nm(`dev-${i + 1}`, sz))
+    const report = validateStrategyConfig({ ...base, nameMap: long })
+    expect(report.structural.some(m => m.includes('at most 16'))).toBe(true)
   })
 })

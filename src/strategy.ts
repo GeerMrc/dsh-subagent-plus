@@ -26,6 +26,18 @@ export interface PriorityEntryView {
   reasoningEffort: string
 }
 
+/** One `nameMap` row as the configuration schema materializes it (ADR 0006). */
+export interface NameMapEntryView {
+  /** Teammate name this row matches exactly (official lower-kebab, never `lead`). */
+  name: string
+  /** Registered provider id. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Effort id for this route; empty keeps the model's own default. */
+  reasoningEffort: string
+}
+
 /** Structural view of the configuration fields the strategy engine reads. */
 export interface StrategyConfigView {
   /** Top-level provider id; only the `pinned` strategy reads it. */
@@ -46,6 +58,8 @@ export interface StrategyConfigView {
   fallbackModel: string
   /** Effort id for the fallback route; empty keeps the model's own default. */
   fallbackReasoningEffort: string
+  /** By-name mapping rows (ADR 0006); `undefined` is a v0.0.3 configuration without the field. */
+  nameMap?: readonly NameMapEntryView[]
 }
 
 /** How one configuration routes children. */
@@ -119,7 +133,54 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
   } else if (fallbackRouteOf(config) === undefined && config.fallbackProvider !== '' && config.fallbackModel !== '') {
     degraded.push(`dsh-subagent-plus: fallback repeats the listed route "${config.fallbackProvider}/${config.fallbackModel}"; it stays unused`)
   }
+  const nameMap = config.nameMap ?? []
+  if (nameMap.length > 16) {
+    structural.push(`dsh-subagent-plus: nameMap lists ${nameMap.length} entries; at most 16 are allowed`)
+  }
+  const names = new Set<string>()
+  nameMap.forEach((entry, index) => {
+    if (!isValidTeammateName(entry.name)) {
+      structural.push(entry.name.length > 64
+        ? `dsh-subagent-plus: nameMap[${index}] name exceeds 64 characters`
+        : `dsh-subagent-plus: nameMap[${index}] is not a legal teammate name ("${entry.name}")`)
+      return
+    }
+    if (entry.provider === '' || entry.model === '') {
+      structural.push(`dsh-subagent-plus: nameMap[${index}] needs both provider and model`)
+      return
+    }
+    if (names.has(entry.name)) {
+      structural.push(`dsh-subagent-plus: nameMap repeats teammate name "${entry.name}"`)
+    }
+    names.add(entry.name)
+  })
   return { structural, degraded }
+}
+
+const TEAMMATE_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+/**
+ * Whether `name` is a legal model-facing teammate name: official lower-kebab,
+ * at most 64 characters, never the reserved `lead` (the Team lead is only
+ * addressable implicitly). An illegal name can never match a spawned teammate,
+ * so configuration rows carrying one refuse to load.
+ * @param name - candidate row name.
+ * @returns whether the name could ever match.
+ */
+export function isValidTeammateName(name: string): boolean {
+  return name !== 'lead' && name.length <= 64 && TEAMMATE_NAME_PATTERN.test(name)
+}
+
+/**
+ * Exact-match a subagent's team name against the by-name mapping (ADR 0006);
+ * the first hit wins (duplicate names refuse to load, so at most one row can
+ * ever match).
+ * @param name - team name of the subagent being routed.
+ * @param map - mapping rows in configuration order.
+ * @returns the matched row, or undefined to fall through to the strategy chain.
+ */
+export function matchByName(name: string, map: readonly NameMapEntryView[]): NameMapEntryView | undefined {
+  return map.find(entry => entry.name === name)
 }
 
 /**
