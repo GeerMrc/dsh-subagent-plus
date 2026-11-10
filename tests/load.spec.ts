@@ -174,6 +174,7 @@ describe('pinned notice vs registration', () => {
     cooldownMs: 120_000,
     fallbackProvider: '',
     fallbackModel: '',
+    nameMap: [],
     fallbackReasoningEffort: '',
   }
 
@@ -231,7 +232,8 @@ const autoRouteConfig: plugin.PinConfig = {
   cooldownMs: 120_000,
   fallbackProvider: '',
   fallbackModel: '',
-  fallbackReasoningEffort: '',
+  nameMap: [],
+    fallbackReasoningEffort: '',
 }
 
 describe('legacy residue: autoRoute (R7 binary takeover)', () => {
@@ -282,6 +284,7 @@ function spreadConfig(overrides: Partial<plugin.PinConfig>): plugin.PinConfig {
     fallbackModel: '',
     fallbackReasoningEffort: '',
     ...overrides,
+    nameMap: overrides.nameMap ?? [],
   }
 }
 

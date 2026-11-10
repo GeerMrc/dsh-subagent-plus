@@ -88,6 +88,7 @@ function baseConfig(): PinConfig {
     fallbackProvider: '',
     fallbackModel: '',
     fallbackReasoningEffort: '',
+    nameMap: [],
   }
 }
 

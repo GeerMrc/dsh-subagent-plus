@@ -114,7 +114,11 @@ function isPinConfig(value: unknown): value is PinConfig {
 }
 
 function copyConfig(value: PinConfig): PinConfig {
-  return { ...value, priority: value.priority.map(entry => ({ ...entry })) }
+  return {
+    ...value,
+    priority: value.priority.map(entry => ({ ...entry })),
+    nameMap: value.nameMap.map(entry => ({ ...entry })),
+  }
 }
 
 /**

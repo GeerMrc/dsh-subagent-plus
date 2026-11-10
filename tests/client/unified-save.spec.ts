@@ -87,6 +87,7 @@ function pinConfig(overrides: Partial<PinConfig> = {}): PinConfig {
     fallbackModel: '',
     fallbackReasoningEffort: '',
     ...overrides,
+    nameMap: overrides.nameMap ?? [],
   }
 }
 

@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { Config } from '../src/config.js'
 import { attachSettingsSection, LivePinConfig, SETTINGS_NAMESPACE } from '../src/settings.js'
 import type { PinConfig, PinConfigRuntime } from '../src/config.js'
 
@@ -26,6 +27,7 @@ function plainConfig(overrides: Partial<PinConfig> = {}): PinConfig {
     fallbackProvider: '',
     fallbackModel: '',
     fallbackReasoningEffort: '',
+    nameMap: [],
     ...overrides,
   }
 }
@@ -94,5 +96,41 @@ describe('attachSettingsSection', () => {
     expect(onCommit).toHaveBeenCalledTimes(1)
     ctx.emit('settings/document-updated', 'another-plugin' as SettingsNamespace, 2)
     expect(onCommit).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('LivePinConfig nameMap (by-name mapping, ADR 0006)', () => {
+  it('re-reads nameMap rows through volatile handles on every current() call', () => {
+    const state = plainConfig({ nameMap: [{ name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }] })
+    const live = new LivePinConfig(handleRuntime(state))
+    live.setVolatileSource(() => handleRuntime(state))
+    expect(live.current().nameMap).toHaveLength(1)
+    state.nameMap.push({ name: 'coder', provider: 'zai', model: 'glm-5.3', reasoningEffort: 'xhigh' })
+    expect(live.current().nameMap).toHaveLength(2)
+    expect(live.current().nameMap[1]).toEqual({ name: 'coder', provider: 'zai', model: 'glm-5.3', reasoningEffort: 'xhigh' })
+  })
+
+  it('keeps the last good nameMap snapshot when the source starts throwing', () => {
+    const state = plainConfig({ nameMap: [{ name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }] })
+    let broken = false
+    const live = new LivePinConfig(handleRuntime(state), vi.fn())
+    live.setVolatileSource(() => {
+      if (broken) throw new Error('schema failure')
+      return handleRuntime(state)
+    })
+    expect(live.current().nameMap).toHaveLength(1)
+    broken = true
+    expect(live.current().nameMap).toHaveLength(1)
+    expect(live.current().nameMap[0]?.name).toBe('researcher')
+  })
+})
+
+describe('Config schema nameMap (by-name mapping, ADR 0006)', () => {
+  it('defaults nameMap to an empty list for legacy documents and caps it at 16 rows', () => {
+    const legacy = (Config as unknown as (doc: unknown) => PinConfig)({ strategy: 'pinned' })
+    expect(legacy.nameMap).toEqual([])
+    const row = { name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }
+    const seventeen = Array.from({ length: 17 }, () => ({ ...row }))
+    expect(() => (Config as unknown as (doc: unknown) => PinConfig)({ nameMap: seventeen })).toThrow()
   })
 })

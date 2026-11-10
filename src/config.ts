@@ -12,7 +12,7 @@
  * @module dsh-subagent-plus/config
  */
 import z from '@deepseek-ai/schemastery'
-import type { PriorityEntryView, Strategy } from './strategy.js'
+import type { NameMapEntryView, PriorityEntryView, Strategy } from './strategy.js'
 import { STRATEGIES } from './strategy.js'
 
 /** Plugin configuration; plain values only — runtime handles unwrap through {@link materializeConfig}. */
@@ -43,10 +43,15 @@ export interface PinConfig {
   fallbackModel: string
   /** Effort id for the fallback route; empty keeps the model's own default. */
   fallbackReasoningEffort: string
+  /** By-name mapping rows (ADR 0006): exact teammate name → forced route; empty list leaves routing to the strategy chain. */
+  nameMap: NameMapEntryView[]
 }
 
 /** Upper bound on `priority` entries; enforced by the schema and the settings page. */
 const MAX_PRIORITY_ROUTES = 5
+
+/** Upper bound on `nameMap` rows (ADR 0006); aligned with the official `DEFAULT_MAX_MEMBERS = 16`. */
+const MAX_NAME_MAP_ENTRIES = 16
 
 /**
  * A volatile handle as the host hands it to `apply` (upstream `Volatile<T>`):
@@ -107,4 +112,10 @@ export const Config: z = z.object({
   fallbackProvider: z.string().default('').volatile(),
   fallbackModel: z.string().default('').volatile(),
   fallbackReasoningEffort: z.string().default('').volatile(),
+  nameMap: z.array(z.object({
+    name: z.string().default(''),
+    provider: z.string().default(''),
+    model: z.string().default(''),
+    reasoningEffort: z.string().default(''),
+  })).default([]).max(MAX_NAME_MAP_ENTRIES).volatile(),
 })
