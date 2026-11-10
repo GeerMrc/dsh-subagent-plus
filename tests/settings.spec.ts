@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { Config } from '../src/config.js'
+import { Config, materializeConfig } from '../src/config.js'
 import { attachSettingsSection, LivePinConfig, SETTINGS_NAMESPACE } from '../src/settings.js'
 import type { PinConfig, PinConfigRuntime } from '../src/config.js'
 
@@ -127,10 +127,12 @@ describe('LivePinConfig nameMap (by-name mapping, ADR 0006)', () => {
 
 describe('Config schema nameMap (by-name mapping, ADR 0006)', () => {
   it('defaults nameMap to an empty list for legacy documents and caps it at 16 rows', () => {
-    const legacy = (Config as unknown as (doc: unknown) => PinConfig)({ strategy: 'pinned' })
-    expect(legacy.nameMap).toEqual([])
+    const parse = (doc: unknown): PinConfig => materializeConfig((Config as unknown as (d: unknown) => import('../src/config.js').PinConfigRuntime)(doc))
+    expect(parse({ strategy: 'pinned' }).nameMap).toEqual([])
+    const single = parse({ nameMap: [{ name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'xhigh' }] })
+    expect(single.nameMap).toEqual([{ name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'xhigh' }])
     const row = { name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }
     const seventeen = Array.from({ length: 17 }, () => ({ ...row }))
-    expect(() => (Config as unknown as (doc: unknown) => PinConfig)({ nameMap: seventeen })).toThrow()
+    expect(() => parse({ nameMap: seventeen })).toThrow()
   })
 })
