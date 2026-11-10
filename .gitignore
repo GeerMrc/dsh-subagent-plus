@@ -3,3 +3,4 @@ lib/
 dist-artifacts/
 *.tgz
 .DS_Store
+.zcode/
