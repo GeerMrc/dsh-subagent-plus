@@ -12,8 +12,8 @@
  *
  * @module dsh-subagent-plus/client/settings-controller
  */
-import { validateStrategyConfig, type Strategy } from '../strategy.js'
-import { MAX_NAME_MAP_ENTRIES, type PinConfig } from '../config.js'
+import { MAX_NAME_MAP_ENTRIES, validateStrategyConfig, type Strategy } from '../strategy.js'
+import type { PinConfig } from '../config.js'
 import type { SaveOutcome } from './unified-save.js'
 
 /** Maximum candidate routes; mirrors the schema bound. */

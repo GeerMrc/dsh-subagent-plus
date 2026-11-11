@@ -7,6 +7,11 @@
  */
 import { routeId, type PinRoute, type RouteFields } from './pin.js'
 
+/** Upper bound on `nameMap` rows (ADR 0006); aligned with the official
+ * `DEFAULT_MAX_MEMBERS = 16`. Lives here — not config.js — so the client half
+ * can import it without dragging schemastery into the client bundle. */
+export const MAX_NAME_MAP_ENTRIES = 16
+
 /** Closed set of selection strategies; `pinned` is the v0.1.x single-route behaviour. */
 export const STRATEGIES = ['pinned', 'round-robin', 'random', 'priority'] as const
 

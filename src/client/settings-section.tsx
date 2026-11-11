@@ -20,11 +20,10 @@ import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
 import { routeId } from '../pin.js'
-import { isValidTeammateName, routeKey } from '../strategy.js'
+import { isValidTeammateName, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
-import { MAX_NAME_MAP_ENTRIES } from '../config.js'
 import { NS } from './locales.ts'
 import {
   nameInputStyle,

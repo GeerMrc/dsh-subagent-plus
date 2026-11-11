@@ -13,7 +13,7 @@
  */
 import z from '@deepseek-ai/schemastery'
 import type { NameMapEntryView, PriorityEntryView, Strategy } from './strategy.js'
-import { STRATEGIES } from './strategy.js'
+import { MAX_NAME_MAP_ENTRIES, STRATEGIES } from './strategy.js'
 
 /** Plugin configuration; plain values only — runtime handles unwrap through {@link materializeConfig}. */
 export interface PinConfig {
@@ -49,9 +49,6 @@ export interface PinConfig {
 
 /** Upper bound on `priority` entries; enforced by the schema and the settings page. */
 const MAX_PRIORITY_ROUTES = 5
-
-/** Upper bound on `nameMap` rows (ADR 0006); aligned with the official `DEFAULT_MAX_MEMBERS = 16`. */
-export const MAX_NAME_MAP_ENTRIES = 16
 
 /**
  * A volatile handle as the host hands it to `apply` (upstream `Volatile<T>`):
