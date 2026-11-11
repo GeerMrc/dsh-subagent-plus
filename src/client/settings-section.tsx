@@ -26,6 +26,7 @@ import type { RouteOption, SettingsSectionController, SettingsUiState } from './
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
 import {
+  nameMapRowStyle,
   nameInputStyle,
   nameTriggerStyle,
   removeTriggerStyle,
@@ -486,7 +487,7 @@ function EditorRoutes(props: EditorProps) {
                     : routeIncomplete ? t('byname.routeInvalid')
                       : catalogHit === null ? t('list.unavailable') : t('byname.routeNotListed')
                   return (
-                    <div key={`${row.name}\0${index}`} className="dsmp-hover" style={listRowStyle}>
+                    <div key={`${row.name}\0${index}`} className="dsmp-hover" style={nameMapRowStyle}>
                       <span style={indexChipStyle}>{index + 1}</span>
                       <input
                         className={`dsmp-input${nameInvalid ? ' dsmp-invalid' : ''}`}
@@ -514,16 +515,15 @@ function EditorRoutes(props: EditorProps) {
                           <option key={routeValue(candidate)} value={routeValue(candidate)} title={routeFull(candidate)}>{routeShort(candidate)}</option>
                         ))}
                       </select>
-                      {listedHit !== null && catalogHit !== null && catalogHit.efforts !== undefined && catalogHit.efforts.length > 0
-                        ? (
-                          <EffortSelect
-                            label={`${t('strategy.effort')} ${routeId(listedHit)}`} route={catalogHit}
-                            value={row.reasoningEffort}
-                            onChange={value => { controller.setNameRowEffort(index, value) }}
-                            defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')}
-                          />
-                        )
-                        : null}
+                      {/* Always rendered: an unusable route renders the select's
+                          own disabled placeholder, so every row keeps exactly
+                          five children on the five tracks (ADR 0007 d7). */}
+                      <EffortSelect
+                        label={`${t('strategy.effort')} ${listedHit !== null ? routeId(listedHit) : t('byname.name')}`} route={listedHit !== null ? catalogHit ?? undefined : undefined}
+                        value={listedHit !== null ? row.reasoningEffort : ''}
+                        onChange={value => { controller.setNameRowEffort(index, value) }}
+                        defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')}
+                      />
                       <RemoveMenu label={t('byname.remove')} onRemove={() => { controller.removeNameRow(index) }} />
                     </div>
                   )

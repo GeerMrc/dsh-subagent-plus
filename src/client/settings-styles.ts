@@ -341,3 +341,14 @@ export const removeTriggerStyle: React.CSSProperties = {
   border: 'none', background: 'transparent', color: 'var(--dsw-alias-text-tertiary)',
   fontSize: 14, lineHeight: 1, cursor: 'pointer', padding: '2px 6px', borderRadius: 6,
 }
+
+/** By-name mapping row (ADR 0007 decision 7): the candidate-row geometry
+ *  widened to five explicit tracks — chip / name input / elastic route select
+ *  / effort select / remove — so the four pickers plus chip never spill onto
+ *  an implicit second row. The elastic seat is the route select (it already
+ *  ellipsizes); every control keeps its candidate-row width. */
+export const nameMapRowStyle: React.CSSProperties = {
+  ...listRowStyle,
+  gridTemplateColumns: 'auto auto minmax(0,1fr) auto auto',
+  alignItems: 'center',
+}
