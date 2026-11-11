@@ -985,6 +985,47 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     await expect(dispatch(ctx, child)).resolves.toEqual(zai)
   })
 
+  it('emits the by-name notice once, with the effort suffix when configured', async () => {
+    const { ctx } = await byNameContext()
+    const child = memberChild('researcher')
+    await dispatch(ctx, child)
+    const first = await dispatchPreStep(ctx, child)
+    expect(noticeText(first)).toBe('[按名指派 model assigned by name: 队友 "researcher" 的所有请求运行 sz/Qwen3.8-27B-FP8｜every request of teammate "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+    const again = await dispatchPreStep(ctx, child, 3)
+    expect(again.kind === 'enter' && again.messages.length).toBe(0)
+    const { ctx: effortCtx } = await byNameContext({
+      nameMap: [{ name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'xhigh' }],
+    })
+    const effortChild = memberChild('researcher')
+    await dispatch(effortCtx, effortChild)
+    const effortNotice = await dispatchPreStep(effortCtx, effortChild)
+    expect(noticeText(effortNotice)).toContain('sz/Qwen3.8-27B-FP8·xhigh')
+  })
+
+  it('notifies the fallback handover while cooling, then the mapped route again on recovery', async () => {
+    const { ctx } = await byNameContext({
+      cooldownMs: 90,
+      fallbackProvider: zai.provider, fallbackModel: zai.model, fallbackReasoningEffort: '',
+    })
+    const child = memberChild('researcher')
+    await dispatch(ctx, child)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    const evasion = await dispatchPreStep(ctx, child, 2)
+    expect(noticeText(evasion)).toBe('[按名兜底 model by-name fallback: 映射路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 zai/glm-5.3｜mapped route sz/Qwen3.8-27B-FP8 unavailable, runs fallback zai/glm-5.3 — dsh-subagent-plus]')
+    await new Promise(resolve => setTimeout(resolve, 130))
+    await dispatch(ctx, child)
+    const recovered = await dispatchPreStep(ctx, child, 4)
+    expect(noticeText(recovered)).toBe('[按名指派 model assigned by name: 队友 "researcher" 的所有请求运行 sz/Qwen3.8-27B-FP8｜every request of teammate "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+  })
+
+  it('emits nothing at all when showNotice is off', async () => {
+    const { ctx } = await byNameContext({ showNotice: false })
+    const child = memberChild('researcher')
+    await dispatch(ctx, child)
+    const decision = await dispatchPreStep(ctx, child)
+    expect(decision.kind === 'enter' && decision.messages.length).toBe(0)
+  })
+
   it('provider-sticky failure cools every mapped row of that provider', async () => {
     const { ctx } = await byNameContext({
       nameMap: [nmRow('researcher', 'sz', 'Qwen3.8-27B-FP8'), nmRow('coder', 'sz', 'other-model')],

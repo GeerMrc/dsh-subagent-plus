@@ -54,6 +54,9 @@ import {
 } from './pin.js'
 import {
   assignedNotice,
+  byNameFallbackNotice,
+  byNameNotice,
+  byNameSkippedNotice,
   candidateRoutes,
   classifyFailure,
   createSelectionState,
@@ -487,10 +490,46 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (childDepthOf(agent) <= 0) return decision
     if (!config.pinForkChildren && isForkedChild(agent)) return decision
     // A by-name child is not the strategy chain's business: no assignment
-    // notice from the spread path may claim it (its own notice lands in the
-    // by-name branch once the notice builder ships).
+    // notice from the spread path may claim it. Its own notice mirrors the
+    // request-side usability decision (an unusable mapped route reports the
+    // fallback actually running) and dedupes per agent per distinct target.
     const byNameRouting = decideByName(config, agent)
-    if (byNameRouting !== undefined) return decision
+    if (byNameRouting !== undefined) {
+      const mappedLabel = routeId(byNameRouting.route)
+        + (byNameRouting.route.reasoningEffort === undefined ? '' : `·${byNameRouting.route.reasoningEffort}`)
+      let target: PinRoute
+      let text: string
+      if (config.failOpen && !await routeRegistered(ctx, byNameRouting.route.provider, byNameRouting.route.model)) {
+        const fallback = await usableFallbackOf(config)
+        if (fallback !== undefined) {
+          target = fallback
+          text = byNameFallbackNotice(mappedLabel, routeId(fallback))
+        } else {
+          target = byNameRouting.route
+          text = byNameSkippedNotice(byNameRouting.name, mappedLabel)
+        }
+      } else if (!healthyNow(config)(byNameRouting.route)) {
+        const fallback = await usableFallbackOf(config)
+        if (fallback !== undefined) {
+          target = fallback
+          text = byNameFallbackNotice(mappedLabel, routeId(fallback))
+        } else {
+          target = byNameRouting.route
+          text = byNameNotice(byNameRouting.name, mappedLabel)
+        }
+      } else {
+        target = byNameRouting.route
+        text = byNameNotice(byNameRouting.name, mappedLabel)
+      }
+      const targetLabel = routeId(target)
+      if (noticedLabel.get(agent) === targetLabel) return decision
+      noticedLabel.set(agent, targetLabel)
+      const notice = createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(targetLabel) },
+      })
+      return { ...decision, messages: [...decision.messages, notice] }
+    }
     const plan = resolveStrategyPlan(config)
     if (plan.kind !== 'spread') {
       const pin = resolvePin(config)

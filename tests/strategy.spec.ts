@@ -7,6 +7,9 @@ import {
   createSelectionState,
   explicitRouteOf,
   fallbackNotice,
+  byNameFallbackNotice,
+  byNameNotice,
+  byNameSkippedNotice,
   fallbackRouteOf,
   isValidTeammateName,
   matchByName,
@@ -397,5 +400,25 @@ describe('by-name mapping (S-09)', () => {
     const long = Array.from({ length: 17 }, (_, i) => nm(`dev-${i + 1}`, sz))
     const report = validateStrategyConfig({ ...base, nameMap: long })
     expect(report.structural.some(m => m.includes('at most 16'))).toBe(true)
+  })
+})
+
+describe('by-name notice text (S-09 helpers)', () => {
+  it('names the teammate and route, bilingual on one line', () => {
+    expect(byNameNotice('researcher', 'sz/Qwen3.8-27B-FP8')).toBe(
+      '[按名指派 model assigned by name: 队友 "researcher" 的所有请求运行 sz/Qwen3.8-27B-FP8｜every request of teammate "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]',
+    )
+  })
+
+  it('names the fallback handover of an unusable mapped route', () => {
+    expect(byNameFallbackNotice('sz/Qwen3.8-27B-FP8', 'zai/glm-5.3')).toBe(
+      '[按名兜底 model by-name fallback: 映射路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 zai/glm-5.3｜mapped route sz/Qwen3.8-27B-FP8 unavailable, runs fallback zai/glm-5.3 — dsh-subagent-plus]',
+    )
+  })
+
+  it('names the skip when an unregistered mapped route keeps the resolved route', () => {
+    expect(byNameSkippedNotice('researcher', 'sz/Qwen3.8-27B-FP8')).toBe(
+      '[按名跳过 model by-name skipped: 队友 "researcher" 的映射路由 sz/Qwen3.8-27B-FP8 未注册，本子智能体保持原路由｜mapped route sz/Qwen3.8-27B-FP8 for "researcher" unregistered, this child keeps its resolved route — dsh-subagent-plus]',
+    )
   })
 })

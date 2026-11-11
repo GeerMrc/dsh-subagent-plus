@@ -520,3 +520,37 @@ export function pinSkippedNotice(label: string): string {
 export function reassignedNotice(from: string, to: string, code: string): string {
   return `[模型切换 model reassigned: ${from} 冷却中（${code}），本子智能体继续使用 ${to}｜${from} cooling (${code}), continues ${to} — dsh-subagent-plus]`
 }
+
+/**
+ * Transcript notice naming the mapped route a by-name child runs (ADR 0006).
+ * @param name - teammate name that matched the row.
+ * @param label - `provider/model` of the mapped route, with an optional
+ * `·effort` suffix the caller composes.
+ * @returns the bracketed one-line notice.
+ */
+export function byNameNotice(name: string, label: string): string {
+  return `[按名指派 model assigned by name: 队友 "${name}" 的所有请求运行 ${label}｜every request of teammate "${name}" runs ${label} — dsh-subagent-plus]`
+}
+
+/**
+ * Transcript notice for an unusable mapped route (cooling, or unregistered
+ * and skipped by failOpen) that handed the child over to the fallback.
+ * @param mappedLabel - `provider/model` of the unusable mapped route.
+ * @param fallbackLabel - `provider/model` of the fallback now in use.
+ * @returns the bracketed one-line notice.
+ */
+export function byNameFallbackNotice(mappedLabel: string, fallbackLabel: string): string {
+  return `[按名兜底 model by-name fallback: 映射路由 ${mappedLabel} 当前不可用（冷却或未注册），本子智能体改用兜底 ${fallbackLabel}｜mapped route ${mappedLabel} unavailable, runs fallback ${fallbackLabel} — dsh-subagent-plus]`
+}
+
+/**
+ * Transcript notice for a mapped route that failOpen skipped because it is
+ * not registered: the child keeps its resolved route, so the notice names the
+ * skip instead of claiming the mapped route runs.
+ * @param name - teammate name that matched the row.
+ * @param label - `provider/model` of the unregistered mapped route.
+ * @returns the bracketed one-line notice.
+ */
+export function byNameSkippedNotice(name: string, label: string): string {
+  return `[按名跳过 model by-name skipped: 队友 "${name}" 的映射路由 ${label} 未注册，本子智能体保持原路由｜mapped route ${label} for "${name}" unregistered, this child keeps its resolved route — dsh-subagent-plus]`
+}
