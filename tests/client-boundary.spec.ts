@@ -24,8 +24,9 @@ const FORBIDDEN_BUNDLE_MARKERS = [
 
 /** Any import/export form referencing one of the targets: named, default,
  *  namespace, side-effect, dynamic import, re-export; single or double
- *  quotes. The specifier clause (when present) decides type-only safety. */
-const IMPORT_PATTERN = /(?:import|export)\s+([^;]*?from\s+)?['"](\.\.\/(?:config|settings|index)\.js)['"]|import\(\s*['"](\.\.\/(?:config|settings|index)\.js)['"]\s*\)/g
+ *  quotes. The specifier clause (when present) decides type-only safety; the clause
+ *  never spans lines, so adjacent imports cannot merge into one match. */
+const IMPORT_PATTERN = /(?:import|export)\s+([^;\n]*?from\s+)?['"](\.\.\/(?:config|settings|index)\.js)['"]|import\(\s*['"](\.\.\/(?:config|settings|index)\.js)['"]\s*\)/g
 
 function isTypeOnlyClause(clause: string | undefined): boolean {
   if (clause === undefined) return false // side-effect / dynamic form: runtime by definition
