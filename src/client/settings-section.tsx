@@ -24,6 +24,7 @@ import { isValidTeammateName, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
+import { nameSuggestions } from './name-suggestions.js'
 import { NS } from './locales.ts'
 import {
   nameMapRowStyle,
@@ -261,7 +262,7 @@ function Switch({ checked, onChange, label, title, disabled }: { checked: boolea
  *  while any section is servable: the own-namespace branch only
  *  gates the strategy half of the merged card, never the limits block (T7 — no
  *  deadlock while the official page is hidden). */
-export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; save: UnifiedSaveController }) {
+export function SettingsSection(props: PropsLocale<typeof NS> & { controller: SettingsSectionController; limits: OfficialLimitsController; save: UnifiedSaveController; teamNames?: () => string[] }) {
   const { t, controller, save } = props
   const state: SettingsUiState = useSyncExternalStore(controller.subscribe, controller.snapshot)
   const limitsState = useSyncExternalStore(props.limits.subscribe, props.limits.snapshot)
@@ -294,7 +295,7 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
               ? <p style={invalidStyle}>{t('status.valueInvalid')}</p>
               : state.draft === undefined
                 ? <p style={hintStyle}>…</p>
-                : <EditorRoutes state={state} controller={controller} t={t} />}
+                : <EditorRoutes state={state} controller={controller} t={t} teamNames={props.teamNames} />}
         </div>
       </section>
       {ownReady ? <EditorBelow state={state} controller={controller} t={t} /> : null}
@@ -320,6 +321,9 @@ type EditorProps = {
   state: SettingsUiState
   controller: SettingsSectionController
   t: PropsLocale<typeof NS>['t']
+  /** Live team-roster name source for the mapping input's datalist; absent
+   *  when the host runs no Team bundle (ADR 0007 decision 5). */
+  teamNames?: () => string[]
 }
 
 /** The strategy half of the merged card: the candidate/pinned header row,
@@ -465,6 +469,12 @@ function EditorRoutes(props: EditorProps) {
             <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
+          <datalist id="dsmp-byname-names">
+            {nameSuggestions(
+              props.teamNames?.() ?? [],
+              draft.nameMap.map(row => row.name),
+            ).map(name => <option key={name} value={name} />)}
+          </datalist>
           {draft.nameMap.length === 0
             ? <p style={hintStyle}>{t('byname.empty')}</p>
             : (
@@ -493,6 +503,7 @@ function EditorRoutes(props: EditorProps) {
                         className={`dsmp-input${nameInvalid ? ' dsmp-invalid' : ''}`}
                         style={nameInputStyle}
                         value={row.name}
+                        list="dsmp-byname-names"
                         placeholder={t('byname.namePlaceholder')}
                         aria-label={t('byname.name')}
                         title={nameInvalid ? t('byname.nameInvalid') : t('byname.name')}
@@ -664,8 +675,8 @@ function routeFromValue(source: readonly RouteOption[], value: string): RouteOpt
 }
 
 /** Bind factory closing over the controllers, mirroring the badge registration. */
-export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, save: UnifiedSaveController) {
+export function bindSettingsSection(controller: SettingsSectionController, limits: OfficialLimitsController, save: UnifiedSaveController, teamNames?: () => string[]) {
   return function BoundSettingsSection(props: PropsLocale<typeof NS>) {
-    return <SettingsSection {...props} controller={controller} limits={limits} save={save} />
+    return <SettingsSection {...props} controller={controller} limits={limits} save={save} teamNames={teamNames} />
   }
 }
