@@ -366,10 +366,13 @@ describe('by-name mapping (S-09)', () => {
     expect(matchByName('researcher', [])).toBeUndefined()
   })
 
-  it('accepts a valid map, including routes that overlap the priority list', () => {
+  it('accepts a valid map whose routes all come from the candidate list', () => {
     const report = validateStrategyConfig({
       ...base, nameMap: [nm('researcher', sz), nm('coder', zai)],
-      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      priority: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'zai', model: 'glm-5.3', reasoningEffort: '' },
+      ],
     })
     expect(report.structural).toEqual([])
     expect(report.degraded).toEqual([])
@@ -379,18 +382,57 @@ describe('by-name mapping (S-09)', () => {
     expect(validateStrategyConfig(base).structural).toEqual([])
   })
 
+  it('refuses a mapped route that is not in the candidate list (ADR 0007 dangling)', () => {
+    const report = validateStrategyConfig({
+      ...base,
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [nm('researcher', zai)],
+    })
+    expect(report.structural).toHaveLength(1)
+    expect(report.structural[0]).toContain('nameMap[0]')
+    expect(report.structural[0]).toContain('zai/glm-5.3')
+  })
+
+  it('refuses any mapped row while the candidate list is empty', () => {
+    const report = validateStrategyConfig({ ...base, priority: [], nameMap: [nm('researcher', sz)] })
+    expect(report.structural.some(m => m.includes('nameMap[0]') && m.includes('candidate list'))).toBe(true)
+  })
+
+  it('a half-filled row reports its own defect, not the dangling one', () => {
+    const report = validateStrategyConfig({
+      ...base,
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [{ name: 'researcher', provider: 'hh', model: '', reasoningEffort: '' }],
+    })
+    expect(report.structural).toHaveLength(1)
+    expect(report.structural[0]).toContain('needs both provider and model')
+  })
+
+  it('accepts several rows sharing one listed route (B: duplicates by name only)', () => {
+    const report = validateStrategyConfig({
+      ...base,
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [nm('researcher', sz), nm('coder', sz)],
+    })
+    expect(report.structural).toEqual([])
+  })
+
   it('refuses duplicate names, half-filled routes, and illegal names', () => {
-    const dup = validateStrategyConfig({ ...base, nameMap: [nm('dev', sz), nm('dev', zai)] })
+    const listed = { ...base, priority: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { provider: 'zai', model: 'glm-5.3', reasoningEffort: '' },
+    ] }
+    const dup = validateStrategyConfig({ ...listed, nameMap: [nm('dev', sz), nm('dev', zai)] })
     expect(dup.structural).toHaveLength(1)
     expect(dup.structural[0]).toContain('"dev"')
 
     const half = validateStrategyConfig({
-      ...base, nameMap: [{ name: 'dev', provider: 'sz', model: '', reasoningEffort: '' }],
+      ...listed, nameMap: [{ name: 'dev', provider: 'sz', model: '', reasoningEffort: '' }],
     })
     expect(half.structural[0]).toContain('nameMap[0]')
 
     for (const bad of ['lead', 'Dev', 'a'.repeat(65)]) {
-      const report = validateStrategyConfig({ ...base, nameMap: [nm(bad, sz)] })
+      const report = validateStrategyConfig({ ...listed, nameMap: [nm(bad, sz)] })
       expect(report.structural).toHaveLength(1)
       expect(report.structural[0]).toContain(bad === 'a'.repeat(65) ? '64' : `"${bad}"`)
     }
@@ -398,7 +440,11 @@ describe('by-name mapping (S-09)', () => {
 
   it('refuses maps longer than 16 entries', () => {
     const long = Array.from({ length: 17 }, (_, i) => nm(`dev-${i + 1}`, sz))
-    const report = validateStrategyConfig({ ...base, nameMap: long })
+    const report = validateStrategyConfig({
+      ...base,
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: long,
+    })
     expect(report.structural.some(m => m.includes('at most 16'))).toBe(true)
   })
 })

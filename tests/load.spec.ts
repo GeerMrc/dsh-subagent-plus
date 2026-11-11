@@ -835,7 +835,11 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     const cfg: plugin.PinConfig = {
       provider: '', model: '', reasoningEffort: '',
       pinForkChildren: false, failOpen: true, showNotice: true,
-      strategy: 'pinned', priority: [], respectExplicit: false,
+      strategy: 'pinned',
+      // ADR 0007: mapped routes must come from the candidate list, so the
+      // fixture list carries every route the default mapping row names.
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      respectExplicit: false,
       cooldownMs: 120_000, fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
       nameMap: [researcherRow],
       ...overrides,
@@ -868,7 +872,10 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
   it('② outranks an explicit delegation choice under spread + respectExplicit', async () => {
     const { ctx } = await byNameContext({
       strategy: 'round-robin',
-      priority: [{ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      priority: [
+        { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      ],
       respectExplicit: true,
     })
     ctx.provide('sessions', {
@@ -975,7 +982,10 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
   it('accounting B: cools an out-of-list mapped provider and evades to the fallback', async () => {
     const { ctx, warns } = await byNameContext({
       strategy: 'round-robin',
-      priority: [{ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      priority: [
+        { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      ],
       fallbackProvider: zai.provider, fallbackModel: zai.model, fallbackReasoningEffort: '',
     })
     const child = memberChild('researcher')
@@ -1039,6 +1049,10 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
   it('provider-sticky failure cools every mapped row of that provider', async () => {
     const { ctx } = await byNameContext({
       nameMap: [nmRow('researcher', 'sz', 'Qwen3.8-27B-FP8'), nmRow('coder', 'sz', 'other-model')],
+      priority: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'sz', model: 'other-model', reasoningEffort: '' },
+      ],
       fallbackProvider: zai.provider, fallbackModel: zai.model, fallbackReasoningEffort: '',
     })
     const a = memberChild('researcher')

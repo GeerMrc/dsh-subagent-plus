@@ -154,6 +154,13 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
       structural.push(`dsh-subagent-plus: nameMap[${index}] needs both provider and model`)
       return
     }
+    // ADR 0007: the candidate list is the sole source of mapped routes — a
+    // row referencing a route it removed (or never listed) is meaningless and
+    // refuses to load. Several rows may share one listed route.
+    if (!seen.has(routeKey(entry))) {
+      structural.push(`dsh-subagent-plus: nameMap[${index}] route "${routeId(entry)}" is not in the candidate list`)
+      return
+    }
     if (names.has(entry.name)) {
       structural.push(`dsh-subagent-plus: nameMap repeats teammate name "${entry.name}"`)
     }
