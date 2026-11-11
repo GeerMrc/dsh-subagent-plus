@@ -1126,6 +1126,10 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
       },
     })
     plugin.apply(ctx, entry as unknown as Parameters<typeof plugin.apply>[1])
+    // The settings-section effect registers its listener on the inject fiber —
+    // let that callback land before committing (the attachSettingsSection
+    // precedent awaits one macrotask).
+    await new Promise(resolve => setTimeout(resolve, 0))
     const warns = vi.spyOn(ctx.logger, 'warn')
     // A committed edit drops the candidate list: the structural finding is
     // named once, not repeated on later commits of the same finding.
