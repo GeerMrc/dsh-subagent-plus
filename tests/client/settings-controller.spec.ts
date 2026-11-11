@@ -384,6 +384,9 @@ describe('valueInvalid (E4)', () => {
 describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
   it('adds, renames, reroutes, and removes rows; fieldOps carries the whole nameMap as one op', async () => {
     const { controller, form } = await harness()
+    // ADR 0007: mapped routes must be listed candidates first.
+    controller.addRoute(szRoute)
+    controller.addRoute(hhRoute)
     controller.addNameRow(szRoute)
     controller.setNameRowName(0, 'researcher')
     controller.addNameRow(hhRoute)
@@ -392,6 +395,7 @@ describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
       { name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
       { name: 'coder', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
     ])
+    controller.addRoute(zaiRoute)
     controller.setNameRowRoute(1, zaiRoute)
     expect(controller.snapshot().draft?.nameMap[1]).toEqual({ name: 'coder', provider: 'zai', model: 'glm-5.3', reasoningEffort: '' })
     await expect(controller.save()).resolves.toBe('saved')
@@ -405,6 +409,8 @@ describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
 
   it('blocks the save while a row is unnamed, duplicated, or an illegal name', async () => {
     const { controller, form } = await harness()
+    controller.addRoute(szRoute)
+    controller.addRoute(hhRoute)
     controller.addNameRow(szRoute)
     await expect(controller.save()).resolves.toBe('blocked')
     expect(controller.snapshot().structural.length).toBeGreaterThan(0)
@@ -424,6 +430,7 @@ describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
 
   it('caps the mapping at 16 rows', async () => {
     const { controller } = await harness()
+    controller.addRoute(szRoute)
     for (let index = 0; index < 20; index += 1) controller.addNameRow(szRoute)
     expect(controller.snapshot().draft?.nameMap.length).toBe(16)
   })
