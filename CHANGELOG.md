@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.0.4 (2026-11-11) — 按名映射（队友名 → 路由，ADR 0006）
+
+- feat(by-name)!: **安装即用的新映射层**：设置卡新增「按名映射」分区（≤16 行，对齐官方
+  `DEFAULT_MAX_MEMBERS`）。命中队友名的子智能体固定使用该行路由——**强制指派族，优先于策略、
+  respectExplicit 与成员手动选择**；未命中的子智能体完整保留 v0.0.3 现行链（按名>策略>兜底，
+  单链写死）。映射路由可取候选清单之外的模型（独立槽位，与清单交集合法）；空表＝功能休眠，
+  升级用户零行为变化（无总开关，ADR 0005 二元哲学延续）。
+- feat(by-name): **身份与降级**：队友名经可选 `agentTeams` 服务守卫读取（`ctx.get`＋undefined
+  分支，未装 Team 的 profile 自动休眠＋一次性 warn，绝不硬 inject）；**单 Team 内队友名唯一且
+  不可重用**（官方 `TEAM_MEMBER_NAME_TAKEN` 保证）→ 匹配主键可靠；跨 Team 同名＝进程级匹配、
+  死名休眠不清理；按名决策一经 memo 终身粘住（spread 语义）——删行/改行只影响新决策点。
+- feat(by-name): **健康与记账**：映射路由纳入失败记账（routed 门＋provider 归因门），清单外
+  provider 的映射路由失败即入冷却；冷却/未注册时**暂避兜底、恢复即回映射路由**（pinFallback
+  手法，无候选重选）；provider 级粘性失败连带冷却同 provider 全部映射行；fork 队友默认仍被
+  放过（KV-cache 不变量），命中 fork 时一次性 warn 并指明 `pinForkChildren` 出路。
+- feat(by-name): 转录 notice 三条（按名指派/按名兜底/按名跳过，双语单行、档位省略段、per-agent
+  去重，受 showNotice 总开关）；设置页行内校验（重名/非法名/半填路由红框＋保存拦截）。
+- feat(by-name): UI 严格复用既有构件（序号 chip／dsmp-input 名字列／dsmp-select 路由列／
+  EffortSelect／Popover 删除／空态灰字／上限置灰／pinned 模式常显）；零新 CSS 文件。
+- docs: README 双语、settings/strategy 手册、ADR 0006（九决策＋RISK-H1 追踪条款）。
+- 留待：四态 UI 截图与 Flow F 隔离 E2E 见 dist-artifacts/e2e-v0.0.4/（随发布前检查补齐）；DOM
+  渲染级测试仍为既有技术债。
+
 ## v0.0.3 (2026-11-06) — 官方子智能体全面接管（纯二进制，ADR 0005）
 
 - feat(takeover)!: **安装即 100% 接管，二态互斥（用户裁定，ADR 0005）**：编辑面
