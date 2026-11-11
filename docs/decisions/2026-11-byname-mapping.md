@@ -20,7 +20,7 @@
 
 ## UI 一致性（决策 3 落地规范）
 
-新子区严格复用现有构件（复用清单存 `.zcode/v0.0.4/`，要点）：子区标题照 LimitsBlock 先例（h4＋`Info` 悬停）；行＝`indexChipStyle` 序号＋名字输入（`inputStyle`/`dsmp-input`）＋provider/model 原生 select（`routeSelectStyle`/`dsmp-select`）＋`EffortSelect`＋名称 Popover 删除（仅 remove 项）；空态 `hintStyle` 灰字；上限置灰；"＋ 添加映射"＝`foldButtonStyle` 基文字按钮。**不新增 CSS 文件**；新样式常量只进 settings-styles.ts；颜色全走 `--dsw-alias-*` token；locale 键组 `byname.*`（zh/en 双语，漏键编译报错）。
+新子区严格复用现有构件（复用清单存 `.zcode/v0.0.4/`，要点）：子区标题照 LimitsBlock 先例（h4＋`Info` 悬停）；行＝`indexChipStyle` 序号＋名字输入（`inputStyle`/`dsmp-input`）＋provider/model 原生 select（`routeSelectStyle`/`dsmp-select`）＋`EffortSelect`＋名称 Popover 删除（仅 remove 项）；空态 `hintStyle` 灰字；上限置灰；添加动作＝「标签＋路由下拉」行（与候选清单 add 模式完全对称——回写修订 A：实现时弃文字按钮、取更对称的清单先例，2026-11-12 交付对照审核）。**不新增 CSS 文件**；新样式常量只进 settings-styles.ts；颜色全走 `--dsw-alias-*` token；locale 键组 `byname.*`（zh/en 双语，漏键编译报错）。
 
 ## 影响
 
