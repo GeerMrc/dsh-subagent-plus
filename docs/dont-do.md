@@ -56,3 +56,7 @@
 - **npm 网页登录 token 是短时效的**（v0.0.3 发布实测，2026-11-06）：11-02 login 的 token 四天后 `npm whoami` 401 失效；**死 token 的 publish 报 E404 "could not be found or you do not have permission"（权限遮蔽假象）而非 401**——勿误判为包归属/权限问题，先 `npm whoami` 验 token，失效就重新 `npm login`（浏览器 Touch ID）后**立即**在同终端发布。
 - **publish 撞上在途事务报 E409 "Cannot publish over previously staged version"**：同版本有发布事务已上传未定稿（另一终端在跑/浏览器仪式刚完成在收尾）。勿盲目重试——等几秒用 `npm view <pkg> versions dist-tags --json` 查最终态（注意 **curl 裸查 packument 可能命中 CDN 陈旧缓存**，以带凭证的 npm view 为准），成功则收工，未成功再排查。
 - **发布验证三验以 npm view ＋ shasum 对物为准**：`dist.shasum` 与本地 tarball 的 shasum 逐字节一致才能确认"上的是这份产物"；tarball HTTP 200 与版本清单作旁证。
+
+## 客户端/宿主边界（v0.0.4 轮沉淀，2026-11-11 桌面启动崩溃 P0）
+
+- **客户端半边禁止值导入 `src/config.js`**：config.js 顶部 `import z from '@deepseek-ai/schemastery'`——桌面 client-modules 加载器的模块表里没有它（构建期宿主外部件），值导入会把 require 拖进 client bundle → **整个 web boot 拒活**（v0.0.4 测试包实测崩溃，弹窗 "require(\"@deepseek-ai/schemastery\") missed the module table"）。**类型导入（`import type`）编译即擦除，安全**。宿主/客户端共享常量必须放 `strategy.js`/`pin.js` 这类零宿主依赖模块（`MAX_NAME_MAP_ENTRIES` 先例）。机械守卫：`tests/client-boundary.spec.ts` 双扫源码值导入＋成品 bundle 字符串。教训链：单测在 node 环境能解析 node_modules 故全绿——**此类边界只有真实桌面/隔离 E2E 能暴露，人工实测门不可省**。
