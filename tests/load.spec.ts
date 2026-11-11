@@ -3,6 +3,8 @@ import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { LlmCallConfig, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as plugin from '../src/index.js'
+import { SETTINGS_NAMESPACE } from '../src/settings.js'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { AgentLike } from '../src/pin.js'
 
 /** Load-bearing smoke: the plugin entry must load into a real cordis context and
@@ -971,7 +973,7 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     expect(forkMember).toBeDefined()
   })
 
-  it('accounting A: records failures for a nameMap-only pinned configuration (no candidates, no fallback)', async () => {
+  it('accounting A: records failures for a pinned configuration whose only assignables are mapping rows', async () => {
     const { ctx, warns } = await byNameContext()
     const child = memberChild('researcher')
     await expect(dispatch(ctx, child)).resolves.toEqual(sz)
@@ -979,7 +981,7 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     expect(warns.mock.calls.some(call => String(call[0]).includes('cooling down'))).toBe(true)
   })
 
-  it('accounting B: cools an out-of-list mapped provider and evades to the fallback', async () => {
+  it('accounting B: cools a listed mapped provider and evades to the fallback (B-semantics regression pin)', async () => {
     const { ctx, warns } = await byNameContext({
       strategy: 'round-robin',
       priority: [
@@ -1102,6 +1104,35 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     // Boot was valid; the mid-session commit lands a half-filled row.
     state.nameMap = [{ name: 'researcher', provider: 'sz', model: '', reasoningEffort: '' }]
     await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(seed)
+  })
+
+  it('warns once per structural finding on a committed settings change (U4, R7-R2 🟡-2)', async () => {
+    const state: Record<string, unknown> = {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false, failOpen: true, showNotice: true,
+      strategy: 'pinned', respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [{ name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    }
+    const entry: Record<string, unknown> = {}
+    for (const key of Object.keys(state)) entry[key] = { get: () => state[key] }
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('settings', {})
+    ctx.provide('agentTeams', {
+      tryMembership: (a: object): { name: string } | undefined => {
+        const n = teamNameOf.get(a)
+        return n === undefined ? undefined : { name: n }
+      },
+    })
+    plugin.apply(ctx, entry as unknown as Parameters<typeof plugin.apply>[1])
+    const warns = vi.spyOn(ctx.logger, 'warn')
+    // A committed edit drops the candidate list: the structural finding is
+    // named once, not repeated on later commits of the same finding.
+    state.priority = []
+    ctx.emit('settings/document-updated', SETTINGS_NAMESPACE as SettingsNamespace, 1)
+    ctx.emit('settings/document-updated', SETTINGS_NAMESPACE as SettingsNamespace, 2)
+    expect(warns.mock.calls.filter(call => String(call[0]).includes('not in the candidate list'))).toHaveLength(1)
   })
 
   it('provider-sticky failure cools every mapped row of that provider', async () => {

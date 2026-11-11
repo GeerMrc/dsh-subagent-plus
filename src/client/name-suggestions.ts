@@ -39,7 +39,11 @@ export function teamNamesFromSessions(snapshot: unknown): string[] {
       : undefined
     const team = isRecord(members) ? (members as { agentTeam?: unknown }).agentTeam : undefined
     if (!isRecord(team)) continue
-    for (const member of (team as AgentTeamProjectionLike).members ?? []) {
+    // A foreign `members` value must degrade to no suggestions, never throw
+    // during a render — Array.isArray is the only shape this loop trusts.
+    const roster = (team as AgentTeamProjectionLike).members
+    if (!Array.isArray(roster)) continue
+    for (const member of roster) {
       if (!isRecord(member)) continue
       const { name, role } = member as { name?: unknown; role?: unknown }
       if (typeof name !== 'string' || name === '' || role === 'lead') continue

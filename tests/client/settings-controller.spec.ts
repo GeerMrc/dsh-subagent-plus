@@ -437,3 +437,17 @@ describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
     expect(controller.snapshot().draft?.nameMap.length).toBe(16)
   })
 })
+
+describe('nameMap dangling flow (ADR 0007, R7-R2 🟡-3)', () => {
+  it('blocks the save after the mapped candidate row is removed', async () => {
+    const { controller, form } = await harness()
+    controller.addRoute(szRoute)
+    controller.addNameRow(szRoute)
+    controller.setNameRowName(0, 'researcher')
+    await expect(controller.save()).resolves.toBe('saved')
+    controller.removeRoute(0)
+    expect(controller.snapshot().structural.some(m => m.includes('not in the candidate list'))).toBe(true)
+    await expect(controller.save()).resolves.toBe('blocked')
+    expect(form.mutateCalls).toHaveLength(1)
+  })
+})

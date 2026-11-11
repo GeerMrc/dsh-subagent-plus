@@ -28,6 +28,10 @@ describe('teamNamesFromSessions', () => {
     expect(teamNamesFromSessions({ projectionsBySession: { s1: undefined } })).toEqual([])
     expect(teamNamesFromSessions({ projectionsBySession: { s1: { values: { agentTeam: undefined } } } })).toEqual([])
     expect(teamNamesFromSessions('not-a-snapshot')).toEqual([])
+    // Hostile `members` values degrade, never throw (R7-R2 🟡-1).
+    expect(teamNamesFromSessions({ projectionsBySession: { s1: { values: { agentTeam: { members: 42 } } } } })).toEqual([])
+    expect(teamNamesFromSessions({ projectionsBySession: { s1: { values: { agentTeam: { members: { bad: true } } } } } })).toEqual([])
+    expect(teamNamesFromSessions({ projectionsBySession: { s1: { values: { agentTeam: { members: 'lead' } } } } })).toEqual([])
   })
 })
 
