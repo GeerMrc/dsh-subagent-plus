@@ -94,6 +94,7 @@ function baseConfig(): PinConfig {
 
 const szRoute = { provider: 'sz', model: 'Qwen3.8-27B-FP8', providerName: 'Qwen-SZ', modelName: 'Qwen3.8-27B-FP8' }
 const hhRoute = { provider: 'hh', model: 'Qwen3.8-27B-FP8', providerName: 'Qwen-HH', modelName: 'Qwen3.8-27B-FP8' }
+const zaiRoute = { provider: 'zai', model: 'glm-5.3', providerName: '智谱', modelName: 'GLM-5.3' }
 
 async function harness(value = baseConfig()): Promise<{ controller: SettingsSectionController; form: FakeForm }> {
   const form = new FakeForm(value)
@@ -377,5 +378,53 @@ describe('valueInvalid (E4)', () => {
   it('stays false for a well-formed ready value', async () => {
     const { controller } = await harness()
     expect(controller.snapshot().valueInvalid).toBe(false)
+  })
+})
+
+describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
+  it('adds, renames, reroutes, and removes rows; fieldOps carries the whole nameMap as one op', async () => {
+    const { controller, form } = await harness()
+    controller.addNameRow(szRoute)
+    controller.setNameRowName(0, 'researcher')
+    controller.addNameRow(hhRoute)
+    controller.setNameRowName(1, 'coder')
+    expect(controller.snapshot().draft?.nameMap).toEqual([
+      { name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { name: 'coder', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    ])
+    controller.setNameRowRoute(1, zaiRoute)
+    expect(controller.snapshot().draft?.nameMap[1]).toEqual({ name: 'coder', provider: 'zai', model: 'glm-5.3', reasoningEffort: '' })
+    await expect(controller.save()).resolves.toBe('saved')
+    const ops = form.mutateCalls[0]?.ops ?? []
+    expect(ops).toHaveLength(1)
+    expect(ops[0]?.path).toEqual(['nameMap'])
+    controller.removeNameRow(0)
+    await expect(controller.save()).resolves.toBe('saved')
+    expect(form.mutateCalls.at(-1)?.ops[0]?.value).toEqual([{ name: 'coder', provider: 'zai', model: 'glm-5.3', reasoningEffort: '' }])
+  })
+
+  it('blocks the save while a row is unnamed, duplicated, or an illegal name', async () => {
+    const { controller, form } = await harness()
+    controller.addNameRow(szRoute)
+    await expect(controller.save()).resolves.toBe('blocked')
+    expect(controller.snapshot().structural.length).toBeGreaterThan(0)
+    expect(form.mutateCalls).toHaveLength(0)
+    controller.setNameRowName(0, 'researcher')
+    controller.addNameRow(hhRoute)
+    controller.setNameRowName(1, 'researcher')
+    await expect(controller.save()).resolves.toBe('blocked')
+    expect(form.mutateCalls).toHaveLength(0)
+    controller.setNameRowName(1, 'lead')
+    await expect(controller.save()).resolves.toBe('blocked')
+    expect(form.mutateCalls).toHaveLength(0)
+    controller.removeNameRow(1)
+    await expect(controller.save()).resolves.toBe('saved')
+    expect(form.mutateCalls).toHaveLength(1)
+  })
+
+  it('caps the mapping at 16 rows', async () => {
+    const { controller } = await harness()
+    for (let index = 0; index < 20; index += 1) controller.addNameRow(szRoute)
+    expect(controller.snapshot().draft?.nameMap.length).toBe(16)
   })
 })

@@ -13,7 +13,7 @@
  * @module dsh-subagent-plus/client/settings-controller
  */
 import { validateStrategyConfig, type Strategy } from '../strategy.js'
-import type { PinConfig } from '../config.js'
+import { MAX_NAME_MAP_ENTRIES, type PinConfig } from '../config.js'
 import type { SaveOutcome } from './unified-save.js'
 
 /** Maximum candidate routes; mirrors the schema bound. */
@@ -317,6 +317,41 @@ export class SettingsSectionController {
       if (entry !== undefined) entry.reasoningEffort = reasoningEffort
     })
   }
+  addNameRow = (route: RouteOption): void => {
+    this.#edit(draft => {
+      if (draft.nameMap.length >= MAX_NAME_MAP_ENTRIES) return
+      draft.nameMap.push({ name: '', provider: route.provider, model: route.model, reasoningEffort: '' })
+    })
+  }
+
+  removeNameRow = (index: number): void => {
+    this.#edit(draft => { draft.nameMap.splice(index, 1) })
+  }
+
+  setNameRowName = (index: number, name: string): void => {
+    this.#edit(draft => {
+      const row = draft.nameMap[index]
+      if (row !== undefined) row.name = name.trim()
+    })
+  }
+
+  setNameRowRoute = (index: number, route: RouteOption): void => {
+    this.#edit(draft => {
+      const row = draft.nameMap[index]
+      if (row === undefined) return
+      row.provider = route.provider
+      row.model = route.model
+      row.reasoningEffort = ''
+    })
+  }
+
+  setNameRowEffort = (index: number, reasoningEffort: string): void => {
+    this.#edit(draft => {
+      const row = draft.nameMap[index]
+      if (row !== undefined) row.reasoningEffort = reasoningEffort
+    })
+  }
+
   moveRoute = (index: number, delta: -1 | 1): void => {
     this.#edit(draft => {
       const target = index + delta

@@ -51,7 +51,7 @@ export interface PinConfig {
 const MAX_PRIORITY_ROUTES = 5
 
 /** Upper bound on `nameMap` rows (ADR 0006); aligned with the official `DEFAULT_MAX_MEMBERS = 16`. */
-const MAX_NAME_MAP_ENTRIES = 16
+export const MAX_NAME_MAP_ENTRIES = 16
 
 /**
  * A volatile handle as the host hands it to `apply` (upstream `Volatile<T>`):
