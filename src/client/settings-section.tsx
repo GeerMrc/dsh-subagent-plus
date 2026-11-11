@@ -20,13 +20,16 @@ import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
 import { routeId } from '../pin.js'
-import { routeKey } from '../strategy.js'
+import { isValidTeammateName, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
+import { MAX_NAME_MAP_ENTRIES } from '../config.js'
 import { NS } from './locales.ts'
 import {
+  nameInputStyle,
   nameTriggerStyle,
+  removeTriggerStyle,
   rowPopupButtonStyle,
   rowPopupStyle,
   cardHeaderRowStyle,
@@ -86,6 +89,40 @@ function Info({ label, text, delayMs }: { label: string; text: string; delayMs: 
         <QuestionIcon />
       </button>
     </Tooltip>
+  )
+}
+
+/** Hover/click "×" anchor of a by-name mapping row revealing its single
+ *  remove action — the RowNameCell popover pattern minus the moves a mapping
+ *  row never has (mapping order carries no meaning). */
+function RemoveMenu(props: { label: string; onRemove: () => void }) {
+  const [open, setOpen] = useState(false)
+  const anchor = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent): void => {
+      if (anchor.current !== null && !anchor.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => { document.removeEventListener('pointerdown', onPointerDown) }
+  }, [open])
+  return (
+    <span
+      ref={anchor}
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => { setOpen(true) }}
+      onMouseLeave={() => { setOpen(false) }}
+      onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}
+    >
+      <button type="button" className="dsmp-hover" style={removeTriggerStyle} aria-haspopup="menu" aria-expanded={open} aria-label={props.label} onClick={() => { setOpen(true) }}>×</button>
+      {open
+        ? (
+          <span role="menu" aria-label={props.label} style={rowPopupStyle}>
+            <button type="button" role="menuitem" className="dsmp-pop-btn" style={{ ...rowPopupButtonStyle, color: 'var(--dsw-alias-state-error-primary)' }} onClick={() => { setOpen(false); props.onRemove() }}>{props.label}</button>
+          </span>
+          )
+        : null}
+    </span>
   )
 }
 
@@ -411,6 +448,92 @@ function EditorRoutes(props: EditorProps) {
           >
             {STRATEGY_KEYS.map(([id, key]) => <option key={id} value={id}>{t(key)}</option>)}
           </select>
+        </div>
+
+        {/* By-name mapping (ADR 0006): forced per-teammate routes ahead of the
+            strategy chain, in every strategy mode; an empty list leaves
+            routing exactly as before. */}
+        <div style={fieldRowStyle}>
+          <div style={cardHeaderRowStyle}>
+            <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
+            <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
+          </div>
+          {draft.nameMap.length === 0
+            ? <p style={hintStyle}>{t('byname.empty')}</p>
+            : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {draft.nameMap.map((row, index) => {
+                  const route = state.routes.find(candidate =>
+                    candidate.provider === row.provider && candidate.model === row.model) ?? null
+                  const duplicate = row.name !== '' && draft.nameMap.some((other, otherIndex) =>
+                    otherIndex !== index && other.name === row.name)
+                  const nameInvalid = duplicate || !isValidTeammateName(row.name)
+                  const routeIncomplete = row.provider === '' || row.model === ''
+                  const currentLabel = route !== null
+                    ? routeShort(route)
+                    : routeIncomplete ? t('byname.routeInvalid') : `${row.provider} · ${row.model}`
+                  return (
+                    <div key={`${row.name}\0${index}`} className="dsmp-hover" style={listRowStyle}>
+                      <span style={indexChipStyle}>{index + 1}</span>
+                      <input
+                        className={`dsmp-input${nameInvalid ? ' dsmp-invalid' : ''}`}
+                        style={nameInputStyle}
+                        value={row.name}
+                        placeholder={t('byname.namePlaceholder')}
+                        aria-label={t('byname.name')}
+                        title={nameInvalid ? t('byname.nameInvalid') : t('byname.name')}
+                        onChange={event => { controller.setNameRowName(index, event.target.value) }}
+                      />
+                      <select
+                        className="dsmp-select"
+                        style={routeSelectStyle}
+                        value={route !== null ? routeValue(route) : routeIncomplete ? '' : routeValue(row)}
+                        aria-label={t('byname.title')}
+                        title={route !== null ? routeFull(route) : routeIncomplete ? t('byname.routeInvalid') : t('list.unavailable')}
+                        onChange={event => {
+                          const next = routeFromValue(state, event.target.value)
+                          if (next !== null) controller.setNameRowRoute(index, next)
+                        }}
+                      >
+                        <option value="">{currentLabel}</option>
+                        {state.routes.map(candidate => (
+                          <option key={routeValue(candidate)} value={routeValue(candidate)} title={routeFull(candidate)}>{routeShort(candidate)}</option>
+                        ))}
+                      </select>
+                      {route !== null && route.efforts !== undefined && route.efforts.length > 0
+                        ? (
+                          <EffortSelect
+                            label={`${t('strategy.effort')} ${routeId(route)}`} route={route}
+                            value={row.reasoningEffort}
+                            onChange={value => { controller.setNameRowEffort(index, value) }}
+                            defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')}
+                          />
+                        )
+                        : null}
+                      <RemoveMenu label={t('byname.remove')} onRemove={() => { controller.removeNameRow(index) }} />
+                    </div>
+                  )
+                })}
+              </div>
+              )}
+          <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
+            <span style={cardHeadingStyle}>{t('byname.add')}</span>
+            <span style={{ flex: 1 }} />
+            <select
+              className="dsmp-select"
+              style={routeSelectStyle}
+              value=""
+              disabled={draft.nameMap.length >= MAX_NAME_MAP_ENTRIES}
+              aria-label={t('byname.add')}
+              onChange={event => {
+                const route = routeFromValue(state, event.target.value)
+                if (route !== null) controller.addNameRow(route)
+              }}
+            >
+              <option value="">{draft.nameMap.length >= MAX_NAME_MAP_ENTRIES ? t('byname.max') : t('byname.addPlaceholder')}</option>
+              {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
+            </select>
+          </div>
         </div>
 
         <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>

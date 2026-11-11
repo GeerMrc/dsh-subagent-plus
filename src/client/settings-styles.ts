@@ -328,3 +328,16 @@ export const rowPopupButtonStyle = {
 export const PAGE_STYLE_CSS = `
 [role='tree'] [role='treeitem'][aria-current='true'] { color: var(--dsw-alias-state-warn-primary); }
 `
+
+/** Name input of a by-name mapping row (ADR 0006): the standard input face
+ *  sized to a teammate-name column instead of a full-width field. */
+export const nameInputStyle: React.CSSProperties = {
+  ...inputStyle, width: 176, minWidth: 132, flex: '0 1 auto', height: 30,
+}
+
+/** Hover/click "×" anchor of a mapping row: the RowNameCell popover trigger
+ *  face reduced to a single glyph (the popover carries the one action). */
+export const removeTriggerStyle: React.CSSProperties = {
+  border: 'none', background: 'transparent', color: 'var(--dsw-alias-text-tertiary)',
+  fontSize: 14, lineHeight: 1, cursor: 'pointer', padding: '2px 6px', borderRadius: 6,
+}
