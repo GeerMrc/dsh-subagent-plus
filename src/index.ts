@@ -60,6 +60,7 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
+  matchByName,
   pinnedNotice,
   pinFallbackNotice,
   pinSkippedNotice,
@@ -70,6 +71,7 @@ import {
   selectChildRoute,
   usableFallback,
   validateStrategyConfig,
+  type NameMapEntryView,
   type SpreadStrategy,
 } from './strategy.js'
 import { materializeConfig, type PinConfig, type PinConfigRuntime } from './config.js'
@@ -106,6 +108,42 @@ interface SpreadDecision {
 
 type Decision = { kind: 'explicit'; route: PinRoute } | SpreadDecision
 
+/**
+ * A by-name child's forced routing record (ADR 0006). Sticky for the child's
+ * lifetime like a spread decision: later map edits never move a decided child.
+ */
+interface ByNameDecision {
+  kind: 'by-name'
+  /** Teammate name that matched the mapped row. */
+  name: string
+  /** Mapped route every request of this child runs; per-request usability
+   * checks (registration, cooling) evade to the fallback and recover here. */
+  route: PinRoute
+  /** Notice texts already appended to this child's transcript. */
+  noticed: Set<string>
+}
+
+/** Structural view of the optional `agentTeams` service (ADR 0006): only the
+ *  teammate name is consumed; an absent service leaves the mapping dormant. */
+interface AgentTeamsLike {
+  tryMembership(agent: object): { name?: string } | undefined
+}
+
+/** Guarded optional consumption: undefined when the Team bundle is not loaded
+ *  (never a hard inject — the plugin must load in Team-less profiles). */
+function agentTeamsOf(ctx: Context): AgentTeamsLike | undefined {
+  let service: unknown
+  try {
+    service = ctx.get('agentTeams')
+  } catch {
+    return undefined
+  }
+  if (service === undefined || typeof service !== 'object') return undefined
+  return typeof (service as { tryMembership?: unknown }).tryMembership === 'function'
+    ? service as AgentTeamsLike
+    : undefined
+}
+
 export function apply(ctx: Context, entry: PinConfigRuntime): void {
   // Structural problems refuse to load; cross-field combinations that a
   // settings page could persist degrade with a warning instead of throwing —
@@ -139,8 +177,12 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   const health = new RouteHealth()
   const selection = createSelectionState()
   const decisions = new WeakMap<object, Decision>()
+  const byNameDecisions = new WeakMap<object, ByNameDecision>()
   let noCandidateWarned = false
   let unregisteredPinWarned = false
+  let agentTeamsAbsentWarned = false
+  let forkNameWarned = false
+  const unregisteredNameRoutes = new Set<string>()
 
   const resolvePin = (config: PinConfig): PinRoute | undefined => resolvePinRoute(config)
   const candidatesOf = (config: PinConfig): PinRoute[] => candidateRoutes(config)
@@ -158,6 +200,42 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (fallback === undefined) return undefined
     if (config.failOpen && !await routeRegistered(ctx, fallback.provider, fallback.model)) return undefined
     return fallback
+  }
+
+  /** The mapped route of one `nameMap` row, carrying an optional effort. */
+  const rowRoute = (row: NameMapEntryView): PinRoute => ({
+    provider: row.provider,
+    model: row.model,
+    ...(row.reasoningEffort === '' ? {} : { reasoningEffort: row.reasoningEffort }),
+  })
+
+  /**
+   * Decide one child's by-name route: an exact teammate-name hit (ADR 0006)
+   * is a forced assignment outranking the strategy chain. Decided once per
+   * child and sticky; every later request re-checks only the mapped route's
+   * usability (registration, cooling), evading to the fallback per request.
+   */
+  const decideByName = (config: PinConfig, agent: Agent): ByNameDecision | undefined => {
+    if (config.nameMap.length === 0) return undefined
+    const memo = byNameDecisions.get(agent)
+    if (memo !== undefined) return memo
+    const teams = agentTeamsOf(ctx)
+    if (teams === undefined) {
+      if (!agentTeamsAbsentWarned) {
+        agentTeamsAbsentWarned = true
+        ctx.logger.warn('dsh-subagent-plus: the agentTeams service is unavailable; by-name mapping stays dormant (children follow the strategy chain)')
+      }
+      return undefined
+    }
+    const membership = teams.tryMembership(agent)
+    if (membership === undefined) return undefined
+    const name = membership.name
+    if (name === undefined || name === '') return undefined
+    const row = matchByName(name, config.nameMap)
+    if (row === undefined) return undefined
+    const decision: ByNameDecision = { kind: 'by-name', name, route: rowRoute(row), noticed: new Set() }
+    byNameDecisions.set(agent, decision)
+    return decision
   }
 
   /** Decide a spread child's route once; later calls return the memoized decision. */
@@ -221,9 +299,11 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const failurePlan = resolveStrategyPlan(config)
     const failurePin = failurePlan.kind === 'pinned' ? resolvePin(config) : undefined
     // The provider gate covers every route this configuration can assign:
-    // candidates, the fallback, and — under the pinned strategy — the pin.
+    // candidates, the fallback, the pin under the pinned strategy, and the
+    // by-name rows — which may name providers no other slot lists (ADR 0006).
     if (!candidatesOf(config).some(route => route.provider === provider)
-      && fallback?.provider !== provider && failurePin?.provider !== provider) return
+      && fallback?.provider !== provider && failurePin?.provider !== provider
+      && !config.nameMap.some(row => row.provider === provider)) return
     const now = Date.now()
     const until = now + Math.max(failure.providerRetryAfterMs ?? 0, config.cooldownMs)
     if (failureClass === 'sticky-provider') {
@@ -232,8 +312,13 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       return
     }
     const decision = decisions.get(agent)
+    const byName = byNameDecisions.get(agent)
     let model: string | undefined
-    if (decision !== undefined && decision.route.provider === provider) {
+    // A by-name child has no strategy decision entry; attribute to its mapped
+    // route first, exactly like the pin attribution below it.
+    if (byName !== undefined && byName.route.provider === provider) {
+      model = byName.route.model
+    } else if (decision !== undefined && decision.route.provider === provider) {
       model = decision.route.model
     } else {
       const plan = resolveStrategyPlan(config)
@@ -267,7 +352,53 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const agent = payload.agent
     if (childDepthOf(agent) <= 0) return resolved
     const config = live.current()
-    if (!config.pinForkChildren && isForkedChild(agent)) return resolved
+    if (!config.pinForkChildren && isForkedChild(agent)) {
+      // A mapped name that lands on a fork teammate is never silently dead:
+      // fork exclusion is a performance invariant (KV-cache reuse), so the row
+      // cannot fire — say so once, naming the opt-in that routes fork children.
+      if (!forkNameWarned && config.nameMap.length > 0) {
+        const teams = agentTeamsOf(ctx)
+        const name = teams?.tryMembership(agent)?.name
+        if (name !== undefined && matchByName(name, config.nameMap) !== undefined) {
+          forkNameWarned = true
+          ctx.logger.warn(`dsh-subagent-plus: by-name row "${name}" matches a fork teammate; fork children keep their resolved route (enable pinForkChildren to route them)`)
+        }
+      }
+      return resolved
+    }
+    // By-name mapping (ADR 0006): an exact teammate-name hit is a forced
+    // assignment that outranks the strategy chain and respectExplicit; a
+    // cooling or unregistered mapped route evades to the fallback for that
+    // request only and recovers on its own (the pin's handover semantics —
+    // no candidate re-selection, the mapped route is the child's route).
+    const byName = decideByName(config, agent)
+    if (byName !== undefined) {
+      const evadeToFallback = async (verb: string): Promise<LlmCallConfig | undefined> => {
+        const fallback = await usableFallbackOf(config)
+        if (fallback === undefined) return undefined
+        const fallbackOverride = pinnedRoute(resolved, fallback)
+        if (fallbackOverride === undefined) return resolved
+        logRouteOnce(ctx, agent, resolved, fallbackOverride, verb)
+        return applyOverride(resolved, fallbackOverride)
+      }
+      if (config.failOpen && !await routeRegistered(ctx, byName.route.provider, byName.route.model)) {
+        const key = routeKey(byName.route)
+        if (!unregisteredNameRoutes.has(key)) {
+          unregisteredNameRoutes.add(key)
+          ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; child requests fall back or keep their resolved route`)
+        }
+        const evaded = await evadeToFallback('fallback-routed (mapped route unavailable)')
+        if (evaded !== undefined) return evaded
+      }
+      if (!healthyNow(config)(byName.route)) {
+        const evaded = await evadeToFallback('fallback-routed (mapped route cooling)')
+        if (evaded !== undefined) return evaded
+      }
+      const override = pinnedRoute(resolved, byName.route)
+      if (override === undefined) return resolved
+      logRouteOnce(ctx, agent, resolved, override, `assigned by name "${byName.name}"`)
+      return applyOverride(resolved, override)
+    }
     const plan = resolveStrategyPlan(config)
     if (plan.kind === 'pinned') {
       const pin = resolvePin(config)
@@ -338,6 +469,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   ctx.on('agent/request-error', async (payload, next): Promise<RequestErrorAction> => {
     const config = live.current()
     const routed = resolveStrategyPlan(config).kind === 'spread' || fallbackRouteOf(config) !== undefined
+      || config.nameMap.length > 0
     if (routed && config.cooldownMs > 0) recordFailure(config, payload.agent, payload.provider, payload.failure)
     return next()
   }, { prepend: true })
@@ -354,6 +486,11 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const agent = payload.agent
     if (childDepthOf(agent) <= 0) return decision
     if (!config.pinForkChildren && isForkedChild(agent)) return decision
+    // A by-name child is not the strategy chain's business: no assignment
+    // notice from the spread path may claim it (its own notice lands in the
+    // by-name branch once the notice builder ships).
+    const byNameRouting = decideByName(config, agent)
+    if (byNameRouting !== undefined) return decision
     const plan = resolveStrategyPlan(config)
     if (plan.kind !== 'spread') {
       const pin = resolvePin(config)

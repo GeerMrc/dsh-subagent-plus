@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { LlmCallConfig, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as plugin from '../src/index.js'
 import type { AgentLike } from '../src/pin.js'
 
@@ -817,5 +817,185 @@ describe('registration cache invalidation (E1, discriminating)', () => {
     routes = routes.filter(route => route.provider !== 'sz')
     ctx.emit('llm/adapters-updated')
     await expect(dispatch(ctx, newChild())).resolves.toEqual(hh)
+  })
+})
+
+describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
+  const nmRow = (name: string, provider: string, model: string, reasoningEffort = '') =>
+    ({ name, provider, model, reasoningEffort })
+  const researcherRow = nmRow('researcher', 'sz', 'Qwen3.8-27B-FP8')
+  const zai = { provider: 'zai', model: 'glm-5.3' }
+  const teamNameOf = new WeakMap<object, string>()
+
+  interface ByNameOpts { teams?: boolean; memberships?: Array<[Agent, string]>; llm?: object }
+
+  async function byNameContext(overrides: Partial<plugin.PinConfig> = {}, opts: ByNameOpts = {}): Promise<{ ctx: Context; cfg: plugin.PinConfig; warns: ReturnType<typeof vi.spyOn> }> {
+    const ctx = new Context()
+    contexts.push(ctx)
+    const cfg: plugin.PinConfig = {
+      provider: '', model: '', reasoningEffort: '',
+      pinForkChildren: false, failOpen: true, showNotice: true,
+      strategy: 'pinned', priority: [], respectExplicit: false,
+      cooldownMs: 120_000, fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [researcherRow],
+      ...overrides,
+    }
+    if (opts.llm !== undefined) ctx.provide('llm', opts.llm)
+    if (opts.teams !== false) {
+      ctx.provide('agentTeams', {
+        tryMembership: (a: object): { name: string } | undefined => {
+          const n = teamNameOf.get(a)
+          return n === undefined ? undefined : { name: n }
+        },
+      })
+    }
+    for (const [agent, name] of opts.memberships ?? []) teamNameOf.set(agent, name)
+    await ctx.plugin(plugin, cfg)
+    return { ctx, cfg, warns: vi.spyOn(ctx.logger, 'warn') }
+  }
+
+  function memberChild(name: string, options: Record<string, unknown> = {}, header: Record<string, unknown> = {}): Agent {
+    const agent = newChild(options, header)
+    teamNameOf.set(agent, name)
+    return agent
+  }
+
+  it('① forces the mapped route under the pinned strategy', async () => {
+    const { ctx } = await byNameContext()
+    await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(sz)
+  })
+
+  it('② outranks an explicit delegation choice under spread + respectExplicit', async () => {
+    const { ctx } = await byNameContext({
+      strategy: 'round-robin',
+      priority: [{ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      respectExplicit: true,
+    })
+    ctx.provide('sessions', {
+      get: (id: unknown) => id === 'lead'
+        ? { requestHeader: () => ({ config: { provider: 'zai', model: 'glm-5.3' } }) }
+        : undefined,
+    })
+    const explicitChild = memberChild('researcher', { provider: 'hh', model: 'Qwen3.8-27B-FP8' }, { parentSession: 'lead' })
+    await expect(dispatch(ctx, explicitChild)).resolves.toEqual(sz)
+  })
+
+  it('③ ignores a manual per-session model selection on the resolved route', async () => {
+    const { ctx } = await byNameContext()
+    await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(sz)
+  })
+
+  it('④ stays sticky for the child lifetime: losing the membership never moves a decided child', async () => {
+    const { ctx } = await byNameContext()
+    const child = memberChild('researcher')
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    // The memo outlives the matching premise (disbanded team, renamed member,
+    // deleted row): only new decision points re-read name and map.
+    teamNameOf.delete(child)
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    // A member-less child is not the strategy chain's business either: with no
+    // pin configured it keeps its resolved route.
+    await expect(dispatch(ctx, newChild())).resolves.toEqual(seed)
+  })
+
+  it('⑤ evades a cooling mapped route to the fallback, then recovers to the mapped route', async () => {
+    const { ctx } = await byNameContext({
+      cooldownMs: 90,
+      fallbackProvider: zai.provider, fallbackModel: zai.model, fallbackReasoningEffort: '',
+    })
+    const child = memberChild('researcher')
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    await new Promise(resolve => setTimeout(resolve, 130))
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+  })
+
+  it('⑥ keeps the mapped route when it cools and no fallback is usable', async () => {
+    const { ctx } = await byNameContext()
+    const child = memberChild('researcher')
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'SERVER', 503)
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+  })
+
+  it('⑦ warns once per route and falls back when failOpen finds the mapped route unregistered', async () => {
+    const { ctx, warns } = await byNameContext({
+      fallbackProvider: zai.provider, fallbackModel: zai.model, fallbackReasoningEffort: '',
+    }, { llm: llmWith(() => [{ provider: 'hh', model: 'Qwen3.8-27B-FP8' }, zai]) })
+    const child = memberChild('researcher')
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+    expect(warns.mock.calls.some(call => String(call[0]).includes('not registered'))).toBe(true)
+    expect(warns.mock.calls.filter(call => String(call[0]).includes('not registered'))).toHaveLength(1)
+  })
+
+  it('⑧ stays dormant (one warning) when the agentTeams service is absent', async () => {
+    const { ctx, warns } = await byNameContext({}, { teams: false })
+    await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(seed)
+    await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(seed)
+    expect(warns.mock.calls.filter(call => String(call[0]).includes('agentTeams'))).toHaveLength(1)
+  })
+
+  it('⑨ falls through to the strategy chain when the agent is not a team member', async () => {
+    const { ctx } = await byNameContext({
+      strategy: 'pinned', provider: 'hh', model: 'Qwen3.8-27B-FP8',
+    })
+    const stranger = newChild()
+    await expect(dispatch(ctx, stranger)).resolves.toEqual(hh)
+  })
+
+  it('⑩ leaves a fork teammate on its resolved route, warning once with the pinForkChildren way out', async () => {
+    const { ctx, warns } = await byNameContext()
+    const forkMember = memberChild('researcher', {}, {})
+    const forkAgent = fakeAgent({
+      options: { subagentDepth: 1 },
+      session: {
+        header: { delegationDepth: 1 },
+        inheritedEventCount: 2,
+        eventAt: (seq: number) => seq === 2 ? { type: 'session/end-seed', data: { inherited: true } } : undefined,
+      },
+    })
+    teamNameOf.set(forkAgent, 'researcher')
+    await expect(dispatch(ctx, forkAgent)).resolves.toEqual(seed)
+    await expect(dispatch(ctx, forkAgent)).resolves.toEqual(seed)
+    expect(warns.mock.calls.some(call => String(call[0]).includes('pinForkChildren'))).toBe(true)
+    expect(warns.mock.calls.filter(call => String(call[0]).includes('pinForkChildren'))).toHaveLength(1)
+    expect(forkMember).toBeDefined()
+  })
+
+  it('accounting A: records failures for a nameMap-only pinned configuration (no candidates, no fallback)', async () => {
+    const { ctx, warns } = await byNameContext()
+    const child = memberChild('researcher')
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
+    expect(warns.mock.calls.some(call => String(call[0]).includes('cooling down'))).toBe(true)
+  })
+
+  it('accounting B: cools an out-of-list mapped provider and evades to the fallback', async () => {
+    const { ctx, warns } = await byNameContext({
+      strategy: 'round-robin',
+      priority: [{ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      fallbackProvider: zai.provider, fallbackModel: zai.model, fallbackReasoningEffort: '',
+    })
+    const child = memberChild('researcher')
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await dispatchFailure(ctx, child, 'sz', 'SERVER', 503)
+    expect(warns.mock.calls.some(call => String(call[0]).includes('cooling down'))).toBe(true)
+    await expect(dispatch(ctx, child)).resolves.toEqual(zai)
+  })
+
+  it('provider-sticky failure cools every mapped row of that provider', async () => {
+    const { ctx } = await byNameContext({
+      nameMap: [nmRow('researcher', 'sz', 'Qwen3.8-27B-FP8'), nmRow('coder', 'sz', 'other-model')],
+      fallbackProvider: zai.provider, fallbackModel: zai.model, fallbackReasoningEffort: '',
+    })
+    const a = memberChild('researcher')
+    const b = memberChild('coder')
+    await expect(dispatch(ctx, a)).resolves.toEqual(sz)
+    await expect(dispatch(ctx, b)).resolves.toEqual({ provider: 'sz', model: 'other-model' })
+    await dispatchFailure(ctx, a, 'sz', 'INVALID_CREDENTIAL', 401)
+    await expect(dispatch(ctx, a)).resolves.toEqual(zai)
+    await expect(dispatch(ctx, b)).resolves.toEqual(zai)
   })
 })
