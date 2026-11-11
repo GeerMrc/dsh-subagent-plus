@@ -329,6 +329,10 @@ function EditorRoutes(props: EditorProps) {
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
+  // ADR 0007 decision 3: under the pinned strategy the candidate list is not
+  // shown, so the mapping's route pickers lock instead of sourcing a list the
+  // user cannot see or edit.
+  const byNameLocked = draft.strategy === 'pinned'
   const pinnedRoute = state.routes.find(route => route.provider === draft.provider && route.model === draft.model) ?? null
   const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
   const pinnedHover = pinnedRoute === null && draft.provider === ''
@@ -359,7 +363,7 @@ function EditorRoutes(props: EditorProps) {
                     value={pinnedRoute === null && draft.provider === '' ? '' : routeValue(pinnedRoute !== null ? pinnedRoute : draft)}
                     aria-label={t('strategy.pinnedRoute')}
                     title={pinnedHover ?? t('strategy.pinnedPlaceholder')}
-                    onChange={event => { controller.setPinnedRoute(routeFromValue(state, event.target.value)) }}
+                    onChange={event => { controller.setPinnedRoute(routeFromValue(state.routes, event.target.value)) }}
                   >
                     <option value="">{t('strategy.pinnedPlaceholder')}</option>
                     {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
@@ -421,7 +425,7 @@ function EditorRoutes(props: EditorProps) {
                   disabled={state.atLimit}
                   aria-label={t('list.add')}
                   onChange={event => {
-                    const route = routeFromValue(state, event.target.value)
+                    const route = routeFromValue(state.routes, event.target.value)
                     if (route !== null) controller.addRoute(route)
                   }}
                 >
@@ -449,28 +453,38 @@ function EditorRoutes(props: EditorProps) {
           </select>
         </div>
 
-        {/* By-name mapping (ADR 0006): forced per-teammate routes ahead of the
-            strategy chain, in every strategy mode; an empty list leaves
-            routing exactly as before. */}
+        {/* By-name mapping (ADR 0007): forced per-teammate routes whose
+            targets must come from the candidate list; an empty table leaves
+            routing exactly as before. Under the pinned strategy the table
+            stays visible but its route pickers lock (the list is not shown
+            there) — configured rows keep working. */}
         <div style={fieldRowStyle}>
           <div style={cardHeaderRowStyle}>
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
             <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
           </div>
+          {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
           {draft.nameMap.length === 0
             ? <p style={hintStyle}>{t('byname.empty')}</p>
             : (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {draft.nameMap.map((row, index) => {
-                  const route = state.routes.find(candidate =>
+                  const listedHit = listed.find(candidate =>
+                    candidate.provider === row.provider && candidate.model === row.model) ?? null
+                  const catalogHit = state.routes.find(candidate =>
                     candidate.provider === row.provider && candidate.model === row.model) ?? null
                   const duplicate = row.name !== '' && draft.nameMap.some((other, otherIndex) =>
                     otherIndex !== index && other.name === row.name)
                   const nameInvalid = duplicate || !isValidTeammateName(row.name)
                   const routeIncomplete = row.provider === '' || row.model === ''
-                  const currentLabel = route !== null
-                    ? routeShort(route)
+                  const dangling = !routeIncomplete && listedHit === null
+                  const currentLabel = listedHit !== null
+                    ? routeShort(listedHit)
                     : routeIncomplete ? t('byname.routeInvalid') : `${row.provider} · ${row.model}`
+                  const routeTitle = listedHit !== null
+                    ? routeFull(listedHit)
+                    : routeIncomplete ? t('byname.routeInvalid')
+                      : catalogHit === null ? t('list.unavailable') : t('byname.routeNotListed')
                   return (
                     <div key={`${row.name}\0${index}`} className="dsmp-hover" style={listRowStyle}>
                       <span style={indexChipStyle}>{index + 1}</span>
@@ -486,23 +500,24 @@ function EditorRoutes(props: EditorProps) {
                       <select
                         className="dsmp-select"
                         style={routeSelectStyle}
-                        value={route !== null ? routeValue(route) : routeIncomplete ? '' : routeValue(row)}
+                        value={listedHit !== null ? routeValue(listedHit) : routeIncomplete ? '' : routeValue(row)}
+                        disabled={byNameLocked}
                         aria-label={t('byname.title')}
-                        title={route !== null ? routeFull(route) : routeIncomplete ? t('byname.routeInvalid') : t('list.unavailable')}
+                        title={routeTitle}
                         onChange={event => {
-                          const next = routeFromValue(state, event.target.value)
+                          const next = routeFromValue(listed, event.target.value)
                           if (next !== null) controller.setNameRowRoute(index, next)
                         }}
                       >
                         <option value="">{currentLabel}</option>
-                        {state.routes.map(candidate => (
+                        {listed.map(candidate => (
                           <option key={routeValue(candidate)} value={routeValue(candidate)} title={routeFull(candidate)}>{routeShort(candidate)}</option>
                         ))}
                       </select>
-                      {route !== null && route.efforts !== undefined && route.efforts.length > 0
+                      {listedHit !== null && catalogHit !== null && catalogHit.efforts !== undefined && catalogHit.efforts.length > 0
                         ? (
                           <EffortSelect
-                            label={`${t('strategy.effort')} ${routeId(route)}`} route={route}
+                            label={`${t('strategy.effort')} ${routeId(listedHit)}`} route={catalogHit}
                             value={row.reasoningEffort}
                             onChange={value => { controller.setNameRowEffort(index, value) }}
                             defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')}
@@ -522,15 +537,20 @@ function EditorRoutes(props: EditorProps) {
               className="dsmp-select"
               style={routeSelectStyle}
               value=""
-              disabled={draft.nameMap.length >= MAX_NAME_MAP_ENTRIES}
+              disabled={byNameLocked || draft.nameMap.length >= MAX_NAME_MAP_ENTRIES}
               aria-label={t('byname.add')}
               onChange={event => {
-                const route = routeFromValue(state, event.target.value)
+                const route = routeFromValue(listed, event.target.value)
                 if (route !== null) controller.addNameRow(route)
               }}
             >
-              <option value="">{draft.nameMap.length >= MAX_NAME_MAP_ENTRIES ? t('byname.max') : t('byname.addPlaceholder')}</option>
-              {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
+              <option value="">{
+                byNameLocked ? t('byname.pinnedHint')
+                  : draft.nameMap.length >= MAX_NAME_MAP_ENTRIES ? t('byname.max')
+                    : listed.length === 0 ? t('byname.emptyList')
+                      : t('byname.addPlaceholder')
+              }</option>
+              {listed.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
             </select>
           </div>
         </div>
@@ -548,7 +568,7 @@ function EditorRoutes(props: EditorProps) {
               value={fallbackRoute === null ? '' : routeValue(fallbackRoute)}
               aria-label={t('fallback.title')}
               title={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)}
-              onChange={event => { controller.setFallbackRoute(routeFromValue(state, event.target.value)) }}
+              onChange={event => { controller.setFallbackRoute(routeFromValue(state.routes, event.target.value)) }}
             >
               <option value="">{t('fallback.off')}</option>
               {state.routes.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
@@ -638,10 +658,9 @@ function AdvancedToggle(props: { title: string; help: string; checked: boolean; 
   )
 }
 
-function routeFromValue(state: SettingsUiState, value: string): RouteOption | null {
-  if (value === '') return null
-  const [provider, model] = value.split('\0')
-  return state.routes.find(route => route.provider === provider && route.model === model) ?? null
+function routeFromValue(source: readonly RouteOption[], value: string): RouteOption | null {
+  const [provider, model] = value.split('\u0000')
+  return source.find(route => route.provider === provider && route.model === model) ?? null
 }
 
 /** Bind factory closing over the controllers, mirroring the badge registration. */
