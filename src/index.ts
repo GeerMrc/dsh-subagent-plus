@@ -162,6 +162,18 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       ctx.logger.warn(message)
     }
   }
+  // Structural findings cannot reach the boot gate after startup — a committed
+  // settings edit lands them live (the runtime defense contains the behaviour),
+  // so each distinct finding is named once, fail-loud, instead of passing in
+  // silence (ADR 0007 decision 2).
+  const warnedStructural = new Set<string>()
+  const warnStructural = (config: PinConfig): void => {
+    for (const message of validateStrategyConfig(config).structural) {
+      if (warnedStructural.has(message)) continue
+      warnedStructural.add(message)
+      ctx.logger.warn(message)
+    }
+  }
   warnDegraded(boot)
 
   // Read-time configuration: every decision below re-materializes, so a
@@ -172,6 +184,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   })
   attachSettingsSection(ctx, entry, live, () => {
     live.refresh()
+    warnStructural(live.current())
     warnDegraded(live.current())
   })
 
@@ -234,6 +247,15 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (name === undefined || name === '') return undefined
     const row = matchByName(name, config.nameMap)
     if (row === undefined) return undefined
+    // ADR 0007 runtime defense: the boot gate refuses dangling or half-filled
+    // rows, but a committed settings edit can land one mid-session (the live
+    // source only re-checks the schema). A row whose route is incomplete or no
+    // longer listed is a miss — the child falls to the strategy chain, the
+    // "empty pin assigns nothing" precedent. Never memoized as a hit.
+    if (row.provider === '' || row.model === ''
+      || !config.priority.some(listed => listed.provider === row.provider && listed.model === row.model)) {
+      return undefined
+    }
     const decision: ByNameDecision = { kind: 'by-name', name, route: rowRoute(row) }
     byNameDecisions.set(agent, decision)
     return decision
@@ -301,7 +323,9 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const failurePin = failurePlan.kind === 'pinned' ? resolvePin(config) : undefined
     // The provider gate covers every route this configuration can assign:
     // candidates, the fallback, the pin under the pinned strategy, and the
-    // by-name rows — which may name providers no other slot lists (ADR 0006).
+    // by-name rows. Under ADR 0007 mapped routes come from the candidate list,
+    // so the nameMap clause is redundant for valid configs — it stays as the
+    // accounting defense for mid-session structurally-invalid commits.
     if (!candidatesOf(config).some(route => route.provider === provider)
       && fallback?.provider !== provider && failurePin?.provider !== provider
       && !config.nameMap.some(row => row.provider === provider)) return

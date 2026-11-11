@@ -1046,6 +1046,64 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     expect(noticeText(decision)).toBe('[按名跳过 model by-name skipped: 队友 "researcher" 的映射路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行映射路由（预期响亮失败）｜mapped route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs the mapped route and fails loudly — dsh-subagent-plus]')
   })
 
+  it('runtime defense: a row that left the candidate list mid-session is a miss, not an override', async () => {
+    // Direct apply() with volatile handles over a mutable state object — the
+    // exact entry shape the host settings service hands the plugin, bypassing
+    // the ctx.plugin schema parse so mid-session commits are simulable.
+    const state: Record<string, unknown> = {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false, failOpen: true, showNotice: true,
+      strategy: 'pinned', respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [{ name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    }
+    const entry: Record<string, unknown> = {}
+    for (const key of Object.keys(state)) entry[key] = { get: () => state[key] }
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('settings', {})
+    ctx.provide('agentTeams', {
+      tryMembership: (a: object): { name: string } | undefined => {
+        const n = teamNameOf.get(a)
+        return n === undefined ? undefined : { name: n }
+      },
+    })
+    plugin.apply(ctx, entry as unknown as Parameters<typeof plugin.apply>[1])
+    const child = memberChild('researcher')
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    // The candidate list loses the mapped route mid-session: the decided child
+    // keeps its sticky route; a NEW child is a miss and falls to the strategy
+    // chain (pinned, no pin -> the resolved route).
+    state.priority = []
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(seed)
+  })
+
+  it('runtime defense: a half-filled row mid-session is a miss too', async () => {
+    const state: Record<string, unknown> = {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false, failOpen: true, showNotice: true,
+      strategy: 'pinned', respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [{ name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    }
+    const entry: Record<string, unknown> = {}
+    for (const key of Object.keys(state)) entry[key] = { get: () => state[key] }
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('settings', {})
+    ctx.provide('agentTeams', {
+      tryMembership: (a: object): { name: string } | undefined => {
+        const n = teamNameOf.get(a)
+        return n === undefined ? undefined : { name: n }
+      },
+    })
+    plugin.apply(ctx, entry as unknown as Parameters<typeof plugin.apply>[1])
+    // Boot was valid; the mid-session commit lands a half-filled row.
+    state.nameMap = [{ name: 'researcher', provider: 'sz', model: '', reasoningEffort: '' }]
+    await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(seed)
+  })
+
   it('provider-sticky failure cools every mapped row of that provider', async () => {
     const { ctx } = await byNameContext({
       nameMap: [nmRow('researcher', 'sz', 'Qwen3.8-27B-FP8'), nmRow('coder', 'sz', 'other-model')],
