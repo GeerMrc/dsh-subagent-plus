@@ -15,7 +15,7 @@ A standalone cordis plugin for [DeepSeek Harness](https://github.com/deepseek-ai
 | Fallback | The last-resort route when every candidate is unusable, the list is empty, or the pinned route fails (optional; empty list + fallback = the single-model entry) |
 | Reasoning effort | Per-model effort dropdowns load each model's own levels (qwen-style Off/Low/Medium/Xhigh, zai-style Low/High/Max; non-reasoning models show none) |
 | Health failover | Transient failures (rate limit / 5xx / timeout / network) switch the official retry to the next healthy route (recording precedes the official retry decider — the first failure already cools the route); credential/quota failures cool the whole provider and steer later assignments |
-| By-name mapping | A teammate-name → route table (≤16 rows): a child matching a name runs the route of that row (forced assignment, ahead of the strategy and explicit selections); unmatched children follow the strategy — v0.0.4, ADR 0006 |
+| Team (teammate name → route) | A mapping table (≤16 rows, targets come from the candidate list only): a child matching a name runs the route of that row (forced assignment, ahead of the strategy and explicit selections); unmatched children follow the strategy — v0.0.4, ADR 0006+0007 |
 | Read-only badge | Beside the child window's composer: `provider/model · effort` (two-segment coloring, full text on hover) |
 | Child-window identity | Inside the sibling-switcher popup, the row of the child you have open tints amber (layered on the official bold marker) |
 | Settings page | Settings → Subagent Boost: strategy / list (≤5) / fallback / advanced, fully graphical; saves hot-apply (no restart, no runtime-state reset) |
@@ -60,7 +60,7 @@ Everything is editable on the settings page; the equivalent profile-patch layer:
     respectExplicit: false   # true = respect explicit per-call selections
     cooldownMs: 120000       # failure cooldown; 0 disables health tracking (UI cap 86400000)
     showNotice: true         # one transcript notice per child (bilingual zh + en line)
-    nameMap:                 # by-name mapping (v0.0.4, ADR 0006; empty = dormant)
+    nameMap:                 # team mapping (v0.0.4, ADR 0007; targets from the candidate list; empty = dormant)
       - { name: researcher, provider: sz, model: Qwen3.8-27B-FP8, reasoningEffort: "" }
 ```
 
@@ -89,7 +89,7 @@ Full semantics: [docs/strategy.md](docs/strategy.md) and [docs/settings.md](docs
 
 Full list in [docs/strategy.md](docs/strategy.md) §5: strategy/list changes affect the next decision point only; sticky failures end the current child (later assignments avoid the route); the health table and rotation cursor are process-local (reset on restart, shared across windows); remote (non-loopback) web sessions cannot reach the settings namespaces at all (the official memory persistence skips the mirror — sections turn unavailable); turn the plugin off from a local Plugins page (the accepted cost of dropping the in-page switch, ADR 0005); lean compositions without the settings/remote services fail the whole client half (badge included) loudly.
 
-**By-name mapping (v0.0.4, ADR 0006)**: a hit is a forced assignment (respectExplicit not consulted); a miss keeps the current chain untouched; mapped routes may sit outside the candidate list and legally overlap it; cooling or unregistered routes evade to the fallback per request and recover on their own; rows sharing a provider share its cooldown; fork teammates stay untouched by default (one-time warning names the pinForkChildren way out); map edits affect new decision points only (decided children stay sticky for life); the feature sleeps automatically in Team-less profiles.
+**Team (teammate name → route) mapping (v0.0.4, ADR 0006+0007)**: a hit is a forced assignment (respectExplicit not consulted); a miss keeps the current chain untouched; **mapping targets come from the candidate list only** (dangling references are structural refusals plus a runtime miss defense); cooling or unregistered routes evade to the fallback per request and recover on their own; rows sharing a provider share its cooldown; fork teammates stay untouched by default (one-time warning names the pinForkChildren way out); map edits affect new decision points only (decided children stay sticky for life); the feature sleeps automatically in Team-less profiles (the name input suggests live roster and configured names); under the pinned strategy the table is read-only (configured rows keep working).
 
 **Deliberate deviation from official semantics (v0.0.3+)**: when a child's route is changed, the `maxTokens` inherited from the parent is **dropped** (official per-call model selection retains it) — the inherited budget is sized for the parent's model and can overflow the new model's limit, and the official runtime performs no clamping; once dropped, the runtime materialises the new model's default. Consequently an explicitly configured parent output budget does **not** propagate to rerouted children.
 

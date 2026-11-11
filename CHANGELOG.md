@@ -1,81 +1,27 @@
 # Changelog
 
-## v0.0.4 (2026-11-11) — 按名映射（队友名 → 路由，ADR 0006）
+## v0.0.4 (2026-11-11) — Team（队友名 → 路由）映射（ADR 0006＋0007）
 
-- feat(by-name)!: **安装即用的新映射层**：设置卡新增「按名映射」分区（≤16 行，对齐官方
-  `DEFAULT_MAX_MEMBERS`）。命中队友名的子智能体固定使用该行路由——**强制指派族，优先于策略、
-  respectExplicit 与成员手动选择**；未命中的子智能体完整保留 v0.0.3 现行链（按名>策略>兜底，
-  单链写死）。映射路由可取候选清单之外的模型（独立槽位，与清单交集合法）；空表＝功能休眠，
-  升级用户零行为变化（无总开关，ADR 0005 二元哲学延续）。
-- feat(by-name): **身份与降级**：队友名经可选 `agentTeams` 服务守卫读取（`ctx.get`＋undefined
-  分支，未装 Team 的 profile 自动休眠＋一次性 warn，绝不硬 inject）；**单 Team 内队友名唯一且
-  不可重用**（官方 `TEAM_MEMBER_NAME_TAKEN` 保证）→ 匹配主键可靠；跨 Team 同名＝进程级匹配、
-  死名休眠不清理；按名决策一经 memo 终身粘住（spread 语义）——删行/改行只影响新决策点。
-- feat(by-name): **健康与记账**：映射路由纳入失败记账（routed 门＋provider 归因门），清单外
-  provider 的映射路由失败即入冷却；冷却/未注册时**暂避兜底、恢复即回映射路由**（pinFallback
-  手法，无候选重选）；provider 级粘性失败连带冷却同 provider 全部映射行；fork 队友默认仍被
-  放过（KV-cache 不变量），命中 fork 时一次性 warn 并指明 `pinForkChildren` 出路。
-- feat(by-name): 转录 notice 三条（按名指派/按名兜底/按名跳过，双语单行、档位省略段、per-agent
-  去重，受 showNotice 总开关）；设置页行内校验（重名/非法名/半填路由红框＋保存拦截）。
-- feat(by-name): UI 严格复用既有构件（序号 chip／dsmp-input 名字列／dsmp-select 路由列／
-  EffortSelect／Popover 删除／空态灰字／上限置灰／pinned 模式常显）；零新 CSS 文件。
-- docs: README 双语、settings/strategy 手册、ADR 0006（九决策＋RISK-H1 追踪条款）。
-- 留待：四态 UI 截图与 Flow F 隔离 E2E 见 dist-artifacts/e2e-v0.0.4/（随发布前检查补齐）；DOM
+- feat(team-map)!: **候选清单为映射唯一来源（ADR 0007，用户裁定 B）**：设置卡「Team（队友名 → 路由）」
+  分区（≤16 行，对齐官方 `DEFAULT_MAX_MEMBERS`），命中队友名的子智能体固定使用该行路由——强制指派，
+  优先于策略、respectExplicit 与成员手动选择；未命中完整保留 v0.0.3 现行链（按名>策略>兜底单链）。
+  多行可共用同一条候选路由；空表＝休眠，升级用户零行为变化（无总开关，ADR 0005 二元哲学延续）。
+- feat(team-map): **悬空/半填双层防御**：引用不在候选清单的路由＝structural 拒载（boot＋保存拦截，
+  红字点名行）；运行期手编提交穿透时决策层按未命中防御（子代落策略链），宿主日志一次性点名
+  （structural 提交告警）。
+- feat(team-map): **身份与降级**：队友名经可选 `agentTeams` 服务守卫读取（未装 Team 的 profile 自动
+  休眠＋一次性 warn）；名字输入框 datalist 建议（在跑 Team 队友名〔共享会话投影聚合〕∪已配置名，
+  自由输入保留）；单 Team 内队友名唯一（官方保证）→ 匹配主键可靠；跨 Team 同名＝进程级匹配、死名
+  休眠不清理；决策一经 memo 终身粘住。冷却/未注册暂避兜底、恢复即回映射（pinFallback 手法）；
+  provider 级粘性失败连带冷却同 provider 全部映射行；fork 队友默认放过（一次性 warn 指明
+  `pinForkChildren` 出路）。
+- feat(team-map): 转录 notice 三条（按名指派/按名兜底/按名跳过，双语，档位省略段，去重）；
+  UI 五轨单行布局（序号/名字/路由弹性/档位占位/删除，与候选清单行同几何，修复首版折行）；
+  钉定策略下映射区只读＋提示；候选清单为空/悬空引用/目录缺失三态提示；客户端/宿主边界守卫
+  （任意 import 形态＋宿主包名集，2026-11-11 桌面崩溃 RCA 沉淀）。
+- docs: README 双语、settings/strategy 手册、ADR 0006＋0007（B 方案决策史与 RISK-H1 追踪条款）。
+- 留待：五镜头 UI 截图与 Flow F 隔离 E2E 见 dist-artifacts/e2e-v0.0.4/（随发布前检查补齐）；DOM
   渲染级测试仍为既有技术债。
-
-## v0.0.3 (2026-11-06) — 官方子智能体全面接管（纯二进制，ADR 0005）
-
-- feat(takeover)!: **安装即 100% 接管，二态互斥（用户裁定，ADR 0005）**：编辑面
-  （官方「子智能体」设置页隐藏 + 运行限制同键直写官方 `subagent` 命名空间）与
-  路由全部归本插件；**唯一关闭入口 = 「插件」页停用本插件**（官方页带值回归，
-  生产宿主 hmr、源码宿主重启）。`enabled` 软开关、页内页头开关、官方清单状态行
-  全部移除；存量 `enabled:false`（暂停态）升级即翻转为接管（字段删除，残键经
-  schemastery 宽容 merge 被忽略且永不写回，回归测试钉住）。
-- feat(takeover)!: **官方授权清单零引用**（ADR 0005）：`autoRoute` 字段删除、
-  官方服务读取链（readSettings/face/devDep）整删；候选清单/钉定/兜底为唯一路
-  由来源——插件候选不受官方清单约束（官方清单只在 respectExplicit 下管辖父模
-  型的显式指派），只需在 LLM 目录注册。官方服务行照常运行：零引用 ≠ 禁用
-  （takeover-patch.spec 三行守卫不动）。
-- feat(takeover): **空配置 = 不指派 + 继承主会话模型**（用户裁定）：钉定为空或
-  清单为空（且无兜底）时插件不干预，子智能体按官方默认解析继承主窗口模型，
-  页面明示；保存不被阻塞（priority 空清单 degraded 特例删除，四种策略统一）。
-- feat(takeover): **运行限制并入候选清单同一张卡**顶部子区（官方 SubagentCard
-  单卡惯例：卡内分区纯留白）；接管声明在运行限制 ⓘ 悬停；合并卡外壳在本插件
-  自身命名空间失活时常渲染（T7），仅策略半区转状态行。统一保存双命名空间
-  （`subagent` → `dsh-subagent-plus`）：失活排除不阻塞、非法阻塞整次、首败中止
-  并点名分区。
-- chore(deps): @deepseek-ai/dsh-* devDeps 对齐 0.2.1-rc.3（用户桌面实际运行版
-  本）；dsh-plugin-manager 与 dsh-tool-subagent 依赖随删除面移除。
-- 版本线（ADR 0004，用户裁定）：产品线固定 0.0.x 连续递增；npm 上的 0.3.0 为
-  2026-10-28 误 tag 触发的孤儿包（tag 已删、latest 仍指 0.0.2），不属于本线、
-  禁止在其上续号；开发过程中的 0.3.1/0.3.2 仅为未发布的本地迭代号，已并入本
-  条目。版本号只在用户批准发布时推进。
-- **从 0.0.2 升级的三条行为翻转（ADR 0005，均为用户裁定）**：① 存量
-  `enabled:false` → 接管；② 钉定留空+autoRoute 采纳 → 不指派（继承主会话模
-  型）；③ 空清单回落官方池 → 无候选（兜底/继承）。边角：存量 `enabled:false`
-  且结构非法 yml 从惰性加载翻转为拒绝加载。
-- UI/UX 打磨（用户实测反馈）：运行限制官方同款两列自适应网格 + 64px 居中数
-  字输入（数值域入 ⓘ）；冷却 88px 居中、上限 86400000（0=关闭在 ⓘ）；兜底并
-  入合并卡；respectExplicit 钉定下置灰；四个转录 notice 双语化；行标题与 ⓘ
-  图标同组不换行（窄窗不错位）。
-- 深度审核轮（R6/R7，独立审计后修复）：failOpen 跳过未注册钉定 notice 如实
-  播报；命名空间抖动后 parse 标志随干净值复位；并发 refresh 世代/写纪元守卫；
-  README/手册/ADR 全面对齐二进制模型；死状态字段与路由 id/键收敛。
-- 降级链修复（R9，独立双路审计后）：① 失败记账监听器以 `prepend` 注册到官方重试器
-  **外层**——normal 模式下重试器不调 `next()` 会否决下游，此前重试中的失败全部不可见、
-  5 次重试打同一条故障路由、降级只对后续子代生效；现在第一次失败即入冷却，官方重试
-  再进请求瀑布时当前子代即换路（文档承诺自此真实）。② **钉定路由故障（冷却）或未注册
-  被失败开放跳过时由兜底接手**（新增双语"钉定兜底"notice；兜底不可用则保持钉定，与
-  spread 全灭语义对齐）；记账的 provider 门同步纳入钉定路由（钉定子代的失败此前在归因
-  前即被丢弃）。③ failover 更新 `via`、四个盲区测试补齐（兜底粘住语义/跨 provider 凭据
-  降级/多跳只报末跳/换路携带新候选档位）。
-- 留待：DOM 渲染级测试仍为既有技术债；Flow E 真机演练见 docs/e2e-manual.md
-  （组合层 E1'/E3' 断言留证已随 0.3.0 回滚归档于本地 archive/v0.3.0-takeover 分支）。
-- chore(release): 发布通道调整（R10 独立审核后）——release workflow 不再自动
-  `npm publish`（NPM_TOKEN secret 只写不可验、bypass-2FA token 2027-01 起停发，
-  dont-do「npm 认证与删除」）：CI 保留四门＋GitHub Release（tgz），npm 上架由
-  用户终端 Touch ID 审批发布；AGENTS 发版流程与 upgrade.md §6 同步改写。
-  人工实测门：用户桌面端实测通过（2026-11-06）。
 
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 

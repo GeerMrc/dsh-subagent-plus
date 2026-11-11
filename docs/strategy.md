@@ -2,12 +2,13 @@
 
 本文件是 `strategy` 配置的完整语义说明（ADR 0005 后候选唯一来源为 `priority` 列表）。
 
-## 〇、解析链（v0.0.4，ADR 0006）：按名命中 ＞ 策略（钉定或 spread 含 respectExplicit）＞ 兜底
+## 〇、解析链（v0.0.4，ADR 0006＋0007）：按名命中 ＞ 策略（钉定或 spread 含 respectExplicit）＞ 兜底
 
-单链写死、无多层覆盖。`nameMap` 是独立槽位：命中即强制指派（不读 respectExplicit、无视成员
-手动选择），路由可取候选清单之外、与清单交集合法；冷却/未注册时暂避兜底、恢复即回映射路由
-（pinFallback 手法，无候选重选）；provider 级粘性失败连带冷却同 provider 全部映射行；命中
-fork 队友默认放过（一次性 warn＋pinForkChildren 出路）。空表＝休眠。
+单链写死、无多层覆盖。`nameMap`（ADR 0006＋0007）：命中即强制指派（不读 respectExplicit、
+无视成员手动选择），**路由目标只能取自候选清单**（悬空/半填＝structural 拒载＋运行时按未命中
+防御，落策略链）；冷却/未注册时暂避兜底、恢复即回映射路由（pinFallback 手法，无候选重选）；
+provider 级粘性失败连带冷却同 provider 全部映射行；命中 fork 队友默认放过（一次性 warn＋
+pinForkChildren 出路）。空表＝休眠。
 
 ## 一、行为决策矩阵（ADR 0005：`priority` 列表是唯一候选来源，官方授权清单零引用；按名命中先于本表全部行）
 
