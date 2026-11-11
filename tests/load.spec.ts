@@ -178,7 +178,7 @@ describe('pinned notice vs registration', () => {
     fallbackReasoningEffort: '',
   }
 
-  it('names the skip when failOpen keeps the resolved route (no false pinned claim)', async () => {
+  it('names the unregistered pin with no fallback: the child still runs it and fails loudly', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     // Only hh is registered: the sz pin is the unregistered route.
@@ -186,7 +186,7 @@ describe('pinned notice vs registration', () => {
     await ctx.plugin(plugin, unregisteredPinConfig)
     const decision = await dispatchPreStep(ctx, newChild())
     expect(decision.kind).toBe('enter')
-    expect(noticeText(decision)).toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/Qwen3.8-27B-FP8 未注册，本子智能体保持原路由｜pinned route sz/Qwen3.8-27B-FP8 unregistered, this child keeps its resolved route — dsh-subagent-plus]')
+    expect(noticeText(decision)).toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行钉定路由（预期响亮失败）｜pinned route sz/Qwen3.8-27B-FP8 unregistered with no usable fallback; the child still runs the pinned route and fails loudly — dsh-subagent-plus]')
   })
 
   it('still claims the pin when failOpen is off (the override applies and fails loudly)', async () => {
@@ -1024,6 +1024,16 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     await dispatch(ctx, child)
     const decision = await dispatchPreStep(ctx, child)
     expect(decision.kind === 'enter' && decision.messages.length).toBe(0)
+  })
+
+  it('unregistered mapped route with no fallback: the request still applies it (fails loudly) and the notice names that', async () => {
+    const { ctx } = await byNameContext({}, { llm: llmWith(() => [hh]) })
+    const child = memberChild('researcher')
+    // No fallback is configured and sz is not registered: the mapped route is
+    // still applied — the all-dead semantics, reported truthfully.
+    await expect(dispatch(ctx, child)).resolves.toEqual(sz)
+    const decision = await dispatchPreStep(ctx, child)
+    expect(noticeText(decision)).toBe('[按名跳过 model by-name skipped: 队友 "researcher" 的映射路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行映射路由（预期响亮失败）｜mapped route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs the mapped route and fails loudly — dsh-subagent-plus]')
   })
 
   it('provider-sticky failure cools every mapped row of that provider', async () => {

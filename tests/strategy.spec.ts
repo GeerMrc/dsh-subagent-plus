@@ -338,9 +338,9 @@ describe('notice text (S-08 helpers)', () => {
       .toBe('[模型钉定兜底 model pin fallback: 钉定路由 sz/a 当前不可用（冷却或未注册），本子智能体改用兜底 hh/b｜pinned route sz/a unavailable, runs fallback hh/b — dsh-subagent-plus]')
   })
 
-  it('names the skipped pin and the kept resolved route', () => {
+  it('names the unregistered pin with no fallback: the child still runs it and fails loudly', () => {
     expect(pinSkippedNotice('sz/a'))
-      .toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/a 未注册，本子智能体保持原路由｜pinned route sz/a unregistered, this child keeps its resolved route — dsh-subagent-plus]')
+      .toBe('[模型钉定跳过 model pin skipped: 钉定路由 sz/a 未注册且无可用兜底，本子智能体仍将运行钉定路由（预期响亮失败）｜pinned route sz/a unregistered with no usable fallback; the child still runs the pinned route and fails loudly — dsh-subagent-plus]')
   })
 })
 
@@ -416,9 +416,9 @@ describe('by-name notice text (S-09 helpers)', () => {
     )
   })
 
-  it('names the skip when an unregistered mapped route keeps the resolved route', () => {
+  it('names the unregistered mapped route with no fallback: the child still runs it and fails loudly', () => {
     expect(byNameSkippedNotice('researcher', 'sz/Qwen3.8-27B-FP8')).toBe(
-      '[按名跳过 model by-name skipped: 队友 "researcher" 的映射路由 sz/Qwen3.8-27B-FP8 未注册，本子智能体保持原路由｜mapped route sz/Qwen3.8-27B-FP8 for "researcher" unregistered, this child keeps its resolved route — dsh-subagent-plus]',
+      '[按名跳过 model by-name skipped: 队友 "researcher" 的映射路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行映射路由（预期响亮失败）｜mapped route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs the mapped route and fails loudly — dsh-subagent-plus]',
     )
   })
 })

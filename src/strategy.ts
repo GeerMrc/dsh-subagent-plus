@@ -505,14 +505,15 @@ export function pinFallbackNotice(pinLabel: string, fallbackLabel: string): stri
 }
 
 /**
- * Transcript notice for a pin that failOpen skipped because the route is not
- * registered: the child keeps its resolved route, so the notice names the skip
- * instead of claiming the unregistered pin runs.
+ * Transcript notice for a pin that failOpen found unregistered with no usable
+ * fallback: the child still runs the pinned route and fails loudly (the
+ * all-dead semantics), so the notice names that instead of claiming the
+ * resolved route is kept.
  * @param label - `provider/model` of the unregistered pinned route.
  * @returns the bracketed one-line notice.
  */
 export function pinSkippedNotice(label: string): string {
-  return `[模型钉定跳过 model pin skipped: 钉定路由 ${label} 未注册，本子智能体保持原路由｜pinned route ${label} unregistered, this child keeps its resolved route — dsh-subagent-plus]`
+  return `[模型钉定跳过 model pin skipped: 钉定路由 ${label} 未注册且无可用兜底，本子智能体仍将运行钉定路由（预期响亮失败）｜pinned route ${label} unregistered with no usable fallback; the child still runs the pinned route and fails loudly — dsh-subagent-plus]`
 }
 
 /**
@@ -549,13 +550,13 @@ export function byNameFallbackNotice(mappedLabel: string, fallbackLabel: string)
 }
 
 /**
- * Transcript notice for a mapped route that failOpen skipped because it is
- * not registered: the child keeps its resolved route, so the notice names the
- * skip instead of claiming the mapped route runs.
+ * Transcript notice for a mapped route that failOpen found unregistered with
+ * no usable fallback: the child still runs the mapped route and fails loudly
+ * (mirrors the pin semantics), so the notice names that.
  * @param name - teammate name that matched the row.
  * @param label - `provider/model` of the unregistered mapped route.
  * @returns the bracketed one-line notice.
  */
 export function byNameSkippedNotice(name: string, label: string): string {
-  return `[按名跳过 model by-name skipped: 队友 "${name}" 的映射路由 ${label} 未注册，本子智能体保持原路由｜mapped route ${label} for "${name}" unregistered, this child keeps its resolved route — dsh-subagent-plus]`
+  return `[按名跳过 model by-name skipped: 队友 "${name}" 的映射路由 ${label} 未注册且无可用兜底，本子智能体仍将运行映射路由（预期响亮失败）｜mapped route ${label} for "${name}" unregistered with no usable fallback; the child still runs the mapped route and fails loudly — dsh-subagent-plus]`
 }

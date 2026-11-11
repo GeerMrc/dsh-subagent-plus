@@ -612,7 +612,7 @@ function EditorBelow({ state, controller, t }: EditorProps) {
                 />
               </div>
               {state.cooldownInvalid ? <p style={invalidStyle}>{t('advanced.cooldownInvalid')}</p> : null}
-              {draft.strategy === 'pinned' && draft.fallbackProvider === '' ? <p style={hintStyle}>{t('advanced.cooldownInactive')}</p> : null}
+              {draft.strategy === 'pinned' && draft.fallbackProvider === '' && draft.nameMap.length === 0 ? <p style={hintStyle}>{t('advanced.cooldownInactive')}</p> : null}
             </div>
             )
           : null}

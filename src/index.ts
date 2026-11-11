@@ -122,8 +122,6 @@ interface ByNameDecision {
   /** Mapped route every request of this child runs; per-request usability
    * checks (registration, cooling) evade to the fallback and recover here. */
   route: PinRoute
-  /** Notice texts already appended to this child's transcript. */
-  noticed: Set<string>
 }
 
 /** Structural view of the optional `agentTeams` service (ADR 0006): only the
@@ -236,7 +234,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (name === undefined || name === '') return undefined
     const row = matchByName(name, config.nameMap)
     if (row === undefined) return undefined
-    const decision: ByNameDecision = { kind: 'by-name', name, route: rowRoute(row), noticed: new Set() }
+    const decision: ByNameDecision = { kind: 'by-name', name, route: rowRoute(row) }
     byNameDecisions.set(agent, decision)
     return decision
   }
@@ -388,7 +386,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
         const key = routeKey(byName.route)
         if (!unregisteredNameRoutes.has(key)) {
           unregisteredNameRoutes.add(key)
-          ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; child requests fall back or keep their resolved route`)
+          ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; child requests use the fallback when one is usable, otherwise keep attempting the configured route (fails loudly)`)
         }
         const evaded = await evadeToFallback('fallback-routed (mapped route unavailable)')
         if (evaded !== undefined) return evaded
@@ -432,7 +430,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
               unregisteredPinWarned = true
               ctx.logger.warn(
                 `dsh-subagent-plus: pinned route "${routeId(pin)}" is not registered; `
-                + `child requests fall back or keep their resolved route`,
+                + `child requests use the fallback when one is usable, otherwise keep attempting the configured route (fails loudly)`,
               )
             }
             const unavailable = await pinFallback('fallback-routed (pin unavailable)')
