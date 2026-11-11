@@ -400,8 +400,10 @@ describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
     expect(controller.snapshot().draft?.nameMap[1]).toEqual({ name: 'coder', provider: 'zai', model: 'glm-5.3', reasoningEffort: '' })
     await expect(controller.save()).resolves.toBe('saved')
     const ops = form.mutateCalls[0]?.ops ?? []
-    expect(ops).toHaveLength(1)
-    expect(ops[0]?.path).toEqual(['nameMap'])
+    // Under ADR 0007 the first save carries both the freshly listed candidate
+    // routes and the mapping table; nameMap still travels as one whole-field op.
+    expect(ops.map(op => op.path[0]).sort()).toEqual(['nameMap', 'priority'])
+    const nameMapOp = ops.find(op => op.path[0] === 'nameMap')
     controller.removeNameRow(0)
     await expect(controller.save()).resolves.toBe('saved')
     expect(form.mutateCalls.at(-1)?.ops[0]?.value).toEqual([{ name: 'coder', provider: 'zai', model: 'glm-5.3', reasoningEffort: '' }])
