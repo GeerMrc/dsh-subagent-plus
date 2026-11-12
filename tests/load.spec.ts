@@ -1002,7 +1002,7 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     const child = memberChild('researcher')
     await dispatch(ctx, child)
     const first = await dispatchPreStep(ctx, child)
-    expect(noticeText(first)).toBe('[按名指派 model assigned by name: 队友 "researcher" 的所有请求运行 sz/Qwen3.8-27B-FP8｜every request of teammate "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+    expect(noticeText(first)).toBe('[按角色指派 model assigned by keyword: 匹配角色 "researcher" 的队友所有请求运行 sz/Qwen3.8-27B-FP8｜every request of a teammate matching "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
     const again = await dispatchPreStep(ctx, child, 3)
     expect(again.kind === 'enter' && again.messages.length).toBe(0)
     const { ctx: effortCtx } = await byNameContext({
@@ -1023,11 +1023,11 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     await dispatch(ctx, child)
     await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
     const evasion = await dispatchPreStep(ctx, child, 2)
-    expect(noticeText(evasion)).toBe('[按名兜底 model by-name fallback: 映射路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 zai/glm-5.3｜mapped route sz/Qwen3.8-27B-FP8 unavailable, runs fallback zai/glm-5.3 — dsh-subagent-plus]')
+    expect(noticeText(evasion)).toBe('[按角色兜底 model keyword fallback: 角色路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 zai/glm-5.3｜role route sz/Qwen3.8-27B-FP8 unavailable, runs fallback zai/glm-5.3 — dsh-subagent-plus]')
     await new Promise(resolve => setTimeout(resolve, 130))
     await dispatch(ctx, child)
     const recovered = await dispatchPreStep(ctx, child, 4)
-    expect(noticeText(recovered)).toBe('[按名指派 model assigned by name: 队友 "researcher" 的所有请求运行 sz/Qwen3.8-27B-FP8｜every request of teammate "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
+    expect(noticeText(recovered)).toBe('[按角色指派 model assigned by keyword: 匹配角色 "researcher" 的队友所有请求运行 sz/Qwen3.8-27B-FP8｜every request of a teammate matching "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]')
   })
 
   it('emits nothing at all when showNotice is off', async () => {
@@ -1045,7 +1045,7 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     // still applied — the all-dead semantics, reported truthfully.
     await expect(dispatch(ctx, child)).resolves.toEqual(sz)
     const decision = await dispatchPreStep(ctx, child)
-    expect(noticeText(decision)).toBe('[按名跳过 model by-name skipped: 队友 "researcher" 的映射路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行映射路由（预期响亮失败）｜mapped route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs the mapped route and fails loudly — dsh-subagent-plus]')
+    expect(noticeText(decision)).toBe('[按角色跳过 model keyword skipped: 匹配角色 "researcher" 的路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行该路由（预期响亮失败）｜role route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs it and fails loudly — dsh-subagent-plus]')
   })
 
   it('runtime defense: a row that left the candidate list mid-session is a miss, not an override', async () => {

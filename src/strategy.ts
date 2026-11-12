@@ -33,7 +33,7 @@ export interface PriorityEntryView {
 
 /** One `nameMap` row as the configuration schema materializes it (ADR 0006). */
 export interface NameMapEntryView {
-  /** Role keyword this row matches by substring inclusion (lower-kebab, 2-64 chars, never `lead`). */
+  /** Role keyword matched by substring inclusion in the teammate name (lower-kebab, 2-64 chars, never `lead`, ADR 0008). */
   name: string
   /** Registered provider id. */
   provider: string
@@ -554,7 +554,7 @@ export function reassignedNotice(from: string, to: string, code: string): string
  * @returns the bracketed one-line notice.
  */
 export function byNameNotice(name: string, label: string): string {
-  return `[按名指派 model assigned by name: 队友 "${name}" 的所有请求运行 ${label}｜every request of teammate "${name}" runs ${label} — dsh-subagent-plus]`
+  return `[按角色指派 model assigned by keyword: 匹配角色 "${name}" 的队友所有请求运行 ${label}｜every request of a teammate matching "${name}" runs ${label} — dsh-subagent-plus]`
 }
 
 /**
@@ -565,7 +565,7 @@ export function byNameNotice(name: string, label: string): string {
  * @returns the bracketed one-line notice.
  */
 export function byNameFallbackNotice(mappedLabel: string, fallbackLabel: string): string {
-  return `[按名兜底 model by-name fallback: 映射路由 ${mappedLabel} 当前不可用（冷却或未注册），本子智能体改用兜底 ${fallbackLabel}｜mapped route ${mappedLabel} unavailable, runs fallback ${fallbackLabel} — dsh-subagent-plus]`
+  return `[按角色兜底 model keyword fallback: 角色路由 ${mappedLabel} 当前不可用（冷却或未注册），本子智能体改用兜底 ${fallbackLabel}｜role route ${mappedLabel} unavailable, runs fallback ${fallbackLabel} — dsh-subagent-plus]`
 }
 
 /**
@@ -577,5 +577,5 @@ export function byNameFallbackNotice(mappedLabel: string, fallbackLabel: string)
  * @returns the bracketed one-line notice.
  */
 export function byNameSkippedNotice(name: string, label: string): string {
-  return `[按名跳过 model by-name skipped: 队友 "${name}" 的映射路由 ${label} 未注册且无可用兜底，本子智能体仍将运行映射路由（预期响亮失败）｜mapped route ${label} for "${name}" unregistered with no usable fallback; the child still runs the mapped route and fails loudly — dsh-subagent-plus]`
+  return `[按角色跳过 model keyword skipped: 匹配角色 "${name}" 的路由 ${label} 未注册且无可用兜底，本子智能体仍将运行该路由（预期响亮失败）｜role route ${label} for "${name}" unregistered with no usable fallback; the child still runs it and fails loudly — dsh-subagent-plus]`
 }

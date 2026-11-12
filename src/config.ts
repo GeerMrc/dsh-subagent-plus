@@ -43,7 +43,7 @@ export interface PinConfig {
   fallbackModel: string
   /** Effort id for the fallback route; empty keeps the model's own default. */
   fallbackReasoningEffort: string
-  /** By-name mapping rows (ADR 0006): exact teammate name → forced route; empty list leaves routing to the strategy chain. */
+  /** Role-keyword mapping rows (ADR 0008): substring match against teammate names → forced route; empty list leaves routing to the strategy chain. */
   nameMap: NameMapEntryView[]
 }
 

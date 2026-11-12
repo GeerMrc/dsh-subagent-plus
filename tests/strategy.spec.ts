@@ -499,19 +499,19 @@ describe('role-keyword matching (S-09, ADR 0008)', () => {
 describe('by-name notice text (S-09 helpers)', () => {
   it('names the teammate and route, bilingual on one line', () => {
     expect(byNameNotice('researcher', 'sz/Qwen3.8-27B-FP8')).toBe(
-      '[按名指派 model assigned by name: 队友 "researcher" 的所有请求运行 sz/Qwen3.8-27B-FP8｜every request of teammate "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]',
+      '[按角色指派 model assigned by keyword: 匹配角色 "researcher" 的队友所有请求运行 sz/Qwen3.8-27B-FP8｜every request of a teammate matching "researcher" runs sz/Qwen3.8-27B-FP8 — dsh-subagent-plus]',
     )
   })
 
   it('names the fallback handover of an unusable mapped route', () => {
     expect(byNameFallbackNotice('sz/Qwen3.8-27B-FP8', 'zai/glm-5.3')).toBe(
-      '[按名兜底 model by-name fallback: 映射路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 zai/glm-5.3｜mapped route sz/Qwen3.8-27B-FP8 unavailable, runs fallback zai/glm-5.3 — dsh-subagent-plus]',
+      '[按角色兜底 model keyword fallback: 角色路由 sz/Qwen3.8-27B-FP8 当前不可用（冷却或未注册），本子智能体改用兜底 zai/glm-5.3｜role route sz/Qwen3.8-27B-FP8 unavailable, runs fallback zai/glm-5.3 — dsh-subagent-plus]',
     )
   })
 
   it('names the unregistered mapped route with no fallback: the child still runs it and fails loudly', () => {
     expect(byNameSkippedNotice('researcher', 'sz/Qwen3.8-27B-FP8')).toBe(
-      '[按名跳过 model by-name skipped: 队友 "researcher" 的映射路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行映射路由（预期响亮失败）｜mapped route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs the mapped route and fails loudly — dsh-subagent-plus]',
+      '[按角色跳过 model keyword skipped: 匹配角色 "researcher" 的路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行该路由（预期响亮失败）｜role route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs it and fails loudly — dsh-subagent-plus]',
     )
   })
 })

@@ -63,6 +63,7 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
+  isValidKeyword,
   matchByKeyword,
   pinnedNotice,
   pinFallbackNotice,
@@ -252,7 +253,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     // source only re-checks the schema). A row whose route is incomplete or no
     // longer listed is a miss — the child falls to the strategy chain, the
     // "empty pin assigns nothing" precedent. Never memoized as a hit.
-    if (row.provider === '' || row.model === ''
+    if (!isValidKeyword(row.name) || row.provider === '' || row.model === ''
       || !config.priority.some(listed => listed.provider === row.provider && listed.model === row.model)) {
       return undefined
     }
@@ -386,7 +387,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
         const name = teams?.tryMembership(agent)?.name
         if (name !== undefined && matchByKeyword(name, config.nameMap) !== undefined) {
           forkNameWarned = true
-          ctx.logger.warn(`dsh-subagent-plus: by-name row "${name}" matches a fork teammate; fork children keep their resolved route (enable pinForkChildren to route them)`)
+          ctx.logger.warn(`dsh-subagent-plus: role keyword "${name}" matches a fork teammate; fork children keep their resolved route (enable pinForkChildren to route them)`)
         }
       }
       return resolved
@@ -421,7 +422,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       }
       const override = pinnedRoute(resolved, byName.route)
       if (override === undefined) return resolved
-      logRouteOnce(ctx, agent, resolved, override, `assigned by name "${byName.name}"`)
+      logRouteOnce(ctx, agent, resolved, override, `assigned by keyword "${byName.name}"`)
       return applyOverride(resolved, override)
     }
     const plan = resolveStrategyPlan(config)

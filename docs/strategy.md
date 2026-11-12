@@ -2,7 +2,7 @@
 
 本文件是 `strategy` 配置的完整语义说明（ADR 0005 后候选唯一来源为 `priority` 列表）。
 
-## 〇、解析链（v0.0.4，ADR 0006＋0007）：按名命中 ＞ 策略（钉定或 spread 含 respectExplicit）＞ 兜底
+## 〇、解析链（v0.0.4，ADR 0006＋0007＋0008）：角色关键词命中 ＞ 策略（钉定或 spread 含 respectExplicit）＞ 兜底
 
 单链写死、无多层覆盖。`nameMap`（ADR 0006＋0007）：命中即强制指派（不读 respectExplicit、
 无视成员手动选择），**路由目标只能取自候选清单**（悬空/半填＝structural 拒载＋运行时按未命中

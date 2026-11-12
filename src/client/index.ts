@@ -29,7 +29,6 @@ import { OfficialLimitsController, type OfficialLimitsValue } from './official-s
 import { SettingsSectionController, type CatalogPort, type SettingsFormPort } from './settings-controller.js'
 import { UnifiedSaveController } from './unified-save.js'
 import { bindSettingsSection } from './settings-section.tsx'
-import { teamNamesFromSessions } from './name-suggestions.js'
 import { PAGE_STYLE_CSS } from './settings-styles.ts'
 
 /** Client services this bundle binds. */
@@ -123,20 +122,6 @@ export function apply(ctx: Context): void {
       order: 17,
       label: () => t('nav'),
       locale: NS,
-    }, bindSettingsSection(controller, limits, save, (): string[] => {
-      // Guarded optional consumption: the sessions store exists on web-app
-      // compositions; absent service, absent store, or a foreign shape all
-      // degrade to no suggestions (ADR 0007 decision 5).
-      let sessions: unknown
-      try {
-        sessions = ctx.get('sessions')
-      } catch {
-        return []
-      }
-      if (sessions === undefined || sessions === null) return []
-      const store = (sessions as { list?: { getSnapshot?: () => unknown } }).list
-      if (store === undefined || typeof store.getSnapshot !== 'function') return []
-      return teamNamesFromSessions(store.getSnapshot())
-    })))
+    }, bindSettingsSection(controller, limits, save)))
   }), 'dsh-subagent-plus: settings section')
 }
