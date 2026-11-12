@@ -531,12 +531,40 @@ function EditorRoutes(props: EditorProps) {
                 })}
               </div>
               )}
-          {/* ADR 0011: quick-setup template dropdown — same visual language as
+          
+          <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
+            <span style={cardHeadingStyle}>{t('byname.add')}</span>
+            <span style={{ flex: 1 }} />
+            <select
+              className="dsmp-select"
+              style={routeSelectStyle}
+              value=""
+              disabled={byNameLocked || draft.nameMap.length >= MAX_NAME_MAP_ENTRIES}
+              aria-label={t('byname.add')}
+              onChange={event => {
+                const route = routeFromValue(listed, event.target.value)
+                if (route !== null) controller.addNameRow(route)
+              }}
+            >
+              <option value="">{
+                byNameLocked ? t('byname.pinnedHint')
+                  : draft.nameMap.length >= MAX_NAME_MAP_ENTRIES ? t('byname.max')
+                    : listed.length === 0 ? t('byname.emptyList')
+                      : t('byname.addPlaceholder')
+              }</option>
+              {listed.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
+            </select>
+          </div>
+        </div>
+{/* ADR 0011: quick-setup template dropdown — same visual language as
               the manual add dropdown; three-fold disabled (H1: byNameLocked /
               full / empty candidates); non-empty table shows inline
               replace/merge/cancel (no modal). */}
           <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
-            <span style={cardHeadingStyle}>{t('byname.templates.placeholder')}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={cardHeadingStyle}>{t('byname.templates.label')}</span>
+              <Info label={t('byname.templates.hint')} text={t('byname.templates.hint')} delayMs={400} />
+            </span>
             <span style={{ flex: 1 }} />
             <select
               className="dsmp-select"
@@ -565,7 +593,7 @@ function EditorRoutes(props: EditorProps) {
                   : id === 'same-route' ? t('byname.templates.same-route')
                   : id === 'content-production' ? t('byname.templates.content-production')
                   : id
-                return <option key={id} value={id}>{label}（{rowCount} 行）</option>
+                return <option key={id} value={id}>{t('byname.templates.rowCount').replace('{label}', label).replace('{n}', String(rowCount))}</option>
               })}
             </select>
           </div>
@@ -587,31 +615,8 @@ function EditorRoutes(props: EditorProps) {
               </button>
             </div>
           ) : null}
-          <p style={hintStyle}>{t('byname.templates.hint')}</p>
-          <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
-            <span style={cardHeadingStyle}>{t('byname.add')}</span>
-            <span style={{ flex: 1 }} />
-            <select
-              className="dsmp-select"
-              style={routeSelectStyle}
-              value=""
-              disabled={byNameLocked || draft.nameMap.length >= MAX_NAME_MAP_ENTRIES}
-              aria-label={t('byname.add')}
-              onChange={event => {
-                const route = routeFromValue(listed, event.target.value)
-                if (route !== null) controller.addNameRow(route)
-              }}
-            >
-              <option value="">{
-                byNameLocked ? t('byname.pinnedHint')
-                  : draft.nameMap.length >= MAX_NAME_MAP_ENTRIES ? t('byname.max')
-                    : listed.length === 0 ? t('byname.emptyList')
-                      : t('byname.addPlaceholder')
-              }</option>
-              {listed.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
-            </select>
-          </div>
-        </div>
+          
+
 
         <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>

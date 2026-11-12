@@ -447,10 +447,7 @@ export class SettingsSectionController {
 
   /** Templates visible under the current candidate-list size (for the UI dropdown). */
   visibleTemplates = (): { id: string; rowCount: number }[] => {
-    const routeCount = this.snapshot().routes.filter(r => r.provider !== '').length
-    // Use listed (joined with priority) count if available, else catalog count
-    const draft = this.snapshot().draft
-    const listedCount = draft?.priority.length ?? routeCount
+    const listedCount = listedRoutesOf(this.snapshot()).filter(route => route.available).length
     return this.#templates
       .filter(t => listedCount >= t.minRoutes && (t.maxRoutes === undefined || listedCount <= t.maxRoutes))
       .map(t => ({ id: t.id, rowCount: t.rows.length }))
@@ -499,7 +496,7 @@ export class SettingsSectionController {
     const state = this.snapshot()
     const draft = state.draft
     if (draft === undefined) return
-    const listed = state.routes // catalog routes for slot resolution
+    const listed = listedRoutesOf(state).filter(route => route.available)
     this.#edit(d => {
       for (const row of template.rows) {
         if (skipKeywords.has(row.keyword)) continue
