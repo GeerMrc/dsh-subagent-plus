@@ -1139,6 +1139,34 @@ describe('by-name mapping through a live context (S-10, ADR 0006)', () => {
     expect(warns.mock.calls.filter(call => String(call[0]).includes('not in the candidate list'))).toHaveLength(1)
   })
 
+  it('runtime defense: a 1-character keyword mid-session is a miss (isValidKeyword guard)', async () => {
+    const state: Record<string, unknown> = {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false, failOpen: true, showNotice: true,
+      strategy: 'pinned', respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [{ name: 'researcher', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    }
+    const entry: Record<string, unknown> = {}
+    for (const key of Object.keys(state)) entry[key] = { get: () => state[key] }
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('settings', {})
+    ctx.provide('agentTeams', {
+      tryMembership: (a: object): { name: string } | undefined => {
+        const n = teamNameOf.get(a)
+        return n === undefined ? undefined : { name: n }
+      },
+    })
+    plugin.apply(ctx, entry as unknown as Parameters<typeof plugin.apply>[1])
+    await new Promise(resolve => setTimeout(resolve, 0))
+    // A mid-session commit lands a 1-character keyword — the schema does not
+    // catch it, the runtime defense must treat it as unmatched.
+    state.nameMap = [{ name: 'a', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }]
+    await expect(dispatch(ctx, memberChild('researcher'))).resolves.toEqual(seed)
+    await expect(dispatch(ctx, memberChild('a-team-helper'))).resolves.toEqual(seed)
+  })
+
   it('provider-sticky failure cools every mapped row of that provider', async () => {
     const { ctx } = await byNameContext({
       nameMap: [nmRow('researcher', 'sz', 'Qwen3.8-27B-FP8'), nmRow('coder', 'sz', 'other-model')],

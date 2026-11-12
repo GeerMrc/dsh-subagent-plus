@@ -398,6 +398,12 @@ describe('role-keyword matching (S-09, ADR 0008)', () => {
     expect(matchByKeyword('plan-only', map)).toEqual(map[0])
   })
 
+  it('an empty keyword never matches (bestLength starts at 0)', () => {
+    const map = [nm('', sz)]
+    expect(matchByKeyword('researcher', map)).toBeUndefined()
+    expect(matchByKeyword('', map)).toBeUndefined()
+  })
+
   it('exact name as keyword is a special case of keyword matching', () => {
     const map = [nm('researcher', sz)]
     expect(matchByKeyword('researcher', map)).toEqual(map[0])
