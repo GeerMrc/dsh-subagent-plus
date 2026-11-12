@@ -22,7 +22,7 @@
 
 ### 4. notice source.kind 去冒名
 
-现有 notice 的 `source.kind: 'model-selection'` 与宿主官方换模型通知同 kind，rc.3+ 的 model-selection-projection 可能误归因。改为 `'dsh-subagent-plus'`（与命名空间一致的自有 kind）。
+现有 notice 的 `source.kind: 'model-selection'` 与宿主官方换模型通知同 kind，rc.3+ 的 model-selection-projection 可能误归因。改为 `'dsh-subagent-plus'`。**暂缓**：宿主 TypeScript union 类型固定了合法 kind 集（不含自定义值），维持 `'model-selection'`；待宿主开放自定义 kind 后重访。
 
 ### 5. parentRouteOf 防御性 catch
 

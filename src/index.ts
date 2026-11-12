@@ -543,10 +543,18 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       return applyOverride(resolved, override)
     }
     const decision = await decideFor(config, agent)
-    if (decision === undefined || decision.kind === 'explicit') return resolved
+    if (decision === undefined || decision.kind === 'explicit') {
+      const dmFallback = defaultModelFallback(ctx, resolved, agent)
+      if (dmFallback !== undefined) return dmFallback
+      return resolved
+    }
     await failoverIfCooling(config, decision)
     const override = pinnedRoute(resolved, decision.route)
-    if (override === undefined) return resolved
+    if (override === undefined) {
+      const dmFallback = defaultModelFallback(ctx, resolved, agent)
+      if (dmFallback !== undefined) return dmFallback
+      return resolved
+    }
     logRouteOnce(ctx, agent, resolved, override, decision.via === 'fallback' ? 'fallback-routed' : `assigned (${decision.strategy})`)
     return applyOverride(resolved, override)
   }, { prepend: true })
