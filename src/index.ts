@@ -290,6 +290,16 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     }
     const decision = await decideFor(config, agent)
     if (decision === undefined || decision.kind === 'explicit') return undefined
+    // ADR 0010 d3: a cooling route re-evaluates to the next healthy candidate
+    // or the fallback for the next step boundary select.
+    if (!healthyNow(config)(decision.route)) {
+      const plan = resolveStrategyPlan(config)
+      if (plan.kind === 'spread') {
+        const next = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
+        if (next !== undefined) return next
+      }
+      return await usableFallbackOf(config) ?? decision.route
+    }
     return decision.route
   }
 
