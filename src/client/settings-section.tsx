@@ -327,6 +327,8 @@ type EditorProps = {
  *  merged card in SettingsSection owns the single border. */
 function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | undefined>(undefined)
+  const [showTemplateConfirm, setShowTemplateConfirm] = useState(false)
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -529,6 +531,63 @@ function EditorRoutes(props: EditorProps) {
                 })}
               </div>
               )}
+          {/* ADR 0011: quick-setup template dropdown — same visual language as
+              the manual add dropdown; three-fold disabled (H1: byNameLocked /
+              full / empty candidates); non-empty table shows inline
+              replace/merge/cancel (no modal). */}
+          <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
+            <span style={cardHeadingStyle}>{t('byname.templates.placeholder')}</span>
+            <span style={{ flex: 1 }} />
+            <select
+              className="dsmp-select"
+              style={routeSelectStyle}
+              value=""
+              disabled={byNameLocked || draft.nameMap.length >= MAX_NAME_MAP_ENTRIES || listed.length === 0}
+              aria-label={t('byname.templates.placeholder')}
+              onChange={event => {
+                const templateId = event.target.value
+                if (templateId === '') return
+                const result = controller.applyTemplate(templateId)
+                if (result === 'confirm') {
+                  // Show inline confirm UI (replace/merge/cancel)
+                  setPendingTemplateId(templateId)
+                  setShowTemplateConfirm(true)
+                } else if (result === 'insufficient-capacity') {
+                  // The controller already logged; the UI shows the placeholder reset.
+                }
+                // 'applied': rows are in the draft; the select resets to ''.
+              }}
+            >
+              <option value="">{t('byname.templates.placeholder')}</option>
+              {controller.visibleTemplates().map(({ id, rowCount }) => {
+                const label = id === 'quality-first' ? t('byname.templates.quality-first')
+                  : id === 'three-tier' ? t('byname.templates.three-tier')
+                  : id === 'same-route' ? t('byname.templates.same-route')
+                  : id === 'content-production' ? t('byname.templates.content-production')
+                  : id
+                return <option key={id} value={id}>{label}（{rowCount} 行）</option>
+              })}
+            </select>
+          </div>
+          {showTemplateConfirm && pendingTemplateId !== undefined ? (
+            <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={cardHeadingStyle}>{t('byname.templates.confirmTitle')}</span>
+              <span style={{ flex: 1 }} />
+              <button type="button" className="dsmp-select" style={routeSelectStyle}
+                onClick={() => { controller.applyTemplateConfirm(pendingTemplateId, 'replace'); setShowTemplateConfirm(false); setPendingTemplateId(undefined) }}>
+                {t('byname.templates.replace')}
+              </button>
+              <button type="button" className="dsmp-select" style={routeSelectStyle}
+                onClick={() => { controller.applyTemplateConfirm(pendingTemplateId, 'merge'); setShowTemplateConfirm(false); setPendingTemplateId(undefined) }}>
+                {t('byname.templates.merge')}
+              </button>
+              <button type="button" className="dsmp-select" style={routeSelectStyle}
+                onClick={() => { setShowTemplateConfirm(false); setPendingTemplateId(undefined) }}>
+                {t('byname.templates.cancel')}
+              </button>
+            </div>
+          ) : null}
+          <p style={hintStyle}>{t('byname.templates.hint')}</p>
           <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
             <span style={cardHeadingStyle}>{t('byname.add')}</span>
             <span style={{ flex: 1 }} />

@@ -16,6 +16,18 @@ import { MAX_NAME_MAP_ENTRIES, validateStrategyConfig, type Strategy } from '../
 import type { PinConfig } from '../config.js'
 import type { SaveOutcome } from './unified-save.js'
 
+/** Template slot: S=first candidate (strong), B=middle, F=last (fast). */
+type Slot = 'S' | 'B' | 'F'
+
+/** One role-template definition (ADR 0011). */
+interface RoleTemplate {
+  id: string
+  minRoutes: number
+  maxRoutes?: number
+  rows: ReadonlyArray<{ keyword: string; slot: Slot; effort?: string }>
+}
+
+
 /** Maximum candidate routes; mirrors the schema bound. */
 export const MAX_ROUTES = 5
 
@@ -349,6 +361,158 @@ export class SettingsSectionController {
     this.#edit(draft => {
       const row = draft.nameMap[index]
       if (row !== undefined) row.reasoningEffort = reasoningEffort
+    })
+  }
+
+  // ─── ADR 0011: Role template quick-setup ───
+
+  readonly #templates: readonly RoleTemplate[] = [
+    {
+      id: 'quality-first',
+      minRoutes: 2,
+      rows: [
+        { keyword: 'reviewer', slot: 'S', effort: 'high' },
+        { keyword: 'auditor', slot: 'S', effort: 'high' },
+        { keyword: 'verifier', slot: 'S', effort: 'high' },
+        { keyword: 'planner', slot: 'S', effort: 'high' },
+        { keyword: 'builder', slot: 'B' },
+        { keyword: 'dev', slot: 'B' },
+        { keyword: 'executor', slot: 'B' },
+        { keyword: 'research', slot: 'B' },
+        { keyword: 'tester', slot: 'B' },
+      ],
+    },
+    {
+      id: 'three-tier',
+      minRoutes: 3,
+      rows: [
+        { keyword: 'reviewer', slot: 'S', effort: 'high' },
+        { keyword: 'auditor', slot: 'S', effort: 'high' },
+        { keyword: 'verifier', slot: 'S', effort: 'high' },
+        { keyword: 'planner', slot: 'S', effort: 'high' },
+        { keyword: 'builder', slot: 'B' },
+        { keyword: 'dev', slot: 'B' },
+        { keyword: 'executor', slot: 'B' },
+        { keyword: 'research', slot: 'B' },
+        { keyword: 'tester', slot: 'F', effort: 'low' },
+      ],
+    },
+    {
+      id: 'same-route',
+      minRoutes: 1,
+      maxRoutes: 1,
+      rows: [
+        { keyword: 'reviewer', slot: 'S', effort: 'high' },
+        { keyword: 'auditor', slot: 'S', effort: 'high' },
+        { keyword: 'verifier', slot: 'S', effort: 'high' },
+        { keyword: 'planner', slot: 'S', effort: 'high' },
+        { keyword: 'builder', slot: 'S' },
+        { keyword: 'dev', slot: 'S' },
+        { keyword: 'executor', slot: 'S' },
+        { keyword: 'research', slot: 'S' },
+        { keyword: 'tester', slot: 'S', effort: 'low' },
+      ],
+    },
+    {
+      id: 'content-production',
+      minRoutes: 2,
+      rows: [
+        { keyword: 'research', slot: 'S', effort: 'high' },
+        { keyword: 'reviewer', slot: 'S', effort: 'high' },
+        { keyword: 'dev', slot: 'B' },
+        { keyword: 'builder', slot: 'B' },
+        { keyword: 'executor', slot: 'B' },
+        { keyword: 'render', slot: 'B' },
+        { keyword: 'tester', slot: 'F' },
+      ],
+    },
+  ]
+
+  /** Map a slot to a route from the listed candidates (H2: from listed, never hardcoded). */
+  #slotRoute(listed: readonly { provider: string; model: string; efforts?: readonly { id: string }[] }[], slot: Slot): { provider: string; model: string; efforts?: readonly { id: string }[] } | undefined {
+    if (listed.length === 0) return undefined
+    if (slot === 'S') return listed[0]
+    if (slot === 'F') return listed[listed.length - 1]
+    // B: middle; for 2 items, pick the second (different from S)
+    const mid = Math.floor((listed.length - 1) / 2)
+    return listed[Math.max(1, mid)]
+  }
+
+  /** Resolve effort for a route, degraded to '' when the route has no matching effort (H5). */
+  #resolveEffort(route: { efforts?: readonly { id: string }[] } | undefined, effort: string | undefined): string {
+    if (effort === undefined || effort === '') return ''
+    if (route?.efforts === undefined || !route.efforts.some(e => e.id === effort)) return ''
+    return effort
+  }
+
+  /** Templates visible under the current candidate-list size (for the UI dropdown). */
+  visibleTemplates = (): { id: string; rowCount: number }[] => {
+    const routeCount = this.snapshot().routes.filter(r => r.provider !== '').length
+    // Use listed (joined with priority) count if available, else catalog count
+    const draft = this.snapshot().draft
+    const listedCount = draft?.priority.length ?? routeCount
+    return this.#templates
+      .filter(t => listedCount >= t.minRoutes && (t.maxRoutes === undefined || listedCount <= t.maxRoutes))
+      .map(t => ({ id: t.id, rowCount: t.rows.length }))
+  }
+
+  /**
+   * Apply a role template to the draft. Returns 'applied' when done,
+   * 'confirm' when the nameMap is non-empty (UI must ask replace/merge/cancel),
+   * or 'insufficient-capacity' when there aren't enough rows left (H4).
+   */
+  applyTemplate = (templateId: string): 'applied' | 'confirm' | 'insufficient-capacity' => {
+    const template = this.#templates.find(t => t.id === templateId)
+    if (template === undefined) return 'insufficient-capacity'
+    const state = this.snapshot()
+    const draft = state.draft
+    if (draft === undefined) return 'insufficient-capacity'
+    // H4: capacity check — the template needs this many NEW rows (merge) or this many total (replace).
+    const existingKeywords = new Set(draft.nameMap.map(row => row.name))
+    const newRowsNeeded = template.rows.filter(r => !existingKeywords.has(r.keyword)).length
+    const capacityAvailable = 16 - draft.nameMap.length
+    if (newRowsNeeded > capacityAvailable) return 'insufficient-capacity'
+    // Non-empty table: ask the UI to confirm replace/merge.
+    if (draft.nameMap.length > 0) return 'confirm'
+    // Empty table: apply directly.
+    this.#applyRows(template, new Set())
+    return 'applied'
+  }
+
+  /** Confirm a template application after the user chose replace or merge. */
+  applyTemplateConfirm = (templateId: string, mode: 'replace' | 'merge'): void => {
+    const template = this.#templates.find(t => t.id === templateId)
+    if (template === undefined) return
+    if (mode === 'replace') {
+      this.#edit(draft => { draft.nameMap = [] })
+      this.#applyRows(template, new Set())
+    } else {
+      // Merge: skip existing keywords, append the rest.
+      const state = this.snapshot()
+      const existing = new Set((state.draft?.nameMap ?? []).map(row => row.name))
+      this.#applyRows(template, existing)
+    }
+  }
+
+  /** Internal: append template rows to the draft, resolving slots to listed routes. */
+  #applyRows(template: RoleTemplate, skipKeywords: Set<string>): void {
+    const state = this.snapshot()
+    const draft = state.draft
+    if (draft === undefined) return
+    const listed = state.routes // catalog routes for slot resolution
+    this.#edit(d => {
+      for (const row of template.rows) {
+        if (skipKeywords.has(row.keyword)) continue
+        if (d.nameMap.length >= 16) break // H4: hard cap
+        const route = this.#slotRoute(listed, row.slot)
+        if (route === undefined) continue
+        d.nameMap.push({
+          name: row.keyword,
+          provider: route.provider,
+          model: route.model,
+          reasoningEffort: this.#resolveEffort(route, row.effort),
+        })
+      }
     })
   }
 
