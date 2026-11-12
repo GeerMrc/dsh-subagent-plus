@@ -1,6 +1,21 @@
 # 0010 — agent.model.select() 迁移（取代 agent/request 瀑布模型改写）
 
-日期：2026-11-12 ｜ 状态：用户裁定（v0.0.4 未发布原地改写）｜ 取代：0006 d2 解析链的 agent/request 载体面、0009 全部
+日期：2026-11-12 ｜ 状态：用户裁定（v0.0.4 未发布原地改写）
+
+## 取代/存活清单
+
+**取代**：
+- 0006 d2 的 agent/request 载体面（解析链不变，载体从瀑布改写迁至 select()）
+- 0006 d4 的请求期暂避面（冷却即期 evade-to-fallback / spread 步中 failoverIfCooling → 步边界换路）
+- 0006 d9 RISK-H1 追踪条款（本 ADR 即为该条款指向的"届时新 ADR"）
+- 0009 d1-d3（defaultModelFallback / pre-step 冲突告警 / prepend 顺序保险——0.2.2 中不再需要且会撞不变量）
+- 0009 d4 撤销（notice kind 暂缓项 moot——新机制下通知报真选择）
+
+**存活（载体迁移）**：
+- 0006 d1 存活三面（跨 Team 匹配、死名休眠、未知名不告警）、d3（无开关/空表休眠）、d5（agentTeams 守卫）、d6（粘住/fork 排除＋**fork 命中一次性 warn 随载体迁至 agent/created**）、d7（校验）、d8（通知——改读真值）
+- 0007 d1（候选清单唯一来源）、d2（悬空防御——寄生在 decideByName 内、载体迁移至 agent/created）、d3（钉定只读）、d4（记账防御保留——载体从 agent/request 迁至 agent/created 预检）、d7（五轨行）
+- 0008 全部（关键词匹配、isValidKeyword、运行时防御——载体迁移）
+- 0009 d5-d6（parentRouteOf catch / routeRegistered 保守化——代码存活，src/index.ts 注释引用需改写）
 
 ## 背景
 
@@ -52,3 +67,20 @@ agent/created 以 source:'resume' 重触发。select() 自带幂等；WeakMap �
 | 转录通知 | ✅ 保留（读 modelSelection 真值） |
 | maxTokens | ✅ 继承预算跟随（行为变化已裁定） |
 | 步中换路由 | ❌ 0.2.2-rc.2 全面禁止 |
+
+## 任务清单（M1-M12）
+
+| ID | 任务 | 验收标准 | 不动面 |
+|---|---|---|---|
+| M1 | ADR 0010 落盘 | 八决策＋取代/存活清单＋功能影响 | — |
+| M2 | 独立审核 R10-R1 | 六修正对照＋取代面＋覆盖度；修复后复核放行 | — |
+| M3 | agent/created 监听器 | 守卫 agentTeams＋matchByKeyword＋resolveCallConfig 预检 try/catch＋select()；load.spec 先红 | matchByKeyword/validateStrategyConfig 纯函数保留 |
+| M4 | 健康降级步间化 | request-error 记账后 select()＋pre-step 重评 select()；冷却恢复 select 回 | RouteHealth 纯函数保留 |
+| M5 | 删除旧架构 | agent/request 模型改写链全部删（空壳保留）；ADR 0009 代码段删；src/index.ts:777/804 悬空引用改写 | — |
+| M6 | 通知改造 | pre-step 读 payload.modelSelection；去重＋showNotice 不变 | settings-controller 不动 |
+| M7 | locales | byname.help / advanced.cooldownMsHelp 更新（步边界降级语义） | UI 构件不动 |
+| M8 | 文档 | README 双语＋settings/strategy/CHANGELOG 第五次原地改＋ADR 存活面修订引用 | — |
+| M9 | 测试全改写 | load.spec 大改（模拟 agent.model.select＋agent/created） | strategy/controller/manifest/takeover/boundary 守卫不动 |
+| M10 | 独立复查 R10-R2 | 判别性≥5＋旧代码残留清扫＋回归零破坏 | — |
+| M11 | 四门＋装机 | 全绿＋pack＋桌面＋特征验证 | — |
+| M12 | 用户终审＋发布 | "子代理不指定模型"不再报错→同意→OIDC→发布 | — |
