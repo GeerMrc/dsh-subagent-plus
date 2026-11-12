@@ -87,7 +87,7 @@ function dispatchFailure(ctx: Context, agent: Agent, provider: string, code: str
 }
 
 function fireCreated(ctx: Context, agent: Agent, source = 'created'): Promise<void> {
-  return ctx.waterfall('agent/created', { agent, source, signal: new AbortController().signal }, async () => {})
+  return (ctx as unknown as { waterfall: (name: string, data: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/created', { agent, source, signal: new AbortController().signal }, async () => {})
 }
 
 interface ByNameOpts { teams?: boolean; llm?: object }
@@ -133,7 +133,7 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     const agent = memberAgent('plan-reviewer')
     await fireCreated(ctx, agent)
     await new Promise(r => setTimeout(r, 10))
-    const model = (agent as { model: MockModel }).model
+    const model = (agent as unknown as { model: MockModel }).model
     expect(model.select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
   })
 
@@ -142,7 +142,7 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     const agent = plainChild()
     await fireCreated(ctx, agent)
     await new Promise(r => setTimeout(r, 10))
-    const model = (agent as { model: MockModel }).model
+    const model = (agent as unknown as { model: MockModel }).model
     expect(model.select).toHaveBeenCalledWith({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
   })
 
@@ -151,7 +151,7 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     const agent = topAgent()
     await fireCreated(ctx, agent)
     await new Promise(r => setTimeout(r, 10))
-    const model = (agent as { model: MockModel }).model
+    const model = (agent as unknown as { model: MockModel }).model
     expect(model.select).not.toHaveBeenCalled()
   })
 
@@ -169,7 +169,7 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     teamNameOf.set(forkAgent, 'plan-reviewer')
     await fireCreated(ctx, forkAgent)
     await new Promise(r => setTimeout(r, 10))
-    const model = (forkAgent as { model: MockModel }).model
+    const model = (forkAgent as unknown as { model: MockModel }).model
     expect(model.select).not.toHaveBeenCalled()
   })
 
@@ -187,7 +187,7 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     teamNameOf.set(forkAgent, 'plan-reviewer')
     await fireCreated(ctx, forkAgent)
     await new Promise(r => setTimeout(r, 10))
-    const model = (forkAgent as { model: MockModel }).model
+    const model = (forkAgent as unknown as { model: MockModel }).model
     expect(model.select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
   })
 
@@ -205,8 +205,8 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     await fireCreated(ctx, first)
     await fireCreated(ctx, second)
     await new Promise(r => setTimeout(r, 20))
-    const m1 = (first as { model: MockModel }).model
-    const m2 = (second as { model: MockModel }).model
+    const m1 = (first as unknown as { model: MockModel }).model
+    const m2 = (second as unknown as { model: MockModel }).model
     expect(m1.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz' }))
     expect(m2.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh' }))
   })
@@ -217,7 +217,7 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     await fireCreated(ctx, agent)
     await fireCreated(ctx, plainChild())
     await new Promise(r => setTimeout(r, 10))
-    const model = (agent as { model: MockModel }).model
+    const model = (agent as unknown as { model: MockModel }).model
     // Without agentTeams the keyword match can't fire, but pinned strategy still selects.
     expect(model.select).toHaveBeenCalled()
     expect(warns.mock.calls.filter(c => String(c[0]).includes('agentTeams'))).toHaveLength(1)
@@ -278,7 +278,7 @@ describe('step-boundary health failover (ADR 0010 M4)', () => {
     // First creation selects sz (round-robin first).
     await fireCreated(ctx, child)
     await new Promise(r => setTimeout(r, 10))
-    const model = (child as { model: MockModel }).model
+    const model = (child as unknown as { model: MockModel }).model
     expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz' }))
     // Failure on sz: request-error records it, then selects hh for next step.
     await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
@@ -297,7 +297,7 @@ describe('step-boundary health failover (ADR 0010 M4)', () => {
     const child = plainChild()
     await fireCreated(ctx, child)
     await new Promise(r => setTimeout(r, 10))
-    const model = (child as { model: MockModel }).model
+    const model = (child as unknown as { model: MockModel }).model
     expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz' }))
     // Provider-level failure: all sz routes cool down.
     await dispatchFailure(ctx, child, 'sz', 'INVALID_CREDENTIAL', 401)
@@ -318,7 +318,7 @@ describe('step-boundary health failover (ADR 0010 M4)', () => {
     const child = plainChild()
     await fireCreated(ctx, child)
     await new Promise(r => setTimeout(r, 10))
-    const model = (child as { model: MockModel }).model
+    const model = (child as unknown as { model: MockModel }).model
     const callsBefore = model.select.mock.calls.length
     await dispatchFailure(ctx, child, 'sz', 'RATE_LIMIT', 429)
     // No re-selection when cooldown is 0.
@@ -378,14 +378,14 @@ describe('runtime keyword defense (ADR 0007/0008, carrier-migrated)', () => {
     const agent = memberAgent('plan-reviewer')
     await fireCreated(ctx, agent)
     await new Promise(r => setTimeout(r, 10))
-    const model = (agent as { model: MockModel }).model
+    const model = (agent as unknown as { model: MockModel }).model
     expect(model.select).toHaveBeenCalled()
     // The candidate list loses the mapped route mid-session.
     state.priority = []
     const agent2 = memberAgent('plan-reviewer')
     await fireCreated(ctx, agent2)
     await new Promise(r => setTimeout(r, 10))
-    const model2 = (agent2 as { model: MockModel }).model
+    const model2 = (agent2 as unknown as { model: MockModel }).model
     // Dangling: the byName match is a miss, falls to pinned which is empty
     // (provider ''/model '' means no pin → no select).
     // The plugin still selects via the fallback to pinned '' which means no
@@ -417,7 +417,7 @@ describe('runtime keyword defense (ADR 0007/0008, carrier-migrated)', () => {
     const agent = memberAgent('code-reviewer')
     await fireCreated(ctx, agent)
     await new Promise(r => setTimeout(r, 10))
-    const model = (agent as { model: MockModel }).model
+    const model = (agent as unknown as { model: MockModel }).model
     // 1-char keyword fails isValidKeyword → byName is a miss → falls to pinned
     // with empty provider/model → no select call (or select with the pinned
     // route if it were configured). Since provider is empty, no select.
