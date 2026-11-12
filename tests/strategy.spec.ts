@@ -11,8 +11,8 @@ import {
   byNameNotice,
   byNameSkippedNotice,
   fallbackRouteOf,
-  isValidTeammateName,
-  matchByName,
+  isValidKeyword,
+  matchByKeyword,
   type NameMapEntryView,
   pinnedNotice,
   pinFallbackNotice,
@@ -347,23 +347,61 @@ describe('notice text (S-08 helpers)', () => {
 const nm = (name: string, route: PinRoute, reasoningEffort = ''): NameMapEntryView =>
   ({ name, provider: route.provider, model: route.model, reasoningEffort })
 
-describe('by-name mapping (S-09)', () => {
-  it('accepts official lower-kebab teammate names and rejects everything else', () => {
-    for (const name of ['a', 'researcher', 'dev-2', 'r2d2', 'a'.repeat(64)]) {
-      expect(isValidTeammateName(name)).toBe(true)
+describe('role-keyword matching (S-09, ADR 0008)', () => {
+  it('accepts valid keywords and rejects everything else', () => {
+    for (const keyword of ['ab', 'dev', 'researcher', 'plan-reviewer', 'a'.repeat(64)]) {
+      expect(isValidKeyword(keyword)).toBe(true)
     }
-    for (const name of ['', 'lead', 'Lead', 'dev_2', '-dev', 'dev-', 'dev--2', 'dev 2', 'a'.repeat(65)]) {
-      expect(isValidTeammateName(name)).toBe(false)
+    for (const keyword of ['', 'a', 'lead', 'Lead', 'dev_2', '-dev', 'dev-', 'dev--2', 'dev 2', 'a'.repeat(65)]) {
+      expect(isValidKeyword(keyword)).toBe(false)
     }
   })
 
-  it('matches exactly by name and returns the first hit', () => {
+  it('matches by substring, not exact equality', () => {
     const map = [nm('researcher', sz), nm('coder', zai)]
-    expect(matchByName('researcher', map)).toEqual(map[0])
-    expect(matchByName('coder', map)).toEqual(map[1])
-    expect(matchByName('reviewer', map)).toBeUndefined()
-    expect(matchByName('Researcher', map)).toBeUndefined()
-    expect(matchByName('researcher', [])).toBeUndefined()
+    expect(matchByKeyword('researcher', map)).toEqual(map[0])
+    expect(matchByKeyword('researcher-writer', map)).toEqual(map[0])
+    expect(matchByKeyword('lead-researcher-helper', map)).toEqual(map[0])
+    expect(matchByKeyword('coder', map)).toEqual(map[1])
+    expect(matchByKeyword('peer-coder-v2', map)).toEqual(map[1])
+    expect(matchByKeyword('reviewer', map)).toBeUndefined()
+    expect(matchByKeyword('researcher', [])).toBeUndefined()
+  })
+
+  it('does not match when the keyword is longer than the teammate name', () => {
+    const map = [nm('reviewer-v2', sz)]
+    // keyword 'reviewer-v2' (10 chars) > teammate name 'reviewer' (8 chars) -> no match
+    expect(matchByKeyword('reviewer', map)).toBeUndefined()
+    // exact length match works
+    expect(matchByKeyword('reviewer-v2', map)).toEqual(map[0])
+    // teammate name longer than keyword containing it -> matches (substring)
+    expect(matchByKeyword('reviewer-v2-extra', map)).toEqual(map[0])
+  })
+
+  it('longest keyword wins among multiple matches', () => {
+    const map = [nm('dev', sz), nm('reviewer', zai)]
+    // dev-reviewer matches both, but reviewer (8 chars) > dev (3 chars)
+    expect(matchByKeyword('dev-reviewer', map)).toEqual(map[1])
+    expect(matchByKeyword('dev-core', map)).toEqual(map[0])
+  })
+
+  it('equal-length keywords: first occurrence wins (deterministic)', () => {
+    const map = [nm('dev', sz), nm('fix', zai)]
+    // dev-fix matches both at 3 chars; first in the map wins
+    expect(matchByKeyword('dev-fix', map)).toEqual(map[0])
+  })
+
+  it('nested keywords: the full name as keyword beats its substrings', () => {
+    const map = [nm('plan', sz), nm('plan-reviewer', zai)]
+    // plan-reviewer (14 chars) > plan (4 chars)
+    expect(matchByKeyword('plan-reviewer', map)).toEqual(map[1])
+    expect(matchByKeyword('plan-only', map)).toEqual(map[0])
+  })
+
+  it('exact name as keyword is a special case of keyword matching', () => {
+    const map = [nm('researcher', sz)]
+    expect(matchByKeyword('researcher', map)).toEqual(map[0])
+    expect(matchByKeyword('researcher-writer', map)).toEqual(map[0])
   })
 
   it('accepts a valid map whose routes all come from the candidate list', () => {
@@ -408,16 +446,7 @@ describe('by-name mapping (S-09)', () => {
     expect(report.structural[0]).toContain('needs both provider and model')
   })
 
-  it('accepts several rows sharing one listed route (B: duplicates by name only)', () => {
-    const report = validateStrategyConfig({
-      ...base,
-      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
-      nameMap: [nm('researcher', sz), nm('coder', sz)],
-    })
-    expect(report.structural).toEqual([])
-  })
-
-  it('refuses duplicate names, half-filled routes, and illegal names', () => {
+  it('refuses duplicate keywords, half-filled routes, and illegal keywords', () => {
     const listed = { ...base, priority: [
       { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
       { provider: 'zai', model: 'glm-5.3', reasoningEffort: '' },
@@ -431,11 +460,29 @@ describe('by-name mapping (S-09)', () => {
     })
     expect(half.structural[0]).toContain('nameMap[0]')
 
-    for (const bad of ['lead', 'Dev', 'a'.repeat(65)]) {
+    for (const bad of ['lead', 'Dev', 'a', 'a'.repeat(65), 'dev 2']) {
       const report = validateStrategyConfig({ ...listed, nameMap: [nm(bad, sz)] })
       expect(report.structural).toHaveLength(1)
       expect(report.structural[0]).toContain(bad === 'a'.repeat(65) ? '64' : `"${bad}"`)
     }
+  })
+
+  it('accepts several rows sharing one listed route (duplicates by keyword only)', () => {
+    const report = validateStrategyConfig({
+      ...base,
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [nm('researcher', sz), nm('coder', sz)],
+    })
+    expect(report.structural).toEqual([])
+  })
+
+  it('accepts a keyword that is a substring of another keyword (longest wins resolves)', () => {
+    const report = validateStrategyConfig({
+      ...base,
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [nm('dev', sz), nm('dev-core', sz)],
+    })
+    expect(report.structural).toEqual([])
   })
 
   it('refuses maps longer than 16 entries', () => {

@@ -33,7 +33,7 @@ export interface PriorityEntryView {
 
 /** One `nameMap` row as the configuration schema materializes it (ADR 0006). */
 export interface NameMapEntryView {
-  /** Teammate name this row matches exactly (official lower-kebab, never `lead`). */
+  /** Role keyword this row matches by substring inclusion (lower-kebab, 2-64 chars, never `lead`). */
   name: string
   /** Registered provider id. */
   provider: string
@@ -144,10 +144,10 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
   }
   const names = new Set<string>()
   nameMap.forEach((entry, index) => {
-    if (!isValidTeammateName(entry.name)) {
+    if (!isValidKeyword(entry.name)) {
       structural.push(entry.name.length > 64
         ? `dsh-subagent-plus: nameMap[${index}] name exceeds 64 characters`
-        : `dsh-subagent-plus: nameMap[${index}] is not a legal teammate name ("${entry.name}")`)
+        : `dsh-subagent-plus: nameMap[${index}] is not a legal role keyword ("${entry.name}")`)
       return
     }
     if (entry.provider === '' || entry.model === '') {
@@ -169,30 +169,42 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
   return { structural, degraded }
 }
 
-const TEAMMATE_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const KEYWORD_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 /**
- * Whether `name` is a legal model-facing teammate name: official lower-kebab,
- * at most 64 characters, never the reserved `lead` (the Team lead is only
- * addressable implicitly). An illegal name can never match a spawned teammate,
- * so configuration rows carrying one refuse to load.
- * @param name - candidate row name.
- * @returns whether the name could ever match.
+ * Whether `keyword` is a legal role keyword (ADR 0008): official lower-kebab
+ * substring, at least 2 characters (a single character would match almost
+ * every teammate name), at most 64 characters, never the reserved `lead`.
+ * @param keyword - candidate row keyword.
+ * @returns whether the keyword is usable for substring matching.
  */
-export function isValidTeammateName(name: string): boolean {
-  return name !== 'lead' && name.length <= 64 && TEAMMATE_NAME_PATTERN.test(name)
+export function isValidKeyword(keyword: string): boolean {
+  return keyword !== 'lead' && keyword.length >= 2 && keyword.length <= 64 && KEYWORD_PATTERN.test(keyword)
 }
 
 /**
- * Exact-match a subagent's team name against the by-name mapping (ADR 0006);
- * the first hit wins (duplicate names refuse to load, so at most one row can
- * ever match).
- * @param name - team name of the subagent being routed.
+ * Match a subagent's team name against the role-keyword mapping (ADR 0008):
+ * every row whose keyword is a substring of the team name is a candidate, and
+ * the longest keyword wins (the most specific role intent). Equal-length
+ * keywords resolve by first occurrence in the map (deterministic). An exact
+ * name match is the degenerate case where the keyword equals the full team
+ * name — no other keyword can be longer, so it always wins.
+ * @param teammateName - team name of the subagent being routed.
  * @param map - mapping rows in configuration order.
- * @returns the matched row, or undefined to fall through to the strategy chain.
+ * @returns the best-matching row, or undefined to fall through to the strategy chain.
  */
-export function matchByName(name: string, map: readonly NameMapEntryView[]): NameMapEntryView | undefined {
-  return map.find(entry => entry.name === name)
+export function matchByKeyword(teammateName: string, map: readonly NameMapEntryView[]): NameMapEntryView | undefined {
+  let best: NameMapEntryView | undefined
+  let bestLength = 0
+  for (const entry of map) {
+    // bestLength starts at 0, so an empty keyword (mid-session hand-edit)
+    // never wins — it would need length > 0 to beat the initial value.
+    if (teammateName.includes(entry.name) && entry.name.length > bestLength) {
+      best = entry
+      bestLength = entry.name.length
+    }
+  }
+  return best
 }
 
 /**

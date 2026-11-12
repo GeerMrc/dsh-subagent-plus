@@ -20,7 +20,7 @@ import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
 import { routeId } from '../pin.js'
-import { isValidTeammateName, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
+import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
 import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
@@ -486,7 +486,7 @@ function EditorRoutes(props: EditorProps) {
                     candidate.provider === row.provider && candidate.model === row.model) ?? null
                   const duplicate = row.name !== '' && draft.nameMap.some((other, otherIndex) =>
                     otherIndex !== index && other.name === row.name)
-                  const nameInvalid = duplicate || !isValidTeammateName(row.name)
+                  const nameInvalid = duplicate || !isValidKeyword(row.name)
                   const routeIncomplete = row.provider === '' || row.model === ''
                   const dangling = !routeIncomplete && listedHit === null
                   const currentLabel = listedHit !== null

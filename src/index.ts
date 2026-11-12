@@ -63,7 +63,7 @@ import {
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
-  matchByName,
+  matchByKeyword,
   pinnedNotice,
   pinFallbackNotice,
   pinSkippedNotice,
@@ -245,7 +245,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (membership === undefined) return undefined
     const name = membership.name
     if (name === undefined || name === '') return undefined
-    const row = matchByName(name, config.nameMap)
+    const row = matchByKeyword(name, config.nameMap)
     if (row === undefined) return undefined
     // ADR 0007 runtime defense: the boot gate refuses dangling or half-filled
     // rows, but a committed settings edit can land one mid-session (the live
@@ -384,7 +384,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       if (!forkNameWarned && config.nameMap.length > 0) {
         const teams = agentTeamsOf(ctx)
         const name = teams?.tryMembership(agent)?.name
-        if (name !== undefined && matchByName(name, config.nameMap) !== undefined) {
+        if (name !== undefined && matchByKeyword(name, config.nameMap) !== undefined) {
           forkNameWarned = true
           ctx.logger.warn(`dsh-subagent-plus: by-name row "${name}" matches a fork teammate; fork children keep their resolved route (enable pinForkChildren to route them)`)
         }
