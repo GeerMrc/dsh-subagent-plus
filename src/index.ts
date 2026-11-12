@@ -131,6 +131,27 @@ interface AgentTeamsLike {
   tryMembership(agent: object): { name?: string } | undefined
 }
 
+/** Structural view of the optional `agentDefaultModel` service (ADR 0009):
+ *  only currentSelection() is consumed for conflict detection; absent service
+ *  means no default-model mechanism to defend against. */
+interface AgentDefaultModelLike {
+  currentSelection(): { provider: string; model: string } | undefined
+}
+
+/** Guarded optional consumption of agentDefaultModel (ADR 0009 C/A'). */
+function agentDefaultModelOf(ctx: Context): AgentDefaultModelLike | undefined {
+  let service: unknown
+  try {
+    service = ctx.get('agentDefaultModel')
+  } catch {
+    return undefined
+  }
+  if (service === undefined || typeof service !== 'object') return undefined
+  return typeof (service as { currentSelection?: unknown }).currentSelection === 'function'
+    ? service as AgentDefaultModelLike
+    : undefined
+}
+
 /** Guarded optional consumption: undefined when the Team bundle is not loaded
  *  (never a hard inject — the plugin must load in Team-less profiles). */
 function agentTeamsOf(ctx: Context): AgentTeamsLike | undefined {
@@ -295,6 +316,36 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return undefined
   }
 
+  /**
+   * ADR 0009 A': when the resolved route equals the host default model and
+   * the agent's creation options carry a different inherited route, rewrite
+   * to the inherited route — the rc.3+ step-preparation invariant demands
+   * proposed === fixed, and the default model is the divergence source.
+   * Returns undefined when no correction is needed (behavior unchanged).
+   */
+  const defaultModelFallback = (ctx: Context, resolved: LlmCallConfig, agent: Agent): LlmCallConfig | undefined => {
+    const defaults = agentDefaultModelOf(ctx)
+    if (defaults === undefined) return undefined
+    let selection: { provider: string; model: string } | undefined
+    try {
+      selection = defaults.currentSelection()
+    } catch {
+      return undefined
+    }
+    if (selection === undefined) return undefined
+    const isDefault = resolved.provider === selection.provider && resolved.model === selection.model
+    if (!isDefault) return undefined
+    const inherited = agent.options
+    if (inherited?.provider === undefined || inherited?.model === undefined
+      || inherited.provider === '' || inherited.model === '') return undefined
+    const isInheritedDifferent = resolved.provider !== inherited.provider || resolved.model !== inherited.model
+    if (!isInheritedDifferent) return undefined
+    ctx.logger.warn(
+      `dsh-subagent-plus: host default model "${selection.provider}/${selection.model}" would conflict with inherited route "${inherited.provider}/${inherited.model}"; falling back to the inherited route (ADR 0009 A')`,
+    )
+    return { ...resolved, provider: inherited.provider, model: inherited.model }
+  }
+
   /** Move a child off a cooling route when another healthy candidate or the fallback exists. */
   const failoverIfCooling = async (config: PinConfig, decision: SpreadDecision): Promise<void> => {
     const plan = resolveStrategyPlan(config)
@@ -373,12 +424,21 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   const forgetRegisteredRoutes = (): void => { registeredRoutes.clear() }
   ctx.on('llm/adapters-updated', forgetRegisteredRoutes)
 
+  // Prepend (ADR 0009 B): cheap insurance against a future host moving the
+  // default-model injection to a boot-time root listener registered before us
+  // (append would let it sit outside, overriding our pin on the way back up).
   ctx.on('agent/request', async (payload, next): Promise<LlmCallConfig> => {
     const resolved = await next()
     const agent = payload.agent
     if (childDepthOf(agent) <= 0) return resolved
     const config = live.current()
     if (!config.pinForkChildren && isForkedChild(agent)) {
+      // ADR 0009 A': when the host default-model mechanism is the divergence
+      // source (resolved = default, options = inherited), fall back to the
+      // inherited route to prevent the rc.3+ step-preparation invariant from
+      // firing on a fork child the plugin would otherwise leave untouched.
+      const defaultCorrected = defaultModelFallback(ctx, resolved, agent)
+      if (defaultCorrected !== undefined) return defaultCorrected
       // A mapped name that lands on a fork teammate is never silently dead:
       // fork exclusion is a performance invariant (KV-cache reuse), so the row
       // cannot fire — say so once, naming the opt-in that routes fork children.
@@ -472,7 +532,11 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       }
       // No pinned route: the fallback is the single-model entry point.
       const fallback = await usableFallbackOf(config)
-      if (fallback === undefined) return resolved
+      if (fallback === undefined) {
+        const dmFallback = defaultModelFallback(ctx, resolved, agent)
+        if (dmFallback !== undefined) return dmFallback
+        return resolved
+      }
       const override = pinnedRoute(resolved, fallback)
       if (override === undefined) return resolved
       logRouteOnce(ctx, agent, resolved, override, 'fallback-routed')
@@ -485,7 +549,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (override === undefined) return resolved
     logRouteOnce(ctx, agent, resolved, override, decision.via === 'fallback' ? 'fallback-routed' : `assigned (${decision.strategy})`)
     return applyOverride(resolved, override)
-  })
+  }, { prepend: true })
 
   // Prepend: the official llm-retry listener (normal mode) schedules its own
   // retry without calling next(), vetoing downstream listeners until its
@@ -500,9 +564,33 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return next()
   }, { prepend: true })
 
+  let defaultModelConflictWarned = false
   ctx.on('agent/pre-step', async (payload, next): Promise<PreStepDecision> => {
     const decision = await next()
     const config = live.current()
+    // ADR 0009 C: detect the default-model conflict before the first request
+    // fires — the child inherited a route but the host default model would
+    // overwrite it in the waterfall, and rc.3+'s step-preparation invariant
+    // would reject the mismatch. Warn once per plugin lifetime.
+    if (!defaultModelConflictWarned) {
+      const agent = payload.agent
+      if (childDepthOf(agent) > 0 && agent.session?.requestHeader?.() === undefined) {
+        const defaults = agentDefaultModelOf(ctx)
+        if (defaults !== undefined) {
+          try {
+            const selection = defaults.currentSelection()
+            const inherited = agent.options
+            if (selection !== undefined && inherited?.provider && inherited?.model
+              && (selection.provider !== inherited.provider || selection.model !== inherited.model)) {
+              defaultModelConflictWarned = true
+              ctx.logger.warn(
+                `dsh-subagent-plus: child agent "${agent.id}" inherited "${inherited.provider}/${inherited.model}" but the host default model is "${selection.provider}/${selection.model}" — the first request may conflict with step preparation (ADR 0009 C; the plugin's route override will correct it when it runs)`,
+              )
+            }
+          } catch { /* structural probe failed; not a conflict signal */ }
+        }
+      }
+    }
     if (!config.showNotice) return decision
     if (decision.kind === 'reject' || payload.signal.aborted) return decision
     // The loop skips an empty first step and an emptied offered continuation.
@@ -675,8 +763,20 @@ function parentRouteOf(ctx: Context, agent: Agent): RouteFields | undefined {
     return undefined
   }
   if (sessions === undefined) return undefined
-  return sessions.get(parentId)?.requestHeader()?.config
+  try {
+    return sessions.get(parentId)?.requestHeader()?.config
+  } catch {
+    // ADR 0009 d5: the private sessions surface may drift on host upgrades;
+    // degrade silently (respectExplicit falls back to strategy) with a
+    // one-time warning rather than crashing the request.
+    if (!parentRouteDriftWarned) {
+      parentRouteDriftWarned = true
+      ctx.logger.warn('dsh-subagent-plus: reading the parent session route failed (host surface drift); respectExplicit falls back to the strategy chain')
+    }
+    return undefined
+  }
 }
+let parentRouteDriftWarned = false
 
 /** One notice per agent per distinct pin target (pinned strategy and fallback). */
 const noticedLabel = new WeakMap<object, string>()
@@ -692,8 +792,13 @@ async function routeRegistered(ctx: Context, provider: string, model: string): P
     if (!llm.listProviders().some(candidate => candidate.id === provider)) return false
     const models = await llm.listModels(provider)
     if (!models.some(candidate => candidate.id === model)) return false
-  } catch {
-    return false
+  } catch (error: unknown) {
+    // ADR 0009 d6: only a confirmed missing API (the method doesn't exist)
+    // proves the route unregistered; any other failure is treated as
+    // registered (conservative — a false "registered" costs one extra
+    // catalogue check, a false "unregistered" silently disables routing).
+    if (error instanceof TypeError) return false
+    return true
   }
   registeredRoutes.add(routeKey({ provider, model }))
   return true
