@@ -4,63 +4,47 @@
  * children over several candidate routes (round-robin / random / priority)
  * with health-aware failover and an optional last-resort fallback route.
  *
- * Covers both delegation paths the shipped composition leaves unpinnable in
- * 0.2.0-rc.2: `subagent` tool children in Sessions that never sampled the
- * model-selection policy (resumed or pre-setting Sessions), and Agent Teams
- * teammates spawned via `spawn_teammate`, which carries no model parameter at
- * all. Top-level agents keep the Session's own model selection untouched;
- * fork children are excluded by default to preserve their KV-cache route
- * reuse.
+ * Architecture (ADR 0010): routes are selected at agent creation time via
+ * `agent.model.select()` — the official API for pre-step model choices on
+ * 0.2.2+ hosts where the `agent/request` waterfall may no longer change
+ * provider/model/effort. The plugin listens for `agent/created`, matches the
+ * teammate's name against role-keyword rows, pre-validates the route, and
+ * records the selection before the first step's preparation captures it.
  *
- * Routes apply on the `agent/request` waterfall after deeper listeners, so an
- * explicit per-call selection made by the delegating model is also
- * overridden; a spread strategy honours it when `respectExplicit` is on
- * (the pinned strategy is a deliberate forced assignment, not an allowlist).
- * A spread strategy decides once per child on
- * its first request and keeps that route for the child's lifetime; only a
- * route entering cooldown moves the child to the next healthy candidate, and
- * the configured fallback route answers when no candidate is usable.
+ * Health-aware failover operates at step boundaries: `agent/request-error`
+ * records failures and calls `select()` to swap to the next healthy route
+ * for the next step; `agent/pre-step` re-evaluates cooled routes the same
+ * way. Mid-step route changes are impossible on 0.2.2+ hosts (retries keep
+ * the captured selection — a host invariant, not a plugin limitation).
  *
- * Failures are observed on `agent/request-error` and always delegated, so the
- * official retry plugin keeps every retry decision; the retry's re-dispatched
- * `agent/request` is where a cooled route is swapped.
- *
- * Every settings-page-editable field is volatile: configuration is read
- * through a {@link LivePinConfig} on each decision, so a committed settings
- * change reaches the next child request without restarting the plugin (and
- * without resetting health, rotation, or sticky decisions).
+ * Top-level agents are never touched; fork children are excluded by default
+ * to preserve KV-cache route reuse. The `agent/request` listener remains as
+ * a pass-through shell for waterfall-chain completeness.
  *
  * @module dsh-subagent-plus
  */
 import type { Context } from '@deepseek-ai/cordis'
-// Ambient event declarations for `agent/request`, `agent/request-error`, and `agent/pre-step`.
 import type {} from '@deepseek-ai/dsh-agent'
-// Ambient service typing for `ctx.llm` plus the call-config types.
 import type {} from '@deepseek-ai/dsh-llm'
 import type { Agent, PreStepDecision, RequestErrorAction } from '@deepseek-ai/dsh-agent'
-import type { LlmCallConfig, LlmFailure, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig, LlmFailure } from '@deepseek-ai/dsh-llm'
 import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
-// Ambient `AgentOptions.subagentDepth` augmentation owned by the subagent runtime.
 import type {} from '@deepseek-ai/dsh-subagent'
 import {
   childDepthOf,
   isForkedChild,
-  pinnedRoute,
   resolvePinRoute,
   routeId,
-  type PinOverride,
   type PinRoute,
   type RouteFields,
 } from './pin.js'
 import {
-  assignedNotice,
   byNameFallbackNotice,
   byNameNotice,
   byNameSkippedNotice,
   candidateRoutes,
   classifyFailure,
   createSelectionState,
-  explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
   isValidKeyword,
@@ -68,7 +52,6 @@ import {
   pinnedNotice,
   pinFallbackNotice,
   pinSkippedNotice,
-  reassignedNotice,
   resolveStrategyPlan,
   routeKey,
   RouteHealth,
@@ -92,68 +75,37 @@ export const usage = [
   'Route every delegated child agent (subagent delegations and Agent Teams teammates) by strategy: pin one LLM route, or spread children over candidate routes (round-robin / random / priority) with health-aware failover and an optional fallback route.',
 ].join('\n')
 
-/**
- * A spread strategy's per-child routing record. `via` distinguishes a
- * strategy assignment from a fallback landing so the transcript notice names
- * what actually happened.
- */
+/** A spread strategy's per-child routing record (kept for health tracking). */
 interface SpreadDecision {
   kind: 'assigned'
   strategy: SpreadStrategy
-  /** Whether the route came from the strategy or from the fallback. */
   via: 'strategy' | 'fallback'
-  /** Route every request of this child runs; replaced only by failover. */
   route: PinRoute
-  /** Notice texts already appended to this child's transcript. */
   noticed: Set<string>
-  /** Failover awaiting its transcript notice. */
-  pendingFailover?: { from: PinRoute; to: PinRoute; code: string }
 }
 
 type Decision = { kind: 'explicit'; route: PinRoute } | SpreadDecision
 
-/**
- * A by-name child's forced routing record (ADR 0006). Sticky for the child's
- * lifetime like a spread decision: later map edits never move a decided child.
- */
+/** A by-name child's forced routing record. */
 interface ByNameDecision {
   kind: 'by-name'
-  /** Teammate name that matched the mapped row. */
   name: string
-  /** Mapped route every request of this child runs; per-request usability
-   * checks (registration, cooling) evade to the fallback and recover here. */
   route: PinRoute
 }
 
-/** Structural view of the optional `agentTeams` service (ADR 0006): only the
- *  teammate name is consumed; an absent service leaves the mapping dormant. */
+/** Structural view of the optional `agentTeams` service. */
 interface AgentTeamsLike {
   tryMembership(agent: object): { name?: string } | undefined
 }
 
-/** Structural view of the optional `agentDefaultModel` service (ADR 0009):
- *  only currentSelection() is consumed for conflict detection; absent service
- *  means no default-model mechanism to defend against. */
-interface AgentDefaultModelLike {
-  currentSelection(): { provider: string; model: string } | undefined
+/** Structural view of `agent.model` (ADR 0010): the official per-Agent model
+ *  selection API on 0.2.2+ hosts. `select()` records a durable choice that
+ *  step preparation reads before the first request. */
+interface AgentModelLike {
+  select(selection: { provider: string; model: string; reasoningEffort?: string }): void
+  current(): { provider: string; model: string; reasoningEffort?: string } | undefined
 }
 
-/** Guarded optional consumption of agentDefaultModel (ADR 0009 C/A'). */
-function agentDefaultModelOf(ctx: Context): AgentDefaultModelLike | undefined {
-  let service: unknown
-  try {
-    service = ctx.get('agentDefaultModel')
-  } catch {
-    return undefined
-  }
-  if (service === undefined || typeof service !== 'object') return undefined
-  return typeof (service as { currentSelection?: unknown }).currentSelection === 'function'
-    ? service as AgentDefaultModelLike
-    : undefined
-}
-
-/** Guarded optional consumption: undefined when the Team bundle is not loaded
- *  (never a hard inject — the plugin must load in Team-less profiles). */
 function agentTeamsOf(ctx: Context): AgentTeamsLike | undefined {
   let service: unknown
   try {
@@ -167,10 +119,16 @@ function agentTeamsOf(ctx: Context): AgentTeamsLike | undefined {
     : undefined
 }
 
+/** Read agent.model if present (0.2.2+ hosts; older hosts lack the property). */
+function agentModelOf(agent: Agent): AgentModelLike | undefined {
+  const model = (agent as { model?: unknown }).model
+  if (model === undefined || typeof model !== 'object') return undefined
+  return typeof (model as { select?: unknown }).select === 'function'
+    ? model as AgentModelLike
+    : undefined
+}
+
 export function apply(ctx: Context, entry: PinConfigRuntime): void {
-  // Structural problems refuse to load; cross-field combinations that a
-  // settings page could persist degrade with a warning instead of throwing —
-  // throwing on load would brick the plugin on the next Host restart.
   const boot = materializeConfig(entry)
   const bootReport = validateStrategyConfig(boot)
   if (bootReport.structural.length > 0) {
@@ -184,10 +142,6 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       ctx.logger.warn(message)
     }
   }
-  // Structural findings cannot reach the boot gate after startup — a committed
-  // settings edit lands them live (the runtime defense contains the behaviour),
-  // so each distinct finding is named once, fail-loud, instead of passing in
-  // silence (ADR 0007 decision 2).
   const warnedStructural = new Set<string>()
   const warnStructural = (config: PinConfig): void => {
     for (const message of validateStrategyConfig(config).structural) {
@@ -198,9 +152,6 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   }
   warnDegraded(boot)
 
-  // Read-time configuration: every decision below re-materializes, so a
-  // committed settings change reaches the next child request without a
-  // plugin reload (health, rotation, and sticky decisions survive edits).
   const live = new LivePinConfig(entry, error => {
     ctx.logger.warn(`dsh-subagent-plus: the committed configuration failed to materialize (${String(error)}); the last good configuration stays in effect`)
   })
@@ -230,7 +181,6 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   }
   const healthyNow = (config: PinConfig) => (route: PinRoute): boolean =>
     config.cooldownMs === 0 || health.isHealthy(route, Date.now())
-  /** The fallback narrowed by health, and by registration under `failOpen`. */
   const usableFallbackOf = async (config: PinConfig): Promise<PinRoute | undefined> => {
     const fallback = usableFallback(fallbackRouteOf(config), healthyNow(config))
     if (fallback === undefined) return undefined
@@ -238,19 +188,14 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return fallback
   }
 
-  /** The mapped route of one `nameMap` row, carrying an optional effort. */
   const rowRoute = (row: NameMapEntryView): PinRoute => ({
     provider: row.provider,
     model: row.model,
     ...(row.reasoningEffort === '' ? {} : { reasoningEffort: row.reasoningEffort }),
   })
 
-  /**
-   * Decide one child's by-name route: an exact teammate-name hit (ADR 0006)
-   * is a forced assignment outranking the strategy chain. Decided once per
-   * child and sticky; every later request re-checks only the mapped route's
-   * usability (registration, cooling), evading to the fallback per request.
-   */
+  // ─── Decision logic (pure, reused by created + step-boundary select) ───
+
   const decideByName = (config: PinConfig, agent: Agent): ByNameDecision | undefined => {
     if (config.nameMap.length === 0) return undefined
     const memo = byNameDecisions.get(agent)
@@ -269,11 +214,6 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (name === undefined || name === '') return undefined
     const row = matchByKeyword(name, config.nameMap)
     if (row === undefined) return undefined
-    // ADR 0007 runtime defense: the boot gate refuses dangling or half-filled
-    // rows, but a committed settings edit can land one mid-session (the live
-    // source only re-checks the schema). A row whose route is incomplete or no
-    // longer listed is a miss — the child falls to the strategy chain, the
-    // "empty pin assigns nothing" precedent. Never memoized as a hit.
     if (!isValidKeyword(row.name) || row.provider === '' || row.model === ''
       || !config.priority.some(listed => listed.provider === row.provider && listed.model === row.model)) {
       return undefined
@@ -283,20 +223,11 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return decision
   }
 
-  /** Decide a spread child's route once; later calls return the memoized decision. */
   const decideFor = async (config: PinConfig, agent: Agent): Promise<Decision | undefined> => {
     const plan = resolveStrategyPlan(config)
     if (plan.kind !== 'spread') return undefined
     const memo = decisions.get(agent)
     if (memo !== undefined) return memo
-    if (config.respectExplicit) {
-      const explicit = explicitRouteOf(agent.options, parentRouteOf(ctx, agent))
-      if (explicit !== undefined) {
-        const decision: Decision = { kind: 'explicit', route: explicit }
-        decisions.set(agent, decision)
-        return decision
-      }
-    }
     const route = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random)
     if (route !== undefined) {
       const decision: SpreadDecision = { kind: 'assigned', strategy: plan.strategy, via: 'strategy', route, noticed: new Set() }
@@ -311,61 +242,98 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     }
     if (!noCandidateWarned) {
       noCandidateWarned = true
-      ctx.logger.warn(`dsh-subagent-plus: strategy "${plan.strategy}" found no usable candidate or fallback route; child requests keep their resolved route`)
+      ctx.logger.warn(`dsh-subagent-plus: strategy "${plan.strategy}" found no usable candidate or fallback route; child keeps its resolved route`)
     }
     return undefined
   }
 
-  /**
-   * ADR 0009 A': when the resolved route equals the host default model and
-   * the agent's creation options carry a different inherited route, rewrite
-   * to the inherited route — the rc.3+ step-preparation invariant demands
-   * proposed === fixed, and the default model is the divergence source.
-   * Returns undefined when no correction is needed (behavior unchanged).
-   */
-  const defaultModelFallback = (ctx: Context, resolved: LlmCallConfig, agent: Agent): LlmCallConfig | undefined => {
-    const defaults = agentDefaultModelOf(ctx)
-    if (defaults === undefined) return undefined
-    let selection: { provider: string; model: string } | undefined
-    try {
-      selection = defaults.currentSelection()
-    } catch {
-      return undefined
+  /** Resolve the intended route for one child (byName > pinned > spread). */
+  const resolveIntendedRoute = async (config: PinConfig, agent: Agent): Promise<PinRoute | undefined> => {
+    if (childDepthOf(agent) <= 0) return undefined
+    if (!config.pinForkChildren && isForkedChild(agent)) return undefined
+    const byName = decideByName(config, agent)
+    if (byName !== undefined) {
+      // Health/registration check at select-time (ADR 0010 step-boundary semantics)
+      if (config.failOpen && !await routeRegistered(ctx, byName.route.provider, byName.route.model)) {
+        const key = routeKey(byName.route)
+        if (!unregisteredNameRoutes.has(key)) {
+          unregisteredNameRoutes.add(key)
+          ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; falling back or keeping resolved route`)
+        }
+        return await usableFallbackOf(config) ?? undefined
+      }
+      if (!healthyNow(config)(byName.route)) {
+        return await usableFallbackOf(config) ?? byName.route
+      }
+      return byName.route
     }
-    if (selection === undefined) return undefined
-    const isDefault = resolved.provider === selection.provider && resolved.model === selection.model
-    if (!isDefault) return undefined
-    const inherited = agent.options
-    if (inherited?.provider === undefined || inherited?.model === undefined
-      || inherited.provider === '' || inherited.model === '') return undefined
-    const isInheritedDifferent = resolved.provider !== inherited.provider || resolved.model !== inherited.model
-    if (!isInheritedDifferent) return undefined
-    ctx.logger.warn(
-      `dsh-subagent-plus: host default model "${selection.provider}/${selection.model}" would conflict with inherited route "${inherited.provider}/${inherited.model}"; falling back to the inherited route (ADR 0009 A')`,
-    )
-    return { ...resolved, provider: inherited.provider, model: inherited.model }
+    const plan = resolveStrategyPlan(config)
+    if (plan.kind === 'pinned') {
+      const pin = resolvePin(config)
+      if (pin === undefined) {
+        const fallback = await usableFallbackOf(config)
+        return fallback ?? undefined
+      }
+      if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
+        if (!unregisteredPinWarned) {
+          unregisteredPinWarned = true
+          ctx.logger.warn(`dsh-subagent-plus: pinned route "${routeId(pin)}" is not registered; child uses the fallback or keeps its resolved route`)
+        }
+        const fallback = await usableFallbackOf(config)
+        return fallback ?? undefined
+      }
+      if (!healthyNow(config)(pin)) {
+        const fallback = await usableFallbackOf(config)
+        return fallback ?? pin
+      }
+      return pin
+    }
+    const decision = await decideFor(config, agent)
+    if (decision === undefined || decision.kind === 'explicit') return undefined
+    return decision.route
   }
 
-  /** Move a child off a cooling route when another healthy candidate or the fallback exists. */
-  const failoverIfCooling = async (config: PinConfig, decision: SpreadDecision): Promise<void> => {
-    const plan = resolveStrategyPlan(config)
-    if (plan.kind !== 'spread' || config.cooldownMs === 0) return
-    const cooling = health.cooldown(decision.route, Date.now())
-    if (cooling === undefined) return
-    const nextCandidate = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
-    const next = nextCandidate ?? await usableFallbackOf(config)
-    if (next === undefined || routeKeyEquals(next, decision.route)) return
-    decision.pendingFailover = { from: decision.route, to: next, code: cooling.code }
-    ctx.logger.warn(
-      `dsh-subagent-plus: route "${routeId(decision.route)}" is cooling down (${cooling.code}); `
-      + `child agent continues with "${routeId(next)}"`,
-    )
-    decision.route = next
-    // Keep `via` truthful for the redundant-notice suppression and any future
-    // consumer: a hop onto a candidate is a strategy assignment, onto the
-    // fallback a fallback one.
-    decision.via = nextCandidate !== undefined ? 'strategy' : 'fallback'
-  }
+  // ─── ADR 0010 M3: agent/created listener — select() before step prep ───
+
+  ctx.on('agent/created', async (payload) => {
+    const agent = payload.agent
+    if (childDepthOf(agent) <= 0) return
+    const model = agentModelOf(agent)
+    if (model === undefined) return // Pre-0.2.2 host: no select() API; old agent/request fallback doesn't exist either (deprecated).
+    const config = live.current()
+    // Fork children are excluded unless pinForkChildren (same semantics as before).
+    if (!config.pinForkChildren && isForkedChild(agent)) {
+      // A mapped name on a fork teammate: warn once (same as before).
+      if (!forkNameWarned && config.nameMap.length > 0) {
+        const teams = agentTeamsOf(ctx)
+        const name = teams?.tryMembership(agent)?.name
+        if (name !== undefined && matchByKeyword(name, config.nameMap) !== undefined) {
+          forkNameWarned = true
+          ctx.logger.warn(`dsh-subagent-plus: role keyword "${name}" matches a fork teammate; fork children keep their inherited route (enable pinForkChildren to route them)`)
+        }
+      }
+      return
+    }
+    // Resolve the intended route (keyword > pinned > spread, with health/registration checks).
+    // ADR 0010 d2: ANY throw here rolls back the entire agent creation —
+    // every async operation must be caught and degraded.
+    try {
+      const route = await resolveIntendedRoute(config, agent)
+      if (route === undefined) return
+      const selection: { provider: string; model: string; reasoningEffort?: string } = {
+        provider: route.provider,
+        model: route.model,
+        ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort }),
+      }
+      model.select(selection)
+      ctx.logger.info(`dsh-subagent-plus: selected route "${routeId(route)}" for child agent at creation (ADR 0010)`)
+    } catch (error: unknown) {
+      // ADR 0010 d2 hard requirement: degrade silently, never propagate.
+      ctx.logger.warn(`dsh-subagent-plus: route selection at agent creation failed (${String(error)}); the child keeps its inherited route`)
+    }
+  })
+
+  // ─── ADR 0010 M4: health failover at step boundaries ───
 
   const recordFailure = (config: PinConfig, agent: Agent, provider: string, failure: LlmFailure): void => {
     const failureClass = classifyFailure(failure.code, failure.status)
@@ -373,11 +341,6 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const fallback = fallbackRouteOf(config)
     const failurePlan = resolveStrategyPlan(config)
     const failurePin = failurePlan.kind === 'pinned' ? resolvePin(config) : undefined
-    // The provider gate covers every route this configuration can assign:
-    // candidates, the fallback, the pin under the pinned strategy, and the
-    // by-name rows. Under ADR 0007 mapped routes come from the candidate list,
-    // so the nameMap clause is redundant for valid configs — it stays as the
-    // accounting defense for mid-session structurally-invalid commits.
     if (!candidatesOf(config).some(route => route.provider === provider)
       && fallback?.provider !== provider && failurePin?.provider !== provider
       && !config.nameMap.some(row => row.provider === provider)) return
@@ -391,402 +354,114 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const decision = decisions.get(agent)
     const byName = byNameDecisions.get(agent)
     let model: string | undefined
-    // A by-name child has no strategy decision entry; attribute to its mapped
-    // route first, exactly like the pin attribution below it.
     if (byName !== undefined && byName.route.provider === provider) {
       model = byName.route.model
     } else if (decision !== undefined && decision.route.provider === provider) {
       model = decision.route.model
     } else {
-      const plan = resolveStrategyPlan(config)
-      const pin = plan.kind === 'pinned' ? resolvePin(config) : undefined
-      // A pinned child has no decision entry: attribute to the pinned route
-      // first, so a same-provider fallback is never cooled for the pin's
-      // failure; the fallback model applies only when the pin is unresolved.
-      model = pin?.provider === provider
-        ? pin.model
+      model = failurePin?.provider === provider
+        ? failurePin.model
         : fallback?.provider === provider
           ? fallback.model
           : undefined
     }
     if (model === undefined) model = agent.session?.requestHeader?.()?.config?.model
-    if (model === undefined) {
-      ctx.logger.debug(`dsh-subagent-plus: provider "${provider}" failed (${failure.code}) on an unknown model; health unchanged`)
-      return
-    }
+    if (model === undefined) return
     health.markRoute({ provider, model }, until, failure.code)
     ctx.logger.warn(`dsh-subagent-plus: route "${routeId({ provider, model })}" failed (${failure.code}); cooling down for ${until - now}ms`)
   }
 
-  // Adapter sets change at runtime: a memoized-registered route may have been
-  // removed. Forget the successes so the next request re-checks the catalogue
-  // (failOpen then skips the gone route instead of pinning children onto it).
-  const forgetRegisteredRoutes = (): void => { registeredRoutes.clear() }
-  ctx.on('llm/adapters-updated', forgetRegisteredRoutes)
+  /** Swap to the next healthy route for the NEXT step (ADR 0010 d3). */
+  const selectNextHealthyRoute = async (config: PinConfig, agent: Agent): Promise<void> => {
+    const model = agentModelOf(agent)
+    if (model === undefined) return
+    try {
+      const route = await resolveIntendedRoute(config, agent)
+      if (route === undefined) return
+      const current = model.current()
+      if (current !== undefined && current.provider === route.provider && current.model === route.model) return // already there
+      model.select({ provider: route.provider, model: route.model, ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort }) })
+      ctx.logger.info(`dsh-subagent-plus: step-boundary route swap to "${routeId(route)}" for the next step (ADR 0010 d3)`)
+    } catch {
+      // Degrade silently; the child keeps its current route for the next step.
+    }
+  }
 
-  // Prepend (ADR 0009 B): cheap insurance against a future host moving the
-  // default-model injection to a boot-time root listener registered before us
-  // (append would let it sit outside, overriding our pin on the way back up).
-  ctx.on('agent/request', async (payload, next): Promise<LlmCallConfig> => {
-    const resolved = await next()
-    const agent = payload.agent
-    if (childDepthOf(agent) <= 0) return resolved
-    const config = live.current()
-    if (!config.pinForkChildren && isForkedChild(agent)) {
-      // ADR 0009 A': when the host default-model mechanism is the divergence
-      // source (resolved = default, options = inherited), fall back to the
-      // inherited route to prevent the rc.3+ step-preparation invariant from
-      // firing on a fork child the plugin would otherwise leave untouched.
-      const defaultCorrected = defaultModelFallback(ctx, resolved, agent)
-      if (defaultCorrected !== undefined) return defaultCorrected
-      // A mapped name that lands on a fork teammate is never silently dead:
-      // fork exclusion is a performance invariant (KV-cache reuse), so the row
-      // cannot fire — say so once, naming the opt-in that routes fork children.
-      if (!forkNameWarned && config.nameMap.length > 0) {
-        const teams = agentTeamsOf(ctx)
-        const name = teams?.tryMembership(agent)?.name
-        if (name !== undefined && matchByKeyword(name, config.nameMap) !== undefined) {
-          forkNameWarned = true
-          ctx.logger.warn(`dsh-subagent-plus: role keyword "${name}" matches a fork teammate; fork children keep their resolved route (enable pinForkChildren to route them)`)
-        }
-      }
-      return resolved
-    }
-    // By-name mapping (ADR 0006): an exact teammate-name hit is a forced
-    // assignment that outranks the strategy chain and respectExplicit; a
-    // cooling or unregistered mapped route evades to the fallback for that
-    // request only and recovers on its own (the pin's handover semantics —
-    // no candidate re-selection, the mapped route is the child's route).
-    const byName = decideByName(config, agent)
-    if (byName !== undefined) {
-      const evadeToFallback = async (verb: string): Promise<LlmCallConfig | undefined> => {
-        const fallback = await usableFallbackOf(config)
-        if (fallback === undefined) return undefined
-        const fallbackOverride = pinnedRoute(resolved, fallback)
-        if (fallbackOverride === undefined) return resolved
-        logRouteOnce(ctx, agent, resolved, fallbackOverride, verb)
-        return applyOverride(resolved, fallbackOverride)
-      }
-      if (config.failOpen && !await routeRegistered(ctx, byName.route.provider, byName.route.model)) {
-        const key = routeKey(byName.route)
-        if (!unregisteredNameRoutes.has(key)) {
-          unregisteredNameRoutes.add(key)
-          ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; child requests use the fallback when one is usable, otherwise keep attempting the configured route (fails loudly)`)
-        }
-        const evaded = await evadeToFallback('fallback-routed (mapped route unavailable)')
-        if (evaded !== undefined) return evaded
-      }
-      if (!healthyNow(config)(byName.route)) {
-        const evaded = await evadeToFallback('fallback-routed (mapped route cooling)')
-        if (evaded !== undefined) return evaded
-      }
-      const override = pinnedRoute(resolved, byName.route)
-      if (override === undefined) return resolved
-      logRouteOnce(ctx, agent, resolved, override, `assigned by keyword "${byName.name}"`)
-      return applyOverride(resolved, override)
-    }
-    const plan = resolveStrategyPlan(config)
-    if (plan.kind === 'pinned') {
-      const pin = resolvePin(config)
-      if (pin !== undefined) {
-        const override = pinnedRoute(resolved, pin)
-        if (override !== undefined) {
-          // An unusable pin (unregistered under failOpen, or cooling while a
-          // fallback is usable) hands over to the fallback — the same
-          // "configured fallback always backs up" semantics as the spread
-          // strategies; with no usable fallback the pin stays (all-dead keeps
-          // the assigned route, like a spread child keeps its sticky one).
-          const pinFallback = async (verb: string): Promise<{ moved: false } | { moved: true; config: LlmCallConfig }> => {
-            const fallback = await usableFallbackOf(config)
-            if (fallback === undefined) return { moved: false }
-            const fallbackOverride = pinnedRoute(resolved, fallback)
-            // An undefined override means the child already runs the fallback
-            // — the handover is done; keep the resolved config as-is.
-            if (fallbackOverride === undefined) return { moved: true, config: resolved }
-            logRouteOnce(ctx, agent, resolved, fallbackOverride, verb)
-            return { moved: true, config: applyOverride(resolved, fallbackOverride) }
-          }
-          if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
-            // One line per lifetime: an unregistered pin fails every request,
-            // and the registration cache below memoizes only successes, so
-            // without this latch every child request re-queries the catalogue
-            // and re-logs the same warning.
-            if (!unregisteredPinWarned) {
-              unregisteredPinWarned = true
-              ctx.logger.warn(
-                `dsh-subagent-plus: pinned route "${routeId(pin)}" is not registered; `
-                + `child requests use the fallback when one is usable, otherwise keep attempting the configured route (fails loudly)`,
-              )
-            }
-            const unavailable = await pinFallback('fallback-routed (pin unavailable)')
-            if (unavailable.moved) return unavailable.config
-          }
-          if (!healthyNow(config)(pin)) {
-            const cooling = await pinFallback('fallback-routed (pin cooling)')
-            if (cooling.moved) return cooling.config
-          }
-          logRouteOnce(ctx, agent, resolved, override, 'pinned')
-          return applyOverride(resolved, override)
-        }
-        return resolved
-      }
-      // No pinned route: the fallback is the single-model entry point.
-      const fallback = await usableFallbackOf(config)
-      if (fallback === undefined) {
-        const dmFallback = defaultModelFallback(ctx, resolved, agent)
-        if (dmFallback !== undefined) return dmFallback
-        return resolved
-      }
-      const override = pinnedRoute(resolved, fallback)
-      if (override === undefined) return resolved
-      logRouteOnce(ctx, agent, resolved, override, 'fallback-routed')
-      return applyOverride(resolved, override)
-    }
-    const decision = await decideFor(config, agent)
-    if (decision === undefined || decision.kind === 'explicit') {
-      const dmFallback = defaultModelFallback(ctx, resolved, agent)
-      if (dmFallback !== undefined) return dmFallback
-      return resolved
-    }
-    await failoverIfCooling(config, decision)
-    const override = pinnedRoute(resolved, decision.route)
-    if (override === undefined) {
-      const dmFallback = defaultModelFallback(ctx, resolved, agent)
-      if (dmFallback !== undefined) return dmFallback
-      return resolved
-    }
-    logRouteOnce(ctx, agent, resolved, override, decision.via === 'fallback' ? 'fallback-routed' : `assigned (${decision.strategy})`)
-    return applyOverride(resolved, override)
-  }, { prepend: true })
-
-  // Prepend: the official llm-retry listener (normal mode) schedules its own
-  // retry without calling next(), vetoing downstream listeners until its
-  // retries are exhausted. Recording first keeps the health table current on
-  // every failed attempt, so the retry re-enters agent/request against a
-  // cooled route and the failover below takes effect mid-child.
+  // Failure recording + step-boundary select (prepend: before llm-retry vetoes).
   ctx.on('agent/request-error', async (payload, next): Promise<RequestErrorAction> => {
     const config = live.current()
     const routed = resolveStrategyPlan(config).kind === 'spread' || fallbackRouteOf(config) !== undefined
       || config.nameMap.length > 0
-    if (routed && config.cooldownMs > 0) recordFailure(config, payload.agent, payload.provider, payload.failure)
+    if (routed && config.cooldownMs > 0) {
+      recordFailure(config, payload.agent, payload.provider, payload.failure)
+      // ADR 0010 d3: select the next healthy route for the next step.
+      if (childDepthOf(payload.agent) > 0) {
+        await selectNextHealthyRoute(config, payload.agent)
+      }
+    }
     return next()
   }, { prepend: true })
 
-  let defaultModelConflictWarned = false
+  // ─── ADR 0010 M6: pre-step notices (read modelSelection truth) ───
+
   ctx.on('agent/pre-step', async (payload, next): Promise<PreStepDecision> => {
     const decision = await next()
     const config = live.current()
-    // ADR 0009 C: detect the default-model conflict before the first request
-    // fires — the child inherited a route but the host default model would
-    // overwrite it in the waterfall, and rc.3+'s step-preparation invariant
-    // would reject the mismatch. Warn once per plugin lifetime.
-    if (!defaultModelConflictWarned) {
-      const agent = payload.agent
-      if (childDepthOf(agent) > 0 && agent.session?.requestHeader?.() === undefined) {
-        const defaults = agentDefaultModelOf(ctx)
-        if (defaults !== undefined) {
-          try {
-            const selection = defaults.currentSelection()
-            const inherited = agent.options
-            if (selection !== undefined && inherited?.provider && inherited?.model
-              && (selection.provider !== inherited.provider || selection.model !== inherited.model)) {
-              defaultModelConflictWarned = true
-              ctx.logger.warn(
-                `dsh-subagent-plus: child agent "${agent.id}" inherited "${inherited.provider}/${inherited.model}" but the host default model is "${selection.provider}/${selection.model}" — the first request may conflict with step preparation (ADR 0009 C; the plugin's route override will correct it when it runs)`,
-              )
-            }
-          } catch { /* structural probe failed; not a conflict signal */ }
-        }
-      }
-    }
     if (!config.showNotice) return decision
     if (decision.kind === 'reject' || payload.signal.aborted) return decision
-    // The loop skips an empty first step and an emptied offered continuation.
     if (decision.messages.length === 0 && (payload.step === 1 || payload.messages.length > 0)) {
       return decision
     }
     const agent = payload.agent
     if (childDepthOf(agent) <= 0) return decision
     if (!config.pinForkChildren && isForkedChild(agent)) return decision
-    // A by-name child is not the strategy chain's business: no assignment
-    // notice from the spread path may claim it. Its own notice mirrors the
-    // request-side usability decision (an unusable mapped route reports the
-    // fallback actually running) and dedupes per agent per distinct target.
-    const byNameRouting = decideByName(config, agent)
-    if (byNameRouting !== undefined) {
-      const mappedLabel = routeId(byNameRouting.route)
-        + (byNameRouting.route.reasoningEffort === undefined ? '' : `·${byNameRouting.route.reasoningEffort}`)
-      let target: PinRoute
-      let text: string
-      if (config.failOpen && !await routeRegistered(ctx, byNameRouting.route.provider, byNameRouting.route.model)) {
-        const fallback = await usableFallbackOf(config)
-        if (fallback !== undefined) {
-          target = fallback
-          text = byNameFallbackNotice(mappedLabel, routeId(fallback))
-        } else {
-          target = byNameRouting.route
-          text = byNameSkippedNotice(byNameRouting.name, mappedLabel)
-        }
-      } else if (!healthyNow(config)(byNameRouting.route)) {
-        const fallback = await usableFallbackOf(config)
-        if (fallback !== undefined) {
-          target = fallback
-          text = byNameFallbackNotice(mappedLabel, routeId(fallback))
-        } else {
-          target = byNameRouting.route
-          text = byNameNotice(byNameRouting.name, mappedLabel)
-        }
-      } else {
-        target = byNameRouting.route
-        text = byNameNotice(byNameRouting.name, mappedLabel)
-      }
-      const targetLabel = routeId(target)
-      if (noticedLabel.get(agent) === targetLabel) return decision
-      noticedLabel.set(agent, targetLabel)
-      const notice = createUserMessage({
-        content: [{ type: 'text', text }],
-        source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(targetLabel) },
-      })
-      return { ...decision, messages: [...decision.messages, notice] }
+    // ADR 0010 d6: read the step's actual modelSelection (truth), not a derived route.
+    const modelSelection = (payload as { modelSelection?: { provider: string; model: string; reasoningEffort?: string } }).modelSelection
+    if (modelSelection === undefined) return decision
+    const currentRoute: PinRoute = {
+      provider: modelSelection.provider,
+      model: modelSelection.model,
+      ...(modelSelection.reasoningEffort === undefined ? {} : { reasoningEffort: modelSelection.reasoningEffort }),
     }
-    const plan = resolveStrategyPlan(config)
-    if (plan.kind !== 'spread') {
-      const pin = resolvePin(config)
-      let text: string | undefined
-      let target: PinRoute | undefined
-      if (pin !== undefined) {
-        // Mirrors the request-side usability decision: an unusable pin
-        // (unregistered under failOpen, or cooling) with a usable fallback
-        // must be reported as the fallback actually running.
-        if (config.failOpen && !await routeRegistered(ctx, pin.provider, pin.model)) {
-          const fallback = await usableFallbackOf(config)
-          if (fallback !== undefined) {
-            target = fallback
-            text = pinFallbackNotice(routeId(pin), routeId(fallback))
-          } else {
-            target = pin
-            text = pinSkippedNotice(routeId(pin))
-          }
-        } else if (!healthyNow(config)(pin)) {
-          const fallback = await usableFallbackOf(config)
-          if (fallback !== undefined) {
-            target = fallback
-            text = pinFallbackNotice(routeId(pin), routeId(fallback))
-          } else {
-            target = pin
-            text = pinnedNotice(routeId(pin))
-          }
-        } else {
-          target = pin
-          text = pinnedNotice(routeId(pin))
-        }
+    // Determine what notice to show based on the current route vs intent.
+    const byName = byNameDecisions.get(agent)
+    let text: string | undefined
+    if (byName !== undefined && byName.route.provider === currentRoute.provider && byName.route.model === currentRoute.model) {
+      text = byNameNotice(byName.name, routeId(currentRoute))
+    } else {
+      const plan = resolveStrategyPlan(config)
+      const pin = plan.kind === 'pinned' ? resolvePin(config) : undefined
+      if (pin !== undefined && pin.provider === currentRoute.provider && pin.model === currentRoute.model) {
+        text = pinnedNotice(routeId(currentRoute))
       } else {
         const fallback = fallbackRouteOf(config)
-        if (fallback !== undefined && healthyNow(config)(fallback)
-          && (!config.failOpen || await routeRegistered(ctx, fallback.provider, fallback.model))) {
-          target = fallback
-          text = fallbackNotice(routeId(fallback))
+        if (fallback !== undefined && fallback.provider === currentRoute.provider && fallback.model === currentRoute.model) {
+          text = fallbackNotice(routeId(currentRoute))
         }
       }
-      if (target === undefined || text === undefined) return decision
-      const targetLabel = routeId(target)
-      if (noticedLabel.get(agent) === targetLabel) return decision
-      noticedLabel.set(agent, targetLabel)
-      const notice = createUserMessage({
-        content: [{ type: 'text', text }],
-        source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(targetLabel) },
-      })
-      return { ...decision, messages: [...decision.messages, notice] }
     }
-    const routing = await decideFor(config, agent)
-    if (routing === undefined || routing.kind === 'explicit') return decision
-    let text: string
-    if (routing.pendingFailover !== undefined) {
-      const { from, to, code } = routing.pendingFailover
-      routing.pendingFailover = undefined
-      text = reassignedNotice(routeId(from), routeId(to), code)
-      // The reassignment names the new route; its plain assignment notice is redundant.
-      routing.noticed.add(assignmentText(routing, routing.route))
-    } else {
-      text = assignmentText(routing, routing.route)
-    }
-    if (routing.noticed.has(text)) return decision
-    routing.noticed.add(text)
+    if (text === undefined) return decision
+    const targetLabel = routeId(currentRoute)
+    if (noticedLabel.get(agent) === targetLabel) return decision
+    noticedLabel.set(agent, targetLabel)
     const notice = createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(routeId(routing.route)) },
+      source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(targetLabel) },
     })
     return { ...decision, messages: [...decision.messages, notice] }
   })
+
+  // ─── ADR 0010 d8: agent/request empty shell (waterfall completeness) ───
+  ctx.on('agent/request', async (payload, next): Promise<LlmCallConfig> => {
+    return await next()
+  })
+
+  // Adapter cache invalidation.
+  const forgetRegisteredRoutes = (): void => { registeredRoutes.clear() }
+  ctx.on('llm/adapters-updated', forgetRegisteredRoutes)
 }
 
-/** The transcript line naming how one decision's current route was assigned. */
-function assignmentText(decision: SpreadDecision, route: PinRoute): string {
-  return decision.via === 'fallback'
-    ? fallbackNotice(routeId(route))
-    : assignedNotice(routeId(route), decision.strategy)
-}
-
-function routeKeyEquals(left: PinRoute, right: PinRoute): boolean {
-  return left.provider === right.provider && left.model === right.model
-}
-
-function applyOverride(resolved: LlmCallConfig, override: PinOverride): LlmCallConfig {
-  if (override.kind === 'effort-only') {
-    // Config string narrowed to the branded effort id; an unsupported value
-    // fails loudly when the provider resolves the effort for this request.
-    return { ...resolved, reasoningEffort: override.reasoningEffort as ReasoningEffortId }
-  }
-  // A route change drops BOTH inherited per-request knobs: the effort (the
-  // official delegation precedent) and the maxTokens — the inherited budget is
-  // sized for the parent's model and the runtime materialises the selected
-  // model's own default only when the field is absent. Dropping maxTokens is
-  // a documented deviation from official delegation semantics (README known
-  // behaviour): an explicitly configured parent budget does not propagate to a
-  // rerouted child.
-  const { reasoningEffort: _droppedEffort, maxTokens: _droppedTokens, ...rest } = resolved
-  if (override.reasoningEffort === undefined) {
-    return { ...rest, provider: override.provider, model: override.model }
-  }
-  return {
-    ...rest,
-    provider: override.provider,
-    model: override.model,
-    reasoningEffort: override.reasoningEffort as ReasoningEffortId,
-  }
-}
-
-/**
- * The delegating Session's current route, read through the Host's session
- * store. Undefined when the child has no parent link, the store is absent
- * (headless compositions), or the parent is not loaded.
- */
-function parentRouteOf(ctx: Context, agent: Agent): RouteFields | undefined {
-  const parentId = agent.session?.header?.parentSession
-  if (parentId === undefined) return undefined
-  let sessions
-  try {
-    sessions = ctx.get('sessions')
-  } catch {
-    return undefined
-  }
-  if (sessions === undefined) return undefined
-  try {
-    return sessions.get(parentId)?.requestHeader()?.config
-  } catch {
-    // ADR 0009 d5: the private sessions surface may drift on host upgrades;
-    // degrade silently (respectExplicit falls back to strategy) with a
-    // one-time warning rather than crashing the request.
-    if (!parentRouteDriftWarned) {
-      parentRouteDriftWarned = true
-      ctx.logger.warn('dsh-subagent-plus: reading the parent session route failed (host surface drift); respectExplicit falls back to the strategy chain')
-    }
-    return undefined
-  }
-}
-let parentRouteDriftWarned = false
-
-/** One notice per agent per distinct pin target (pinned strategy and fallback). */
+/** One notice per agent per distinct route target. */
 const noticedLabel = new WeakMap<object, string>()
 
 /** Successful validations are memoized; failures retry on later requests. */
@@ -801,10 +476,6 @@ async function routeRegistered(ctx: Context, provider: string, model: string): P
     const models = await llm.listModels(provider)
     if (!models.some(candidate => candidate.id === model)) return false
   } catch (error: unknown) {
-    // ADR 0009 d6: only a confirmed missing API (the method doesn't exist)
-    // proves the route unregistered; any other failure is treated as
-    // registered (conservative — a false "registered" costs one extra
-    // catalogue check, a false "unregistered" silently disables routing).
     if (error instanceof TypeError) return false
     return true
   }
@@ -812,23 +483,20 @@ async function routeRegistered(ctx: Context, provider: string, model: string): P
   return true
 }
 
-/** Log at most one line per agent per distinct route target. */
-const lastRouteLabel = new WeakMap<object, string>()
-
-function logRouteOnce(
-  ctx: Context,
-  agent: object,
-  resolved: LlmCallConfig,
-  override: PinOverride,
-  verb: string,
-): void {
-  const target = override.kind === 'route'
-    ? routeId(override)
-    : `effort ${override.reasoningEffort}`
-  if (lastRouteLabel.get(agent) === target) return
-  lastRouteLabel.set(agent, target)
-  const from = resolved.provider === undefined || resolved.model === undefined
-    ? 'unset'
-    : routeId(resolved)
-  ctx.logger.info(`dsh-subagent-plus: ${verb} child agent onto ${target} (was ${from})`)
+/** The delegating Session's current route (best-effort). */
+function parentRouteOf(ctx: Context, agent: Agent): RouteFields | undefined {
+  const parentId = agent.session?.header?.parentSession
+  if (parentId === undefined) return undefined
+  let sessions
+  try {
+    sessions = ctx.get('sessions')
+  } catch {
+    return undefined
+  }
+  if (sessions === undefined) return undefined
+  try {
+    return sessions.get(parentId)?.requestHeader()?.config
+  } catch {
+    return undefined
+  }
 }
