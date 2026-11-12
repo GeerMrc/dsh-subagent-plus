@@ -1,22 +1,18 @@
 # Changelog
 
-## v0.0.4 (2026-11-11) — Team（角色关键词 → 路由）映射（ADR 0006＋0007＋0008）
+## v0.0.4 (2026-11-11) — Team（角色关键词 → 路由）· agent.model.select() 架构（ADR 0006-0010）
 
-- feat(team-map)!: **角色关键词子串匹配（ADR 0008，用户第三次拍板 C→B→关键词）**：设置卡
-  「Team（角色关键词 → 路由）」分区（≤16 行），队友名**包含**行关键词即命中该行路由（子串
-  匹配，最长关键词优先，等长先现胜）——强制指派，优先于策略、respectExplicit 与成员手动
-  选择；未命中完整保留 v0.0.3 现行链（角色关键词>策略>兜底单链）。旧精确名配置逐字节等价。
-- feat(team-map): **候选清单为映射唯一来源（ADR 0007）**：多行可共用同一条候选路由；
-  悬空/半填/非法关键词＝structural 拒载＋运行时按未命中防御（含 mid-session isValidKeyword
-  检查防 1 字符关键词穿透）；structural 提交一次性 warn。
-- feat(team-map): agentTeams 守卫消费（未装 Team 自动休眠）；单 Team 内队友名唯一（官方
-  保证）；跨 Team 进程级匹配、死名休眠；决策终身粘住；冷却/未注册暂避兜底恢复即回
-  （pinFallback 手法）；provider 级粘性失败连带冷却；fork 队友默认放过（一次性 warn）。
-- feat(team-map): 转录 notice 三条（按角色指派/兜底/跳过，双语）；UI 五轨单行布局；
-  钉定下只读＋提示；候选清单空/悬空/目录缺失三态提示。
-- feat(guard): 客户端/宿主边界守卫（任意 import 形态＋宿主包名集，2026-11-11 崩溃 RCA）。
-- docs: README 双语、settings/strategy 手册、ADR 0006＋0007＋0008。
-- 留待：五镜头 UI 截图与 Flow F 隔离 E2E；DOM 渲染级测试仍为既有技术债。
+- feat(team-map)!: **角色关键词子串匹配（ADR 0008）**：设置卡「Team（角色关键词 → 路由）」
+  分区（≤16 行），队友名包含关键词即命中（最长优先）；未命中走策略链。
+- feat(team-map)!: **agent.model.select() 架构迁移（ADR 0010）**：路由在子智能体创建时经
+  官方 API 选定（0.2.2+ 正规通道），替代已禁用的 agent/request 瀑布改写。健康降级在步边界
+  生效（宿主禁止步中换路）。异常封堵：创建监听器内任何错误降级不冒泡（防回滚子代理创建）。
+- feat(team-map): 候选清单为映射唯一来源（ADR 0007）；悬空/半填/非法关键词双层防御；
+  钉定下只读；agentTeams 守卫消费（未装 Team 休眠）；fork 排除＋一次性 warn。
+- feat(team-map): pre-step 通知读 modelSelection 真值；maxTokens 继承预算跟随新路由（ADR 0010）。
+- feat(guard): 客户端/宿主边界守卫（任意 import 形态＋宿主包名集）。
+- docs: README 双语、settings/strategy 手册、ADR 0006＋0007＋0008＋0009＋0010。
+- 留待：Flow F 隔离 E2E；DOM 渲染级测试仍为既有技术债。
 
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
