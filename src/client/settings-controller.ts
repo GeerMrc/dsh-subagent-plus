@@ -447,9 +447,19 @@ export class SettingsSectionController {
 
   /** Templates visible under the current candidate-list size (for the UI dropdown). */
   visibleTemplates = (): { id: string; rowCount: number }[] => {
-    const listedCount = listedRoutesOf(this.snapshot()).filter(route => route.available).length
+    const available = listedRoutesOf(this.snapshot()).filter(route => route.available)
+    const listedCount = available.length
+    // U1 (ADR 0012 audit): T3 "same-route" requires the single route to have
+    // reasoning effort tiers — without efforts the template's purpose silently
+    // collapses (all rows get effort '').
+    const hasEfforts = available.some(route => route.efforts !== undefined && route.efforts.length > 0)
     return this.#templates
-      .filter(t => listedCount >= t.minRoutes && (t.maxRoutes === undefined || listedCount <= t.maxRoutes))
+      .filter(t => {
+        if (listedCount < t.minRoutes) return false
+        if (t.maxRoutes !== undefined && listedCount > t.maxRoutes) return false
+        if (t.id === 'same-route' && !hasEfforts) return false
+        return true
+      })
       .map(t => ({ id: t.id, rowCount: t.rows.length }))
   }
 
