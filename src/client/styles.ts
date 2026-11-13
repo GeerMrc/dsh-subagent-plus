@@ -25,7 +25,10 @@ export const badgeStyle: CSSProperties = {
   userSelect: 'text',
   // The two-segment badge caps its box (px, not cqw — the header seat's
   // container-query context is not guaranteed) and ellipsises per segment.
-  maxWidth: 240,
+  // 360 (ADR 0015 d5): fits full ids like strata/Qwen3.8-Flash-Next-NVFP4
+  // plus the effort segment; narrow windows still shrink through the
+  // per-segment ellipsis chain.
+  maxWidth: 360,
   overflow: 'hidden',
 }
 
