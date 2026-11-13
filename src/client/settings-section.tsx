@@ -30,6 +30,7 @@ import {
   nameInputStyle,
   nameTriggerStyle,
   chipTriggerStyle,
+  resetButtonStyle,
   rowPopupButtonStyle,
   rowPopupStyle,
   cardHeaderRowStyle,
@@ -463,11 +464,22 @@ function EditorRoutes(props: EditorProps) {
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
             <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
             <span style={{ flex: 1 }} />
-            {/* ADR 0015 d2: one persistent control in both modes (defaults-mode
-                clicks are idempotent re-derivations); it only edits the draft —
-                abandoning the page undoes an accidental click. */}
+            {/* ADR 0015 d2 + 2026-11-14 fix: one persistent control in both
+                modes, styled as the plain action button it is (the select style
+                made it look like a dropdown). In pure defaults mode there is
+                nothing to reset — the button disables with an explanatory
+                title instead of firing a silent no-op; with stored rows being
+                ignored (degraded) it stays armed. */}
             {!byNameLocked
-              ? <button type="button" className="dsmp-select" style={routeSelectStyle} title={t('byname.resetHint')} aria-label={t('byname.reset')} onClick={() => { controller.resetNameMapDefaults() }}>{t('byname.reset')}</button>
+              ? <button
+                type="button"
+                className="dsmp-hover"
+                style={resetButtonStyle}
+                disabled={draft.nameMapDefaults && draft.nameMap.length === 0}
+                title={draft.nameMapDefaults && draft.nameMap.length === 0 ? t('byname.resetIdle') : t('byname.resetHint')}
+                aria-label={t('byname.reset')}
+                onClick={() => { controller.resetNameMapDefaults() }}
+              >{t('byname.reset')}</button>
               : null}
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}

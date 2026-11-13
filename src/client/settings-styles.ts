@@ -329,6 +329,21 @@ export const nameInputStyle: React.CSSProperties = {
 /** Index-chip trigger of a mapping row (ADR 0015 d3): the delete popover
  *  anchors on the FIRST track and expands right; an unstyled button face so
  *  the chip keeps its own geometry. */
+/** Restore-defaults button (ADR 0015 d2, 2026-11-14 fix): a PLAIN bordered
+ *  button — never the select style, whose caret background made it look like
+ *  a dropdown and whose affordance belied the no-op click in defaults mode. */
+export const resetButtonStyle: React.CSSProperties = {
+  ...inputStyle,
+  width: 'auto',
+  height: 26,
+  margin: 0,
+  padding: '0 10px',
+  paddingRight: 10,
+  cursor: 'pointer',
+  lineHeight: 1.2,
+  fontSize: 12,
+} as const
+
 export const chipTriggerStyle: React.CSSProperties = {
   background: 'transparent',
   border: 'none',

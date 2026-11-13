@@ -23,3 +23,13 @@ describe('nameMapRowStyle (four-track single line, ADR 0015 decision 3)', () => 
     expect(nameMapRowStyle.alignItems).toBe('center')
   })
 })
+
+describe('resetButtonStyle (plain button, no select affordance, Y-fix 2026-11-14)', () => {
+  it('carries no dropdown caret background and keeps a pointer cursor', async () => {
+    const { resetButtonStyle } = await import('../../src/client/settings-styles.js')
+    expect(resetButtonStyle.backgroundImage).toBeUndefined()
+    expect(String(resetButtonStyle.backgroundImage ?? '')).not.toContain('svg')
+    expect(resetButtonStyle.cursor).toBe('pointer')
+    expect(resetButtonStyle.borderStyle).not.toBe('none')
+  })
+})
