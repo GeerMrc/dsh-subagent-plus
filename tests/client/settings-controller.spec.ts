@@ -378,187 +378,7 @@ const effortsCatalog: CatalogPort = {
   }),
 }
 
-describe('starter template (W3, ADR 0013 d2)', () => {
-  it('defines 12 valid unique stems with the quality family first (tie-break order)', async () => {
-    const { STARTER_TEMPLATE_ROWS } = await import('../../src/strategy.js')
-    const { isValidKeyword } = await import('../../src/strategy.js')
-    expect(STARTER_TEMPLATE_ROWS).toHaveLength(12)
-    const keywords = STARTER_TEMPLATE_ROWS.map(row => row.keyword)
-    expect(new Set(keywords).size).toBe(12)
-    for (const keyword of keywords) expect(isValidKeyword(keyword)).toBe(true)
-    expect(keywords.slice(0, 4)).toEqual(['review', 'audit', 'verif', 'plan'])
-    expect(keywords.slice(10)).toEqual(['test', 'qa'])
-  })
 
-  it('equal-length cross-family ties resolve to the quality family by row order', async () => {
-    const { STARTER_TEMPLATE_ROWS } = await import('../../src/strategy.js')
-    const { matchByKeyword } = await import('../../src/strategy.js')
-    const map = STARTER_TEMPLATE_ROWS.map(row => ({ name: row.keyword, provider: 'sz', model: 'qwen', reasoningEffort: '' }))
-    expect(matchByKeyword('test-planner', map)?.name).toBe('plan')
-    expect(matchByKeyword('design-review-dev', map)?.name).toBe('review')
-    expect(matchByKeyword('code-reviewer', map)?.name).toBe('review')
-    expect(matchByKeyword('qa-engineer', map)?.name).toBe('qa')
-    // Accepted collision recorded in ADR 0013: 'test' ⊆ 'latest'.
-    expect(matchByKeyword('latest-digest', map)?.name).toBe('test')
-  })
-
-  it('gate locks under pinned, reports no-routes and no-efforts otherwise', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const form = new FakeForm({ ...baseConfig(), strategy: 'pinned' as never })
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'locked' })
-
-    controller.setStrategy('round-robin')
-    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'no-routes' })
-
-    const routes = controller.snapshot().routes
-    controller.addRoute(routes.find(route => route.provider === 'cm') ?? routes[0]!) // kimi: no tiers
-    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'no-efforts' })
-
-    controller.removeRoute(0)
-    controller.addRoute(routes.find(route => route.provider === 'sz') ?? routes[0]!) // qwen: has tiers
-    expect(controller.starterGate()).toEqual({ enabled: true, reason: undefined })
-    controller.dispose()
-  })
-
-  it('applies 12 rows with semantic efforts materialised from actual tiers', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [
-      { provider: 'sz', model: 'qwen', reasoningEffort: '' },
-      { provider: 'zai', model: 'glm', reasoningEffort: '' },
-    ] })
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    expect(controller.applyTemplate('starter')).toEqual({ kind: 'applied', added: 12, unmaterialized: 0 })
-    const rows = controller.snapshot().draft?.nameMap ?? []
-    expect(rows).toHaveLength(12)
-    const byName = (name: string) => rows.find(row => row.name === name)
-    // S family → first listed route (qwen) + top tier = xhigh — NOT '' (the D1 bug).
-    expect(byName('review')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
-    expect(byName('plan')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
-    // B family → second listed route (glm) + mid tier (high on low/high/max, ADR 0014 d1).
-    expect(byName('dev')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'high' })
-    // F family → last listed route (glm) + lowest tier = low.
-    expect(byName('test')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
-    expect(byName('qa')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
-    controller.dispose()
-  })
-})
-
-describe('template capacity & confirm replay (W4, ADR 0013 d3)', () => {
-  /** A config listing qwen+glm with a nameMap stuffed to near-capacity. */
-  function stuffedConfig(rows: number): PinConfig {
-    return {
-      ...baseConfig(),
-      strategy: 'round-robin' as never,
-      priority: [
-        { provider: 'sz', model: 'qwen', reasoningEffort: '' },
-        { provider: 'zai', model: 'glm', reasoningEffort: '' },
-      ],
-      nameMap: Array.from({ length: rows }, (_, index) => ({ name: `stock-${index}`, provider: 'sz', model: 'qwen', reasoningEffort: '' })),
-    }
-  }
-
-  it('reports confirm with mode-aware numbers on a partially-filled table', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const rows = MAX_NAME_MAP_ENTRIES - 2
-    const form = new FakeForm(stuffedConfig(rows))
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    const result = controller.applyTemplate('starter')
-    expect(result).toEqual({ kind: 'confirm', mergeFeasible: 12 <= MAX_NAME_MAP_ENTRIES - rows, needed: 12, free: 2 })
-    controller.dispose()
-  })
-
-  it('confirm replay refuses a no-longer-fitting merge and leaves the draft untouched', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const rows = MAX_NAME_MAP_ENTRIES - 2
-    const form = new FakeForm(stuffedConfig(rows))
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    const refused = controller.applyTemplateConfirm('starter', 'merge')
-    expect(refused).toEqual({ kind: 'insufficient-capacity', needed: 12, free: 2 })
-    expect(controller.snapshot().draft?.nameMap).toHaveLength(rows)
-    controller.dispose()
-  })
-
-  it('confirm replace clears and rewrites a near-full table', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const rows = MAX_NAME_MAP_ENTRIES - 2
-    const form = new FakeForm(stuffedConfig(rows))
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    const result = controller.applyTemplateConfirm('starter', 'replace')
-    expect(result).toEqual({ kind: 'applied', added: 12, unmaterialized: 0 })
-    expect(controller.snapshot().draft?.nameMap).toHaveLength(12)
-    expect(controller.snapshot().draft?.nameMap[0]?.name).toBe('review')
-    controller.dispose()
-  })
-
-  it('replace replay refuses when routes vanished or the table locked while the confirm was open', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const form = new FakeForm(stuffedConfig(4))
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    expect(controller.applyTemplate('starter').kind).toBe('confirm')
-    // Candidate list emptied while the inline confirm was open.
-    controller.removeRoute(1)
-    controller.removeRoute(0)
-    const refused = controller.applyTemplateConfirm('starter', 'replace')
-    expect(refused).toEqual({ kind: 'rejected' })
-    expect(controller.snapshot().draft?.nameMap).toHaveLength(4)
-    // Locked (strategy switched to pinned) while the confirm was open.
-    controller.dispose()
-    const form2 = new FakeForm(stuffedConfig(4))
-    const controller2 = new SettingsSectionController(form2, effortsCatalog)
-    controller2.init()
-    await vi.waitFor(() => { if (controller2.snapshot().routes.length !== 3) throw new Error('catalog') })
-    expect(controller2.applyTemplate('starter').kind).toBe('confirm')
-    controller2.setStrategy('pinned')
-    expect(controller2.applyTemplateConfirm('starter', 'replace')).toEqual({ kind: 'rejected' })
-    expect(controller2.snapshot().draft?.nameMap).toHaveLength(4)
-    controller2.dispose()
-  })
-
-  it('unknown template ids report distinctly from capacity problems', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const form = new FakeForm(stuffedConfig(0))
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    expect(controller.applyTemplate('nope')).toEqual({ kind: 'unknown-template' })
-    expect(controller.applyTemplateConfirm('nope', 'replace')).toEqual({ kind: 'unknown-template' })
-    controller.dispose()
-  })
-
-  it('counts rows whose tiers cannot materialise (no silent degrade)', async () => {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    // Sole effortless route first (S family lands on it), effort-bearing second.
-    const form = new FakeForm({
-      ...baseConfig(),
-      strategy: 'round-robin' as never,
-      priority: [
-        { provider: 'cm', model: 'kimi', reasoningEffort: '' },
-        { provider: 'sz', model: 'qwen', reasoningEffort: '' },
-      ],
-    })
-    const controller = new SettingsSectionController(form, effortsCatalog)
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    const result = controller.applyTemplate('starter')
-    expect(result).toEqual({ kind: 'applied', added: 12, unmaterialized: 4 })
-    // The four quality-gate rows landed on kimi with '' — visibly counted, not silent.
-    expect(controller.snapshot().draft?.nameMap.filter(row => row.reasoningEffort === '').length).toBeGreaterThanOrEqual(4)
-    controller.dispose()
-  })
-})
 
 describe('valueInvalid (E4)', () => {
   it('flags a ready form whose value is not a recognizable config', async () => {
@@ -649,70 +469,86 @@ describe('nameMap dangling flow (ADR 0007, R7-R2 🟡-3)', () => {
   })
 })
 
-describe('starter template slot & gate coverage (W8, review P-21)', () => {
-  /** Catalog of `count` single-model providers, each with qwen-like tiers. */
-  function multiRouteCatalog(count: number): CatalogPort {
-    return {
-      load: async () => ({
-        groups: Array.from({ length: count }, (_, index) => ({
-          id: `p${index}`, name: `P${index}`,
-          models: [{ id: `m${index}`, name: `M${index}`, reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'xhigh', name: 'Xhigh' }], defaultEffort: 'low' } }],
-        })),
-        failureCount: 0,
-      }),
-    }
-  }
 
-  async function applyWithRoutes(count: number) {
-    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const form = new FakeForm({
+describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
+  function defaultsConfig(): PinConfig {
+    return {
       ...baseConfig(),
       strategy: 'round-robin' as never,
-      priority: Array.from({ length: count }, (_, index) => ({ provider: `p${index}`, model: `m${index}`, reasoningEffort: '' })),
-    })
-    const controller = new SettingsSectionController(form, multiRouteCatalog(count))
-    controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== count) throw new Error('catalog') })
-    const result = controller.applyTemplate('starter')
-    const rows = controller.snapshot().draft?.nameMap ?? []
-    controller.dispose()
-    return { result, rows }
+      priority: [
+        { provider: 'sz', model: 'qwen', reasoningEffort: '' },
+        { provider: 'zai', model: 'glm', reasoningEffort: '' },
+      ],
+      nameMap: [],
+      nameMapDefaults: true,
+    }
   }
 
-  it('B slot resolves to the middle listed route at 2/3/5 candidates', async () => {
-    for (const [count, expectedB] of [[2, 1], [3, 1], [5, 2]] as const) {
-      const { result, rows } = await applyWithRoutes(count)
-      expect(result.kind).toBe('applied')
-      const research = rows.find(row => row.name === 'research')
-      expect(research?.provider, `B slot at ${count} routes`).toBe(`p${expectedB}`)
-      // S always the first listed route; F always the last.
-      expect(rows.find(row => row.name === 'review')?.provider).toBe('p0')
-      expect(rows.find(row => row.name === 'test')?.provider).toBe(`p${count - 1}`)
-    }
-  })
-
-  it('sole listed route: all 12 rows land on it, efforts still differentiate', async () => {
-    const { result, rows } = await applyWithRoutes(1)
-    expect(result).toEqual({ kind: 'applied', added: 12, unmaterialized: 0 })
-    expect(rows.every(row => row.provider === 'p0' && row.model === 'm0')).toBe(true)
-    expect(rows.find(row => row.name === 'review')?.reasoningEffort).toBe('xhigh')
-    expect(rows.find(row => row.name === 'dev')?.reasoningEffort).toBe('xhigh') // 2 active tiers: mid = upper median (ADR 0014 d1)
-    expect(rows.find(row => row.name === 'test')?.reasoningEffort).toBe('low')
-  })
-
-  it('gate reports no-efforts for a sole all-off route (deepseek thinking-disabled shape)', async () => {
+  async function x5Harness(value = defaultsConfig()) {
     const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
-    const allOffCatalog: CatalogPort = {
-      load: async () => ({
-        groups: [{ id: 'ds', name: 'DS', models: [{ id: 'thinkless', name: 'Thinkless', reasoning: { efforts: [{ id: 'off', name: 'Off' }], defaultEffort: 'off' } }] }],
-        failureCount: 0,
-      }),
-    }
-    const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [{ provider: 'ds', model: 'thinkless', reasoningEffort: '' }] })
-    const controller = new SettingsSectionController(form, allOffCatalog)
+    const form = new FakeForm(value)
+    const controller = new SettingsSectionController(form, effortsCatalog)
     controller.init()
-    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 1) throw new Error('catalog') })
-    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'no-efforts' })
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    return controller
+  }
+
+  it('defaults mode exposes derived rows without touching the draft', async () => {
+    const controller = await x5Harness()
+    const state = controller.snapshot()
+    expect(state.effectiveNameMap).toHaveLength(12)
+    expect(state.draft?.nameMap).toEqual([])
+    expect(state.draft?.nameMapDefaults).toBe(true)
+    const byName = (name: string) => state.effectiveNameMap.find(row => row.name === name)
+    expect(byName('review')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
+    expect(byName('dev')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'high' })
+    expect(byName('test')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
+    controller.dispose()
+  })
+
+  it('editing a derived row materialises the table and flips to custom', async () => {
+    const controller = await x5Harness()
+    controller.setNameRowName(0, 'proofreader')
+    const state = controller.snapshot()
+    expect(state.draft?.nameMapDefaults).toBe(false)
+    expect(state.draft?.nameMap).toHaveLength(12)
+    expect(state.draft?.nameMap[0]).toMatchObject({ name: 'proofreader', provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
+    // Effective map now mirrors the stored (custom) rows.
+    expect(state.effectiveNameMap.every(row => state.draft?.nameMap.some(stored => stored.name === row.name))).toBe(true)
+    controller.dispose()
+  })
+
+  it('addNameRow under defaults materialises then appends', async () => {
+    const controller = await x5Harness()
+    const routes = controller.snapshot().routes
+    controller.addNameRow(routes.find(route => route.provider === 'cm') ?? routes[0]!)
+    const state = controller.snapshot()
+    expect(state.draft?.nameMapDefaults).toBe(false)
+    expect(state.draft?.nameMap).toHaveLength(13)
+    controller.dispose()
+  })
+
+  it('resetNameMapDefaults clears rows and re-enables derivation', async () => {
+    const controller = await x5Harness()
+    controller.setNameRowName(0, 'proofreader')
+    controller.resetNameMapDefaults()
+    const state = controller.snapshot()
+    expect(state.draft?.nameMapDefaults).toBe(true)
+    expect(state.draft?.nameMap).toEqual([])
+    expect(state.effectiveNameMap).toHaveLength(12)
+    controller.dispose()
+  })
+
+  it('pinned keeps the effective map at the stored rows (R1 mirror)', async () => {
+    const controller = await x5Harness({ ...defaultsConfig(), strategy: 'pinned' as never, nameMap: [{ name: 'reviewer', provider: 'sz', model: 'qwen', reasoningEffort: '' }] })
+    const state = controller.snapshot()
+    expect(state.effectiveNameMap).toEqual([{ name: 'reviewer', provider: 'sz', model: 'qwen', reasoningEffort: '' }])
+    controller.dispose()
+  })
+
+  it('defaults-on with stored rows surfaces the degraded warning', async () => {
+    const controller = await x5Harness({ ...defaultsConfig(), nameMap: [{ name: 'reviewer', provider: 'sz', model: 'qwen', reasoningEffort: '' }] })
+    expect(controller.snapshot().degraded.some(message => message.includes('nameMapDefaults'))).toBe(true)
     controller.dispose()
   })
 })

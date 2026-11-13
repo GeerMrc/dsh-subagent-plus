@@ -22,7 +22,7 @@ import type { OfficialLimitsController } from './official-surfaces.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
-import type { ApplyTemplateResult, RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
+import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
 import {
@@ -328,29 +328,7 @@ type EditorProps = {
  *  merged card in SettingsSection owns the single border. */
 function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
-  const [templateWarning, setTemplateWarning] = useState<string | undefined>(undefined)
-  const [templateSummary, setTemplateSummary] = useState<string | undefined>(undefined)
-  const [pendingConfirm, setPendingConfirm] = useState<{ id: string; mergeFeasible: boolean; needed: number; free: number } | undefined>(undefined)
   const draft = state.draft
-  // The draft object is replaced only when the form reloads the committed
-  // value (namespace flap or save conflict); drop any inline confirm built
-  // against the old draft at that single point (ADR 0013, the D16 repair).
-  useEffect(() => { setPendingConfirm(undefined) }, [draft])
-  /** Surface a template result: counts on success, numbers or a reason on refusal. */
-  const reportTemplateResult = (result: ApplyTemplateResult): void => {
-    setTemplateWarning(undefined)
-    setTemplateSummary(undefined)
-    if (result.kind === 'applied') {
-      setTemplateSummary(t('byname.templates.applied').replace('{n}', String(result.added))
-        + (result.unmaterialized > 0
-          ? ' ' + t('byname.templates.appliedUnmaterialized').replace('{m}', String(result.unmaterialized))
-          : ''))
-    } else if (result.kind === 'insufficient-capacity') {
-      setTemplateWarning(t('byname.templates.insufficient').replace('{n}', String(result.needed)).replace('{m}', String(result.free)))
-    } else {
-      setTemplateWarning(t('byname.templates.unavailable'))
-    }
-  }
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
   // ADR 0007 decision 3: under the pinned strategy the candidate list is not
@@ -578,71 +556,6 @@ function EditorRoutes(props: EditorProps) {
             </select>
           </div>
         </div>
-{/* ADR 0013: universal starter template — a single gated button (locked /
-              no available route / sole route without tiers shows the reason as
-              its title); a non-empty table confirms inline replace/merge/cancel
-              with merge disabled when it cannot fit. */}
-          <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span style={cardHeadingStyle}>{t('byname.templates.label')}</span>
-              <Info label={t('byname.templates.hint')} text={t('byname.templates.hint')} delayMs={400} />
-            </span>
-            <span style={{ flex: 1 }} />
-            {(() => {
-              const gate = controller.starterGate()
-              const gateTitle = gate.reason === 'locked' ? t('byname.pinnedHint')
-                : gate.reason === 'no-routes' ? t('byname.emptyList')
-                  : gate.reason === 'no-efforts' ? t('byname.templates.noEfforts')
-                    : undefined
-              return (
-                <button
-                  type="button"
-                  className="dsmp-select"
-                  style={routeSelectStyle}
-                  disabled={!gate.enabled}
-                  aria-label={t('byname.templates.apply')}
-                  title={gateTitle}
-                  onClick={() => {
-                    const result = controller.applyTemplate('starter')
-                    if (result.kind === 'confirm') {
-                      setPendingConfirm({ id: 'starter', mergeFeasible: result.mergeFeasible, needed: result.needed, free: result.free })
-                      return
-                    }
-                    reportTemplateResult(result)
-                  }}
-                >{t('byname.templates.apply')}</button>
-              )
-            })()}
-          </div>
-          {templateSummary !== undefined ? (
-            <div style={{ ...fieldRowStyle, flexWrap: 'wrap' }}>{templateSummary}</div>
-          ) : null}
-          {templateWarning !== undefined ? (
-            <div style={{ ...fieldRowStyle, flexWrap: 'wrap' }}>{templateWarning}</div>
-          ) : null}
-          {pendingConfirm !== undefined ? (
-            <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={cardHeadingStyle}>{t('byname.templates.confirmTitle')}</span>
-              <span style={{ flex: 1 }} />
-              <button type="button" className="dsmp-select" style={routeSelectStyle}
-                onClick={() => { const id = pendingConfirm.id; setPendingConfirm(undefined); reportTemplateResult(controller.applyTemplateConfirm(id, 'replace')) }}>
-                {t('byname.templates.replace')}
-              </button>
-              <button type="button" className="dsmp-select" style={routeSelectStyle}
-                disabled={!pendingConfirm.mergeFeasible}
-                title={!pendingConfirm.mergeFeasible ? t('byname.templates.insufficient').replace('{n}', String(pendingConfirm.needed)).replace('{m}', String(pendingConfirm.free)) : undefined}
-                onClick={() => { const id = pendingConfirm.id; setPendingConfirm(undefined); reportTemplateResult(controller.applyTemplateConfirm(id, 'merge')) }}>
-                {t('byname.templates.merge')}
-              </button>
-              <button type="button" className="dsmp-select" style={routeSelectStyle}
-                onClick={() => { setPendingConfirm(undefined) }}>
-                {t('byname.templates.cancel')}
-              </button>
-            </div>
-          ) : null}
-          
-
-
         <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
             <span style={cardHeadingStyle}>{t('fallback.title')}</span>

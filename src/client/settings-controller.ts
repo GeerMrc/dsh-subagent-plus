@@ -13,39 +13,14 @@
  * @module dsh-subagent-plus/client/settings-controller
  */
 import {
+  deriveStarterRows,
   MAX_NAME_MAP_ENTRIES,
-  resolveSemanticEffort,
-  slotRouteAt,
-  STARTER_TEMPLATE_ROWS,
   validateStrategyConfig,
-  type EffortIntent,
-  type Slot,
+  type NameMapEntryView,
   type Strategy,
 } from '../strategy.js'
 import type { PinConfig } from '../config.js'
 import type { SaveOutcome } from './unified-save.js'
-
-/** One starter-template definition (ADR 0013). */
-interface RoleTemplate {
-  id: string
-  rows: ReadonlyArray<{ keyword: string; slot: Slot; effort: EffortIntent }>
-}
-
-/**
- * Result of a template application (ADR 0013 d3): counts ride 'applied' so
- * the UI reports "N rows added, M effort intents not materialisable" instead
- * of a silent degrade; 'confirm' carries the mode-aware numbers the inline
- * confirm renders (merge disabled with its reason); refusals ('rejected' =
- * gate/slots lost, 'insufficient-capacity' = capacity gone, 'unknown-template')
- * never touch the draft.
- */
-export type ApplyTemplateResult =
-  | { kind: 'applied'; added: number; unmaterialized: number }
-  | { kind: 'confirm'; mergeFeasible: boolean; needed: number; free: number }
-  | { kind: 'insufficient-capacity'; needed: number; free: number }
-  | { kind: 'rejected' }
-  | { kind: 'unknown-template' }
-
 
 /** Maximum candidate routes; mirrors the schema bound. */
 export const MAX_ROUTES = 5
@@ -138,6 +113,10 @@ export interface SettingsUiState {
   atLimit: boolean
   /** Whether the model catalogue failed to load (routes stay empty). */
   catalogFailed: boolean
+  /** The mapping rows routing actually reads (ADR 0014 d2): derived rows under
+   *  defaults-on (spread only — the R1 mirror), stored rows otherwise. A
+   *  computed view — never part of the draft, so it cannot dirty the page. */
+  effectiveNameMap: NameMapEntryView[]
 }
 
 function isPinConfig(value: unknown): value is PinConfig {
@@ -242,7 +221,7 @@ export class SettingsSectionController {
     this.#state = {
       status: 'loading',
       value: undefined, valueInvalid: false, draft: undefined, structural: [], degraded: [], cooldownInvalid: false,
-      routes: [], addableRoutes: [], atLimit: false, catalogFailed: false,
+      routes: [], addableRoutes: [], atLimit: false, catalogFailed: false, effectiveNameMap: [],
     }
   }
 
@@ -348,8 +327,30 @@ export class SettingsSectionController {
       if (entry !== undefined) entry.reasoningEffort = reasoningEffort
     })
   }
+  /** Copy-on-write (ADR 0014 d2): the first edit under defaults-on materialises
+   *  the derived table into the draft and flips to custom; later edits then
+   *  target ordinary stored rows. Read-only under pinned (the UI locks it). */
+  #materializeDefaultsInto = (draft: PinConfig): void => {
+    if (!draft.nameMapDefaults) return
+    if (draft.strategy === 'pinned') return
+    const candidates = listedRoutesOf(this.#state)
+      .filter(route => route.available)
+      .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts }))
+    draft.nameMap = deriveStarterRows(candidates).map(row => ({ ...row }))
+    draft.nameMapDefaults = false
+  }
+
+  /** Re-enable derivation: clears the stored rows and returns to defaults mode. */
+  resetNameMapDefaults = (): void => {
+    this.#edit(draft => {
+      draft.nameMap = []
+      draft.nameMapDefaults = true
+    })
+  }
+
   addNameRow = (route: RouteOption): void => {
     this.#edit(draft => {
+      this.#materializeDefaultsInto(draft)
       if (draft.nameMap.length >= MAX_NAME_MAP_ENTRIES) return
       draft.nameMap.push({ name: '', provider: route.provider, model: route.model, reasoningEffort: '' })
     })
@@ -361,6 +362,7 @@ export class SettingsSectionController {
 
   setNameRowName = (index: number, name: string): void => {
     this.#edit(draft => {
+      this.#materializeDefaultsInto(draft)
       const row = draft.nameMap[index]
       if (row !== undefined) row.name = name.trim()
     })
@@ -368,6 +370,7 @@ export class SettingsSectionController {
 
   setNameRowRoute = (index: number, route: RouteOption): void => {
     this.#edit(draft => {
+      this.#materializeDefaultsInto(draft)
       const row = draft.nameMap[index]
       if (row === undefined) return
       row.provider = route.provider
@@ -378,119 +381,10 @@ export class SettingsSectionController {
 
   setNameRowEffort = (index: number, reasoningEffort: string): void => {
     this.#edit(draft => {
+      this.#materializeDefaultsInto(draft)
       const row = draft.nameMap[index]
       if (row !== undefined) row.reasoningEffort = reasoningEffort
     })
-  }
-
-  // ─── ADR 0013: universal starter template ───
-
-  readonly #templates: readonly RoleTemplate[] = [
-    { id: 'starter', rows: STARTER_TEMPLATE_ROWS },
-  ]
-
-  /** Map a slot to a listed candidate — shared implementation (ADR 0014 X2). */
-  #slotRoute = slotRouteAt
-
-  /**
-   * The starter-template gate (ADR 0013 d2): 'locked' under the pinned
-   * strategy (by-name rows stay read-only), 'no-routes' with no available
-   * candidates, and 'no-efforts' when the sole available route has no
-   * materialisable tier — every row would land on the model default and the
-   * template's differentiation would silently collapse (the D2 lesson).
-   */
-  starterGate = (): { enabled: boolean; reason: 'locked' | 'no-routes' | 'no-efforts' | undefined } => {
-    const state = this.snapshot()
-    if (state.draft?.strategy === 'pinned') return { enabled: false, reason: 'locked' }
-    const available = listedRoutesOf(state).filter(route => route.available)
-    if (available.length === 0) return { enabled: false, reason: 'no-routes' }
-    if (available.length === 1
-      && resolveSemanticEffort(available[0], 'top') === ''
-      && resolveSemanticEffort(available[0], 'lowest') === '') return { enabled: false, reason: 'no-efforts' }
-    return { enabled: true, reason: undefined }
-  }
-
-  /**
-   * Start applying a template (ADR 0013 d3). An empty table applies directly;
-   * a non-empty one returns 'confirm' carrying mode-aware numbers — replace
-   * needs the whole template to fit a cleared table, merge only the
-   * not-yet-present keywords (a merge that cannot fit still offers replace).
-   */
-  applyTemplate = (templateId: string): ApplyTemplateResult => {
-    const template = this.#templates.find(t => t.id === templateId)
-    if (template === undefined) return { kind: 'unknown-template' }
-    const state = this.snapshot()
-    const draft = state.draft
-    if (draft === undefined) return { kind: 'rejected' }
-    if (!this.starterGate().enabled) return { kind: 'rejected' }
-    const existing = new Set(draft.nameMap.map(row => row.name))
-    const needed = template.rows.filter(row => !existing.has(row.keyword)).length
-    const free = MAX_NAME_MAP_ENTRIES - draft.nameMap.length
-    const replaceFeasible = template.rows.length <= MAX_NAME_MAP_ENTRIES
-    const mergeFeasible = needed <= free
-    if (!replaceFeasible && !mergeFeasible) return { kind: 'insufficient-capacity', needed, free }
-    if (draft.nameMap.length > 0) return { kind: 'confirm', mergeFeasible, needed, free }
-    // Empty table: replace and merge coincide — writing every row is the merge.
-    if (!mergeFeasible) return { kind: 'insufficient-capacity', needed, free }
-    return this.#applyRows(template, new Set())
-  }
-
-  /**
-   * Confirm a template application after the user chose replace or merge
-   * (ADR 0013 d3). Preconditions replay at confirm time — the draft may have
-   * changed while the inline confirm was open — and any refusal (gate locked,
-   * capacity gone) leaves the draft untouched: replace never clears a table
-   * it then fails to repopulate.
-   */
-  applyTemplateConfirm = (templateId: string, mode: 'replace' | 'merge'): ApplyTemplateResult => {
-    const template = this.#templates.find(t => t.id === templateId)
-    if (template === undefined) return { kind: 'unknown-template' }
-    const state = this.snapshot()
-    const draft = state.draft
-    if (draft === undefined) return { kind: 'rejected' }
-    // Gate replay covers slot resolvability: with no available route no
-    // template row resolves (S/B/F all need at least one).
-    if (!this.starterGate().enabled) return { kind: 'rejected' }
-    const existing = new Set(draft.nameMap.map(row => row.name))
-    const needed = template.rows.filter(row => !existing.has(row.keyword)).length
-    const free = MAX_NAME_MAP_ENTRIES - draft.nameMap.length
-    if (mode === 'replace') {
-      if (template.rows.length > MAX_NAME_MAP_ENTRIES) return { kind: 'insufficient-capacity', needed, free }
-    } else if (needed > free) {
-      return { kind: 'insufficient-capacity', needed, free }
-    }
-    const skip = mode === 'replace' ? new Set<string>() : existing
-    if (mode === 'replace') this.#edit(d => { d.nameMap = [] })
-    return this.#applyRows(template, skip)
-  }
-
-  /** Internal: append template rows to the draft, resolving slots to listed
-   *  routes; counts rows whose effort intent could not materialise so the UI
-   *  reports the degrade instead of hiding it. */
-  #applyRows(template: RoleTemplate, skipKeywords: Set<string>): ApplyTemplateResult {
-    const state = this.snapshot()
-    if (state.draft === undefined) return { kind: 'rejected' }
-    const listed = listedRoutesOf(state).filter(route => route.available)
-    let added = 0
-    let unmaterialized = 0
-    this.#edit(d => {
-      for (const row of template.rows) {
-        if (skipKeywords.has(row.keyword)) continue
-        if (d.nameMap.length >= MAX_NAME_MAP_ENTRIES) break
-        const route = this.#slotRoute(listed, row.slot)
-        if (route === undefined) continue
-        const effort = resolveSemanticEffort(route, row.effort)
-        if (effort === '') unmaterialized += 1
-        d.nameMap.push({
-          name: row.keyword,
-          provider: route.provider,
-          model: route.model,
-          reasoningEffort: effort,
-        })
-        added += 1
-      }
-    })
-    return { kind: 'applied', added, unmaterialized }
   }
 
   moveRoute = (index: number, delta: -1 | 1): void => {
@@ -569,9 +463,17 @@ export class SettingsSectionController {
       this.#revalidate(draft)
       this.#state.addableRoutes = addableRoutesOf(draft, this.#state.routes)
       this.#state.atLimit = draft.priority.length >= MAX_ROUTES
+      // The effective mapping view: derived under defaults-on + spread (the
+      // R1 mirror of the runtime gate), stored rows otherwise.
+      this.#state.effectiveNameMap = draft.nameMapDefaults && draft.strategy !== 'pinned'
+        ? deriveStarterRows(listedRoutesOf(this.#state)
+          .filter(route => route.available)
+          .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts })))
+        : draft.nameMap.map(row => ({ ...row }))
     } else {
       this.#state.addableRoutes = [...this.#state.routes]
       this.#state.atLimit = false
+      this.#state.effectiveNameMap = []
     }
     this.#notify()
   }
