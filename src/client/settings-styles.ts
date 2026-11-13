@@ -335,20 +335,24 @@ export const nameInputStyle: React.CSSProperties = {
   ...inputStyle, width: 96, minWidth: 88, flex: '0 1 auto', height: 30,
 }
 
-/** Hover/click "×" anchor of a mapping row: the RowNameCell popover trigger
- *  face reduced to a single glyph (the popover carries the one action). */
-export const removeTriggerStyle: React.CSSProperties = {
-  border: 'none', background: 'transparent', color: 'var(--dsw-alias-text-tertiary)',
-  fontSize: 14, lineHeight: 1, cursor: 'pointer', padding: '2px 6px', borderRadius: 6,
+/** Index-chip trigger of a mapping row (ADR 0015 d3): the delete popover
+ *  anchors on the FIRST track and expands right; an unstyled button face so
+ *  the chip keeps its own geometry. */
+export const chipTriggerStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  font: 'inherit',
 }
 
-/** By-name mapping row (ADR 0007 decision 7): the candidate-row geometry
- *  widened to five explicit tracks — chip / name input / elastic route select
- *  / effort select / remove — so the four pickers plus chip never spill onto
- *  an implicit second row. The elastic seat is the route select (it already
- *  ellipsizes); every control keeps its candidate-row width. */
+/** By-name mapping row (ADR 0015 d3, superseding 0007 d7's five tracks):
+ *  chip-with-remove / name input / elastic route select / effort select —
+ *  the delete moved onto the chip hover, so the trailing track disappears and
+ *  the elastic route select widens. */
 export const nameMapRowStyle: React.CSSProperties = {
   ...listRowStyle,
-  gridTemplateColumns: 'auto auto minmax(0,1fr) auto auto',
+  gridTemplateColumns: 'auto auto minmax(0,1fr) auto',
   alignItems: 'center',
 }

@@ -29,7 +29,7 @@ import {
   nameMapRowStyle,
   nameInputStyle,
   nameTriggerStyle,
-  removeTriggerStyle,
+  chipTriggerStyle,
   rowPopupButtonStyle,
   rowPopupStyle,
   cardHeaderRowStyle,
@@ -95,7 +95,7 @@ function Info({ label, text, delayMs }: { label: string; text: string; delayMs: 
 /** Hover/click "×" anchor of a by-name mapping row revealing its single
  *  remove action — the RowNameCell popover pattern minus the moves a mapping
  *  row never has (mapping order carries no meaning). */
-function RemoveMenu(props: { label: string; onRemove: () => void }) {
+function RemoveMenu(props: { label: string; trigger: React.ReactNode; onRemove: () => void }) {
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLSpanElement | null>(null)
   useEffect(() => {
@@ -114,7 +114,7 @@ function RemoveMenu(props: { label: string; onRemove: () => void }) {
       onMouseLeave={() => { setOpen(false) }}
       onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}
     >
-      <button type="button" className="dsmp-hover" style={removeTriggerStyle} aria-haspopup="menu" aria-expanded={open} aria-label={props.label} onClick={() => { setOpen(true) }}>×</button>
+      <button type="button" className="dsmp-hover" style={chipTriggerStyle} aria-haspopup="menu" aria-expanded={open} aria-label={props.label} onClick={() => { setOpen(true) }}>{props.trigger}</button>
       {open
         ? (
           <span role="menu" aria-label={props.label} style={rowPopupStyle}>
@@ -503,7 +503,10 @@ function EditorRoutes(props: EditorProps) {
                       : catalogHit === null ? t('list.unavailable') : t('byname.routeNotListed')
                   return (
                     <div key={`${row.name}\0${index}`} className="dsmp-hover" style={nameMapRowStyle}>
-                      <span style={indexChipStyle}>{index + 1}</span>
+                      {/* Delete rides the index chip hover (ADR 0015 d3): the
+                          popup anchors on the FIRST track and expands right —
+                          the old trailing × popup overflowed the card edge. */}
+                      <RemoveMenu label={t('byname.remove')} trigger={<span style={indexChipStyle}>{index + 1}</span>} onRemove={() => { controller.removeNameRow(index) }} />
                       <input
                         className={`dsmp-input${nameInvalid ? ' dsmp-invalid' : ''}`}
                         style={nameInputStyle}
@@ -536,7 +539,7 @@ function EditorRoutes(props: EditorProps) {
                       </select>
                       {/* Always rendered: an unusable route renders the select's
                           own disabled placeholder, so every row keeps exactly
-                          five children on the five tracks (ADR 0007 d7). */}
+                          four children on the four tracks (ADR 0015 d3). */}
                       <EffortSelect
                         label={`${t('strategy.effort')} ${listedHit !== null ? routeId(listedHit) : t('byname.name')}`} route={listedHit !== null ? catalogHit ?? undefined : undefined}
                         value={listedHit !== null ? row.reasoningEffort : ''}
@@ -544,7 +547,6 @@ function EditorRoutes(props: EditorProps) {
                         disabled={byNameLocked}
                         defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')} staleTitle={t('list.unavailable')}
                       />
-                      <RemoveMenu label={t('byname.remove')} onRemove={() => { controller.removeNameRow(index) }} />
                     </div>
                   )
                 })}

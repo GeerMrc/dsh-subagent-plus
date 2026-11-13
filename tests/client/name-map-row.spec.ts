@@ -1,19 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { listRowStyle, nameMapRowStyle } from '../../src/client/settings-styles.js'
 
-/** The mapping row carries five children (chip, name input, route select,
- *  effort select, remove) — a three-track grid sends the fourth and fifth to
- *  an implicit second row (the 2026-11-12 wrap bug). The dedicated style must
- *  declare exactly five tracks and keep the candidate-row geometry. */
-describe('nameMapRowStyle (five-track single line, ADR 0007 decision 7)', () => {
-  it('declares exactly five grid tracks', () => {
+/** The mapping row carries four children (chip-with-remove, name input,
+ *  route select, effort select) — the delete action moved onto the index chip
+ *  hover (ADR 0015 d3, superseding 0007 d7's five tracks), so the trailing
+ *  track disappears and the flexible route track widens. */
+describe('nameMapRowStyle (four-track single line, ADR 0015 decision 3)', () => {
+  it('declares exactly four grid tracks', () => {
     const tracks = String(nameMapRowStyle.gridTemplateColumns).trim().split(/\s+/)
-    expect(tracks).toHaveLength(5)
+    expect(tracks).toHaveLength(4)
     expect(tracks[0]).toBe('auto')
     expect(tracks[1]).toBe('auto')
     expect(tracks[2]).toBe('minmax(0,1fr)')
     expect(tracks[3]).toBe('auto')
-    expect(tracks[4]).toBe('auto')
   })
 
   it('keeps the candidate-row geometry (gap, padding, radius, display)', () => {
