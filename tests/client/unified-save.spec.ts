@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { UnifiedSaveController, type SaveOutcome, type SaveParticipant } from '../../src/client/unified-save.js'
 import { OfficialLimitsController } from '../../src/client/official-surfaces.js'
 import { SettingsSectionController, type CatalogPort, type FieldSetOp, type SettingsFormPort } from '../../src/client/settings-controller.js'
@@ -224,5 +224,61 @@ describe('UnifiedSaveController', () => {
     const outcome = await limits.save()
     expect(outcome).toBe('clean')
     expect(limitsForm.mutateCalls).toHaveLength(0)
+  })
+})
+
+/** Controller over participants returning the given outcomes (reused per call). */
+function savedSetup(outcomes: SaveOutcome[]): { controller: UnifiedSaveController; calls: number } {
+  let calls = 0
+  const controller = new UnifiedSaveController([
+    { key: 'first', save: async () => outcomes[calls++] ?? 'saved' },
+  ])
+  return { controller, calls }
+}
+
+describe('saved auto-dismiss (V1 — success is an event, not a state)', () => {
+  it('saved clears itself after the 3s window', async () => {
+    vi.useFakeTimers()
+    try {
+      const { controller } = savedSetup(['saved'])
+      await controller.save()
+      expect(controller.snapshot().saved).toBe(true)
+      vi.advanceTimersByTime(3000)
+      expect(controller.snapshot().saved).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a new save restarts the dismiss window (old timer never fires)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { controller } = savedSetup(['saved'])
+      await controller.save()
+      vi.advanceTimersByTime(2000)
+      await controller.save() // completes immediately; its own 3s window starts now
+      // 1000ms more = 3000ms since save #1 — the cancelled timer must NOT fire.
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(controller.snapshot().saved).toBe(true)
+      // The restarted window expires 3000ms after save #2.
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(controller.snapshot().saved).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('dispose clears the timer — no patch after teardown', async () => {
+    vi.useFakeTimers()
+    try {
+      const { controller } = savedSetup(['saved'])
+      await controller.save()
+      controller.dispose()
+      vi.advanceTimersByTime(10_000)
+      // No throw, and snapshot untouched past the disposed save: true.
+      expect(controller.snapshot().saved).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

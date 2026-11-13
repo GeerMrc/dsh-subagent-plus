@@ -44,7 +44,7 @@ function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: Pro
 }
 
 /** The runtime-limits sub-section of the merged card: header row (title,
- *  takeover ⓘ, one-shot saved chip), status branches, and the two parsed
+ *  takeover ⓘ), status branches, and the two parsed
  *  numeric inputs writing the official `subagent` keys verbatim. */
 export function LimitsBlock(props: {
   state: NamespaceFormState<OfficialLimitsValue>
@@ -58,7 +58,6 @@ export function LimitsBlock(props: {
         <h4 id="dsmp-limits" style={cardHeadingStyle}>{t('takeover.limitsTitle')}</h4>
         <Info label={t('takeover.limitsHelp')} text={t('takeover.limitsHelp')} />
         <span style={{ flex: 1 }} />
-        {state.saved ? <span style={statusTextStyle('success')}>{t('action.saved')}</span> : null}
       </div>
       <NsStatusLine state={state} t={t} />
       {state.status === 'ready' && !state.valueInvalid && state.draft !== undefined

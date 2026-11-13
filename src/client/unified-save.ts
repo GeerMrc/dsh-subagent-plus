@@ -78,11 +78,21 @@ export class UnifiedSaveController {
   dispose = (): void => {
     this.#disposed = true
     this.#listeners.clear()
+    // Timer hygiene (V1): a pending dismiss must not fire past teardown —
+    // the src/index.ts debounce-disposal precedent.
+    if (this.#dismissTimer !== undefined) clearTimeout(this.#dismissTimer)
   }
+
+  #dismissTimer: ReturnType<typeof setTimeout> | undefined
+
+  /** How long the footer's "已保存" acknowledgement stays visible (V1 —
+   *  success is an event, not a state; failures/conflicts stay sticky). */
+  static readonly SAVED_DISMISS_MS = 3000
 
   /** Commit every dirty namespace in order; the first failure stops the run. */
   save = async (): Promise<void> => {
     if (this.#state.saving) return
+    if (this.#dismissTimer !== undefined) clearTimeout(this.#dismissTimer)
     this.#patch({ saving: true, saved: false, failedAt: undefined, conflictAt: undefined, blockedAt: undefined })
     for (const participant of this.#participants) {
       let outcome: SaveOutcome
@@ -106,6 +116,12 @@ export class UnifiedSaveController {
       }
     }
     this.#patch({ saving: false, saved: true })
+    this.#dismissTimer = setTimeout(() => {
+      this.#dismissTimer = undefined
+      // A newer save may have started inside the window — never clobber it.
+      if (this.#disposed || this.#state.saving || !this.#state.saved) return
+      this.#patch({ saved: false })
+    }, UnifiedSaveController.SAVED_DISMISS_MS)
   }
 
   #patch = (patch: Partial<UnifiedSaveState>): void => {
