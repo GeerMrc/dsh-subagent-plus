@@ -499,10 +499,11 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     expect(state.effectiveNameMap).toHaveLength(12)
     expect(state.draft?.nameMap).toEqual([])
     expect(state.draft?.nameMapDefaults).toBe(true)
+    // Capability order (ADR 0015): zai (max tier) outranks sz (xhigh) regardless of list order.
     const byName = (name: string) => state.effectiveNameMap.find(row => row.name === name)
-    expect(byName('review')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
-    expect(byName('dev')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'high' })
-    expect(byName('test')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
+    expect(byName('review')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'max' })
+    expect(byName('dev')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'medium' })
+    expect(byName('test')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'low' })
     controller.dispose()
   })
 
@@ -512,7 +513,7 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     const state = controller.snapshot()
     expect(state.draft?.nameMapDefaults).toBe(false)
     expect(state.draft?.nameMap).toHaveLength(12)
-    expect(state.draft?.nameMap[0]).toMatchObject({ name: 'proofreader', provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
+    expect(state.draft?.nameMap[0]).toMatchObject({ name: 'proofreader', provider: 'zai', model: 'glm', reasoningEffort: 'max' })
     // Effective map now mirrors the stored (custom) rows.
     expect(state.effectiveNameMap.every(row => state.draft?.nameMap.some(stored => stored.name === row.name))).toBe(true)
     controller.dispose()

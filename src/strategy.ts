@@ -84,7 +84,7 @@ export const STARTER_TEMPLATE_ROWS: ReadonlyArray<{ keyword: string; slot: Slot;
   { keyword: 'qa', slot: 'F', effort: 'lowest' },
 ]
 
-/** One candidate route with its reasoning tiers, the derive input (ADR 0014). */
+/** One candidate route with its reasoning tiers, the derive input (ADR 0014/0015). */
 export interface StarterCandidate {
   /** Registered provider id. */
   provider: string
@@ -92,38 +92,85 @@ export interface StarterCandidate {
   model: string
   /** The model's reasoning tiers from the catalogue, when known. */
   efforts?: readonly { id: string }[]
+  /** Catalogue description, when the wire/adapter carries one — a tie-break
+   *  hint only, never a primary capability signal (ADR 0015 d1: descriptions
+   *  are factually, not structurally, the same on both sides). */
+  description?: string
 }
 
+/** Catalogue description hints (ADR 0015 d1): official vocabulary names
+ *  stronger models ("higher cost", "Stronger…") and fast/cheap ones; missing
+ *  or non-English descriptions score 0. */
+const STRONG_HINT = /higher cost|stronger|premium|quality/i
+const FAST_HINT = /fast|flash|lite|cheap/i
+
+/** The rank of candidates with no active on-ladder tier (off-ladder
+ *  vocabularies or models without reasoning): a fixed floor sorting after
+ *  every on-ladder candidate (ADR 0015 R1). */
+const OFF_LADDER_FLOOR = -1
+
 /**
- * Map a slot to a candidate (ADR 0011 H2: from the listed candidates, never
- * hardcoded). A sole candidate resolves every slot — the single-route case
- * differentiates rows by effort, not route (ADR 0013 d2).
- * @param listed - candidates in stored priority order.
- * @param slot - the slot to resolve.
- * @returns the candidate, or undefined when none are listed.
+ * The capability score of one candidate (ADR 0015 d1), lexicographic
+ * [topTierRank, activeTierCount, descHint]: the highest active on-ladder tier
+ * is the signal; the active tier count is an explicit tie-break (a richer
+ * ladder gives the mid intent more materialisation room — more tiers is not
+ * "stronger"); description hints break remaining ties. Equal scores resolve by
+ * the caller's stable sort — the stored candidate order, the user's
+ * preference.
+ * @param candidate - the candidate to score.
+ * @returns the lexicographic score tuple.
  */
-export function slotRouteAt(listed: readonly StarterCandidate[], slot: Slot): StarterCandidate | undefined {
-  if (listed.length === 0) return undefined
-  if (slot === 'S') return listed[0]
-  if (slot === 'F') return listed[listed.length - 1]
-  const mid = Math.max(1, Math.floor((listed.length - 1) / 2))
-  return listed[Math.min(mid, listed.length - 1)]
+function capabilityScore(candidate: StarterCandidate): [number, number, number] {
+  const active = (candidate.efforts ?? []).filter(effort => !DISABLED_EFFORT_IDS.has(effort.id.toLowerCase()))
+  let top = OFF_LADDER_FLOOR
+  for (const effort of active) {
+    const rank = EFFORT_LADDER.indexOf(effort.id.toLowerCase())
+    if (rank > top) top = rank
+  }
+  const description = candidate.description ?? ''
+  const descHint = (STRONG_HINT.test(description) ? 1 : 0) - (FAST_HINT.test(description) ? 1 : 0)
+  return [top, active.length, descHint]
 }
 
 /**
- * Derive the default mapping rows from the candidate list (ADR 0014 d2):
- * stems × S/B/F slots × top/mid/lowest intents, efforts materialised from
- * each candidate's actual tiers. Rows only ever reference listed candidates
- * and legal stems, so the derived table bypasses stored-config validation by
- * construction; an empty candidate list derives no rows (dormant).
+ * Assign the S/B/F slots by capability (ADR 0015 d1, replacing the ordinal
+ * slots of 0014): candidates sort by score descending — stable, so ties keep
+ * the stored order (the user's preference) — then S=strongest, B=upper
+ * median `max(1, floor((n-1)/2))` of the sorted list, F=weakest (the
+ * cheap/fast proxy). Any candidate change re-ranks the whole table, so
+ * appending a stronger model at the end moves the S family to it.
  * @param candidates - the candidate routes in stored priority order, with
- *  catalogue tiers when available (missing tiers materialise '').
+ *  catalogue tiers/description when available.
+ * @returns the candidate per slot, empty when no candidates exist.
+ */
+export function assignSlotsByCapability(candidates: readonly StarterCandidate[]): { S?: StarterCandidate; B?: StarterCandidate; F?: StarterCandidate } {
+  if (candidates.length === 0) return {}
+  const sorted = [...candidates].sort((left, right) => {
+    const leftScore = capabilityScore(left)
+    const rightScore = capabilityScore(right)
+    return rightScore[0] - leftScore[0] || rightScore[1] - leftScore[1] || rightScore[2] - leftScore[2]
+  })
+  const bIndex = Math.min(Math.max(1, Math.floor((sorted.length - 1) / 2)), sorted.length - 1)
+  return { S: sorted[0], B: sorted[bIndex], F: sorted[sorted.length - 1] }
+}
+
+/**
+ * Derive the default mapping rows from the candidate list (ADR 0014 d2 /
+ * 0015 d1): stems × capability-assigned S/B/F slots × top/mid/lowest intents,
+ * efforts materialised from each candidate's actual tiers. Rows only ever
+ * reference listed candidates and legal stems, so the derived table bypasses
+ * stored-config validation by construction; an empty candidate list derives
+ * no rows (dormant).
+ * @param candidates - the candidate routes in stored priority order, with
+ *  catalogue tiers/description when available (missing tiers materialise '').
  * @returns the derived mapping rows.
  */
 export function deriveStarterRows(candidates: readonly StarterCandidate[]): NameMapEntryView[] {
+  if (candidates.length === 0) return []
+  const slots = assignSlotsByCapability(candidates)
   const rows: NameMapEntryView[] = []
   for (const row of STARTER_TEMPLATE_ROWS) {
-    const route = slotRouteAt(candidates, row.slot)
+    const route = slots[row.slot]
     if (route === undefined) continue
     rows.push({
       name: row.keyword,

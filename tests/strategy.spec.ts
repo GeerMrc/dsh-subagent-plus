@@ -587,30 +587,60 @@ describe('semantic effort intents (X2, ADR 0014 d1)', () => {
   })
 })
 
-describe('deriveStarterRows (X2, ADR 0014 d2)', () => {
-  const qwen = { provider: 'sz', model: 'qwen', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
-  const plain = { provider: 'zai', model: 'glm' }
+describe('capability-scored derivation (Y2, ADR 0015 d1)', () => {
+  const qwenA = { provider: 'st', model: 'flash', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
+  const qwenB = { provider: 'hh', model: '27b', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
+  const maxModel = { provider: 'zai', model: 'glm', efforts: [{ id: 'low' }, { id: 'high' }, { id: 'max' }] }
 
-  it('derives 12 rows in stem order with materialised tiers from one candidate', () => {
-    const rows = deriveStarterRows([qwen])
-    expect(rows).toHaveLength(12)
-    expect(rows.map(row => row.name)).toEqual(STARTER_TEMPLATE_ROWS.map(row => row.keyword))
-    const byName = (name: string) => rows.find(row => row.name === name)
-    expect(byName('review')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
-    expect(byName('dev')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'medium' })
-    expect(byName('test')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'low' })
+  it('appending a stronger model at the END moves the S family to it (the user-reported discriminator)', () => {
+    const before = deriveStarterRows([qwenA, qwenB])
+    expect(before.find(r => r.name === 'review')?.provider).toBe('st') // tie → stored order
+    const after = deriveStarterRows([qwenA, qwenB, maxModel])
+    expect(after.find(r => r.name === 'review')?.provider).toBe('zai') // max ranks above xhigh
+    expect(after.find(r => r.name === 'dev')?.provider).toBe('st')    // B = upper median of sorted [zai, st, hh]
+    expect(after.find(r => r.name === 'test')?.provider).toBe('hh')   // F = weakest of the tie pair (stored order)
   })
 
-  it('slots adapt to the candidate count: S=first, B upper-middle, F=last', () => {
-    const two = deriveStarterRows([qwen, plain])
-    expect(two.find(r => r.name === 'review')?.model).toBe('qwen')
-    expect(two.find(r => r.name === 'dev')?.model).toBe('glm')
-    expect(two.find(r => r.name === 'test')?.model).toBe('glm')
-    const three = deriveStarterRows([qwen, { ...plain, model: 'mid' }, { ...plain, model: 'last' }])
-    expect(three.find(r => r.name === 'dev')?.model).toBe('mid')
-    const five = deriveStarterRows([qwen, { ...plain, model: 'a' }, { ...plain, model: 'b' }, { ...plain, model: 'c' }, { ...plain, model: 'd' }])
-    expect(five.find(r => r.name === 'dev')?.model).toBe('b')
-    expect(five.find(r => r.name === 'test')?.model).toBe('d')
+  it('identical vocabularies tie to the stored order (behaviour equals the ordinal era)', () => {
+    const rows = deriveStarterRows([qwenA, qwenB])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('st')
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('hh')
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('hh')
+  })
+
+  it('off-ladder-only and effort-less candidates floor below every on-ladder candidate', () => {
+    const offLadder = { provider: 'pi', model: 'turbo', efforts: [{ id: 'eco' }, { id: 'standard' }, { id: 'turbo' }] }
+    const rows = deriveStarterRows([offLadder, qwenA])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('st')
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('pi')
+    const effortLess = { provider: 'cm', model: 'kimi' }
+    const withPlain = deriveStarterRows([effortLess, qwenA])
+    expect(withPlain.find(r => r.name === 'test')?.provider).toBe('cm')
+  })
+
+  it('description hints break ties only: strong words lift, fast words sink', () => {
+    const strong = { ...qwenB, description: 'Stronger agentic coding at higher cost.' }
+    const rows = deriveStarterRows([qwenA, strong])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('hh')
+    const fast = { ...qwenB, description: 'Fast and cheap for routine tasks.' }
+    const sunk = deriveStarterRows([qwenA, fast])
+    expect(sunk.find(r => r.name === 'review')?.provider).toBe('st')
+    expect(sunk.find(r => r.name === 'test')?.provider).toBe('hh')
+  })
+
+  it('a sole candidate resolves every slot with materialised tiers', () => {
+    const rows = deriveStarterRows([qwenA])
+    expect(rows).toHaveLength(12)
+    expect(rows.find(r => r.name === 'review')).toMatchObject({ provider: 'st', reasoningEffort: 'xhigh' })
+    expect(rows.find(r => r.name === 'dev')).toMatchObject({ provider: 'st', reasoningEffort: 'medium' })
+    expect(rows.find(r => r.name === 'test')).toMatchObject({ provider: 'st', reasoningEffort: 'low' })
+  })
+
+  it('four candidates: B is the upper median of the capability-sorted list', () => {
+    const rows = deriveStarterRows([qwenA, qwenB, maxModel, { provider: 'cm', model: 'kimi' }])
+    // sorted: zai(max) > st/hh(xhigh, stored order st then hh) > cm(floor) → B = sorted[1] = st
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('st')
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('cm')
   })
 
   it('no candidates derive no rows (dormant)', () => {

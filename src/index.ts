@@ -237,6 +237,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
         for (let settled = false; !settled;) {
           const startedAt = deriveGeneration
           const config = live.current()
+          if (process.env.DSMP_DEBUG) console.error('[DSMP] rederive candidates=', JSON.stringify(candidatesOf(config)), 'defaults=', config.nameMapDefaults)
           derivedRows = config.nameMapDefaults && resolveStrategyPlan(config).kind === 'spread'
             ? deriveStarterRows(await Promise.all(candidatesOf(config).map(async route => ({
               provider: route.provider,
