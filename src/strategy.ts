@@ -136,7 +136,8 @@ function capabilityScore(candidate: StarterCandidate): [number, number, number] 
  * Assign the S/B/F slots by capability (ADR 0015 d1, replacing the ordinal
  * slots of 0014): candidates sort by score descending — stable, so ties keep
  * the stored order (the user's preference) — then S=strongest, B=upper
- * median `max(1, floor((n-1)/2))` of the sorted list, F=weakest (the
+ * median `max(1, floor((n-1)/2))` of the sorted list (clamped to the last
+ * index — a sole candidate resolves every slot), F=weakest (the
  * cheap/fast proxy). Any candidate change re-ranks the whole table, so
  * appending a stronger model at the end moves the S family to it.
  * @param candidates - the candidate routes in stored priority order, with

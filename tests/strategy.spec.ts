@@ -646,6 +646,24 @@ describe('capability-scored derivation (Y2, ADR 0015 d1)', () => {
   it('no candidates derive no rows (dormant)', () => {
     expect(deriveStarterRows([])).toEqual([])
   })
+
+  it('the score keys pin in order: tier rank beats tier count beats description (review #2)', () => {
+    // Same top rank, different active counts — the richer ladder wins the tie.
+    const lean = { provider: 'lean', model: 'x', efforts: [{ id: 'xhigh' }] }
+    const rich = { provider: 'rich', model: 'x', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
+    const rows = deriveStarterRows([lean, rich])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('rich')
+    // A strong description never outranks a higher ladder tier (key order).
+    const lowTierStrongDesc = { provider: 'desc', model: 'x', efforts: [{ id: 'low' }, { id: 'high' }], description: 'Stronger agentic coding at higher cost.' }
+    const highTierPlain = { provider: 'tier', model: 'x', efforts: [{ id: 'xhigh' }] }
+    const ranked = deriveStarterRows([lowTierStrongDesc, highTierPlain])
+    expect(ranked.find(r => r.name === 'review')?.provider).toBe('tier')
+    // Strong and fast hints in one description cancel to 0 (sum rule).
+    const both = { provider: 'both', model: 'x', efforts: [{ id: 'xhigh' }], description: 'Premium quality, fast and cheap.' }
+    const neither = { provider: 'neither', model: 'x', efforts: [{ id: 'xhigh' }] }
+    const cancelled = deriveStarterRows([both, neither])
+    expect(cancelled.find(r => r.name === 'review')?.provider).toBe('both') // equal scores → stored order
+  })
 })
 
 describe('resolveNameMapDefaults (X2, ADR 0014 d2 migration rule)', () => {
