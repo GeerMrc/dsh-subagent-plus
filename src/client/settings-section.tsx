@@ -480,7 +480,7 @@ function EditorRoutes(props: EditorProps) {
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
           {!byNameLocked && draft.nameMapDefaults
-            ? <p style={hintStyle}>{listed.some(route => route.available) ? t('byname.defaultsHint') : t('byname.defaultsEmpty')}</p>
+            ? <p style={hintStyle}>{listed.length > 0 ? t('byname.defaultsHint') : t('byname.defaultsEmpty')}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>

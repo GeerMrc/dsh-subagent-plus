@@ -539,6 +539,24 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     controller.dispose()
   })
 
+  it('unavailable candidates still derive — priority verbatim, R2 parity (Y3)', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [
+      { provider: 'sz', model: 'qwen', reasoningEffort: '' },
+      { provider: 'ghost', model: 'vanished', reasoningEffort: '' },
+    ], nameMap: [], nameMapDefaults: true })
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const rows = controller.snapshot().effectiveNameMap
+    expect(rows).toHaveLength(12)
+    // The catalog-missing candidate floors below the on-ladder one: S=sz, B/F=ghost.
+    expect(rows.find(row => row.name === 'review')?.provider).toBe('sz')
+    expect(rows.find(row => row.name === 'dev')?.provider).toBe('ghost')
+    expect(rows.find(row => row.name === 'test')?.provider).toBe('ghost')
+    controller.dispose()
+  })
+
   it('resetNameMapDefaults clears rows and re-enables derivation', async () => {
     const controller = await x5Harness()
     controller.setNameRowName(0, 'proofreader')

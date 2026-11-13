@@ -188,32 +188,37 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   // Per-route reasoning tiers resolved once and cached in this closure; the
   // cache empties on adapter updates so derivation self-heals when a model's
   // tier vocabulary changes.
-  const tierCache = new Map<string, readonly { id: string }[] | undefined>()
+  const tierCache = new Map<string, { efforts?: readonly { id: string }[]; description?: string }>()
   let derivedRows: readonly NameMapEntryView[] = []
   let deriveGeneration = 0
   let deriveInFlight: Promise<void> | undefined
 
-  const tiersOf = async (route: PinRoute): Promise<readonly { id: string }[] | undefined> => {
+  /** Catalogue extras for one route (ADR 0015): reasoning tiers plus the
+   *  description tie-break hint, both from the official resolveModelInfo —
+   *  the same source the client's modelCatalog view is built from. */
+  const catalogueExtrasOf = async (route: PinRoute): Promise<{ efforts?: readonly { id: string }[]; description?: string }> => {
     const key = routeKey(route)
-    if (tierCache.has(key)) return tierCache.get(key)
+    const cached = tierCache.get(key)
+    if (cached !== undefined) return cached
     let llm: unknown
     try {
       llm = ctx.get('llm')
-    } catch (error) {
-      return undefined
+    } catch {
+      return {}
     }
-    if (llm === undefined || typeof llm !== 'object') return undefined
+    if (llm === undefined || typeof llm !== 'object') return {}
     const resolve = (llm as { resolveModelInfo?: unknown }).resolveModelInfo
-    if (typeof resolve !== 'function') return undefined
+    if (typeof resolve !== 'function') return {}
     try {
-      const settled = await (resolve as (provider: string, model: string) => unknown)(route.provider, route.model)
-      const efforts = (settled as { reasoning?: { efforts?: readonly { id: string }[] } } | undefined)?.reasoning?.efforts
-      const tiers = efforts === undefined ? undefined : efforts.map(effort => ({ id: effort.id }))
-      tierCache.set(key, tiers)
-      return tiers
+      const settled: unknown = await (resolve as (provider: string, model: string) => unknown)(route.provider, route.model)
+      const info = settled as { reasoning?: { efforts?: readonly { id: string }[] }; description?: string } | undefined
+      const efforts = info?.reasoning?.efforts === undefined ? undefined : info.reasoning.efforts.map(effort => ({ id: effort.id }))
+      const extras = { efforts, description: info?.description }
+      tierCache.set(key, extras)
+      return extras
     } catch {
       // Failures stay uncached — the next derivation retries.
-      return undefined
+      return {}
     }
   }
 
@@ -242,7 +247,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
             ? deriveStarterRows(await Promise.all(candidatesOf(config).map(async route => ({
               provider: route.provider,
               model: route.model,
-              efforts: await tiersOf(route),
+              ...await catalogueExtrasOf(route),
             }))))
             : []
           settled = deriveGeneration === startedAt

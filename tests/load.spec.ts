@@ -685,6 +685,26 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(((tester as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'low' })
   })
 
+  it('runtime description hints rank equal-vocabulary candidates (Y3)', async () => {
+    const sameVocab: Record<string, string[]> = {
+      'sz/Qwen3.8-27B-FP8': ['off', 'low', 'medium', 'xhigh'],
+      'hh/Qwen3.8-27B-FP8': ['off', 'low', 'medium', 'xhigh'],
+    }
+    const descriptions: Record<string, string> = { 'hh/Qwen3.8-27B-FP8': 'Stronger agentic coding at higher cost.' }
+    const llm = {
+      listProviders: () => [{ id: 'sz' }, { id: 'hh' }, { id: 'zai' }],
+      listModels: async (provider: string) => (provider === 'zai' ? ['glm-5.3'] : ['Qwen3.8-27B-FP8']).map(id => ({ id })),
+      resolveModelInfo: (provider: string, model: string) => ({
+        description: descriptions[`${provider}/${model}`],
+        reasoning: { efforts: sameVocab[`${provider}/${model}`]?.map(id => ({ id })) },
+      }),
+    }
+    const { ctx } = await derivedContext({}, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', reasoningEffort: 'xhigh' }))
+  })
+
   it('pinned keeps derivation dormant even with candidates listed (R1)', async () => {
     const { llm } = tieredLlm(qwenTiers)
     const { ctx } = await derivedContext({ strategy: 'pinned', provider: '', model: '' }, { llm })

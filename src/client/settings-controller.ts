@@ -50,6 +50,8 @@ export interface RouteOption {
   efforts?: readonly EffortOption[]
   /** The model's configured default effort id, when any. */
   defaultEffort?: string
+  /** Catalogue description (ADR 0015): a capability tie-break hint. */
+  description?: string
 }
 
 /** One model-catalogue group as it crosses the wire (session/modelCatalog). */
@@ -59,7 +61,7 @@ export interface CatalogGroup {
   /** Provider display name. */
   name: string
   /** Models under the provider. */
-  models: { id: string; name: string; reasoning?: { efforts: { id: string; name: string }[]; defaultEffort?: string } }[]
+  models: { id: string; name: string; description?: string; reasoning?: { efforts: { id: string; name: string }[]; defaultEffort?: string } }[]
 }
 
 /** The catalogue face the controller reads; injected from `remote.session.modelCatalog`. */
@@ -148,7 +150,7 @@ export function fieldOps(committed: PinConfig, draft: PinConfig): FieldSetOp[] {
 }
 
 /** Join the draft's routes with the catalogue for display; missing routes stay visible as unavailable. */
-function joinRoutes(draft: PinConfig | undefined, routes: readonly RouteOption[]): { provider: string; providerName: string; model: string; modelName: string; available: boolean; efforts?: readonly EffortOption[]; defaultEffort?: string }[] {
+function joinRoutes(draft: PinConfig | undefined, routes: readonly RouteOption[]): { provider: string; providerName: string; model: string; modelName: string; available: boolean; efforts?: readonly EffortOption[]; defaultEffort?: string; description?: string }[] {
   if (draft === undefined) return []
   return draft.priority.map(entry => {
     const hit = routes.find(route => route.provider === entry.provider && route.model === entry.model)
@@ -162,6 +164,7 @@ function joinRoutes(draft: PinConfig | undefined, routes: readonly RouteOption[]
       // in the draft untouched and saves back verbatim.
       efforts: hit?.efforts,
       defaultEffort: hit?.defaultEffort,
+      description: hit?.description,
     }
   })
 }
@@ -260,6 +263,7 @@ export class SettingsSectionController {
         provider: group.id, model: model.id, providerName: group.name, modelName: model.name,
         efforts: model.reasoning?.efforts,
         defaultEffort: model.reasoning?.defaultEffort,
+        description: model.description,
       }))), catalogFailed: false })
     } catch {
       if (this.#disposed) return
@@ -333,9 +337,10 @@ export class SettingsSectionController {
   #materializeDefaultsInto = (draft: PinConfig): void => {
     if (!draft.nameMapDefaults) return
     if (draft.strategy === 'pinned') return
+    // ADR 0015 R2: the derive input is the stored priority verbatim — the
+    // client must not unilaterally drop candidates the runtime still sees.
     const candidates = listedRoutesOf(this.#state)
-      .filter(route => route.available)
-      .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts }))
+      .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts, description: route.description }))
     draft.nameMap = deriveStarterRows(candidates).map(row => ({ ...row }))
     draft.nameMapDefaults = false
   }
@@ -470,8 +475,7 @@ export class SettingsSectionController {
       // R1 mirror of the runtime gate), stored rows otherwise.
       this.#state.effectiveNameMap = draft.nameMapDefaults && draft.strategy !== 'pinned'
         ? deriveStarterRows(listedRoutesOf(this.#state)
-          .filter(route => route.available)
-          .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts })))
+          .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts, description: route.description })))
         : draft.nameMap.map(row => ({ ...row }))
     } else {
       this.#state.addableRoutes = [...this.#state.routes]
