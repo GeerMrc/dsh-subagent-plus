@@ -196,6 +196,45 @@ export function effortDefaultLabel(route: Pick<RouteOption, 'efforts' | 'default
   return withName.replace('{name}', name)
 }
 
+/** Semantic effort intent a template row expresses (ADR 0013): resolved against
+ *  the route's actual tiers at apply time, never a literal provider id. */
+export type EffortIntent = 'top' | 'default' | 'lowest'
+
+/** Recognised effort strength ladder, weakest to strongest (ADR 0013). The host
+ *  publishes efforts in adapter-preferred display order, which is not a
+ *  strength order — the ladder ranks ids whose vocabulary is known. */
+const EFFORT_LADDER = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/** Effort ids that mean "reasoning disabled" — excluded from automatic picks
+ *  (a manual row may still choose them). 'off' has live instances
+ *  (deepseek/qwen); 'none' is a preventive exclusion with none observed. */
+const DISABLED_EFFORT_IDS = new Set(['off', 'none'])
+
+/**
+ * Resolve a semantic effort intent against a route's actual tiers (ADR 0013):
+ * ladder-ranked ids win ('off'/'none' never picked automatically); ids off the
+ * ladder fall back to adapter position (last = top, first = lowest) only when
+ * no tier is on the ladder. `default` stays absent ('' — the host materialises
+ * the model's own default); no non-disabled tiers materialise nothing.
+ * @param route - the route the template row targets, when known.
+ * @param intent - the row's semantic effort intent.
+ * @returns the materialised effort id, or '' to follow the model default.
+ */
+export function resolveSemanticEffort(route: Pick<RouteOption, 'efforts'> | undefined, intent: EffortIntent): string {
+  if (intent === 'default') return ''
+  const active = (route?.efforts ?? []).filter(effort => !DISABLED_EFFORT_IDS.has(effort.id.toLowerCase()))
+  if (active.length === 0) return ''
+  const ranked = active.map(effort => ({ id: effort.id, rank: EFFORT_LADDER.indexOf(effort.id.toLowerCase()) }))
+  const onLadder = ranked.filter(effort => effort.rank >= 0)
+  if (onLadder.length > 0) {
+    const pick = intent === 'top'
+      ? onLadder.reduce((best, entry) => (entry.rank > best.rank ? entry : best))
+      : onLadder.reduce((best, entry) => (entry.rank < best.rank ? entry : best))
+    return pick.id
+  }
+  return (intent === 'top' ? active[active.length - 1] : active[0]).id
+}
+
 /** Options for the add-select: catalogue routes not already listed. */
 export function addableRoutesOf(draft: PinConfig | undefined, routes: readonly RouteOption[]): RouteOption[] {
   if (draft === undefined) return [...routes]

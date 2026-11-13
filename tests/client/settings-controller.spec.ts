@@ -363,6 +363,57 @@ describe('effort dropdown data (E-04)', () => {
   })
 })
 
+describe('semantic effort resolution (W2, ADR 0013)', () => {
+  const qwenEfforts = [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }]
+
+  it('resolves top/lowest by the strength ladder, skipping off tiers', async () => {
+    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
+    const route = { efforts: qwenEfforts }
+    expect(resolveSemanticEffort(route, 'top')).toBe('xhigh')
+    expect(resolveSemanticEffort(route, 'lowest')).toBe('low')
+    expect(resolveSemanticEffort(route, 'default')).toBe('')
+  })
+
+  it('the ladder wins over non-monotonic adapter display order', async () => {
+    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
+    // Adapter order is display order, not strength order (ADR 0013 decision 1).
+    const route = { efforts: [{ id: 'xhigh', name: 'Xhigh' }, { id: 'medium', name: 'Medium' }, { id: 'low', name: 'Low' }] }
+    expect(resolveSemanticEffort(route, 'top')).toBe('xhigh')
+    expect(resolveSemanticEffort(route, 'lowest')).toBe('low')
+  })
+
+  it('no non-off tiers (empty, undefined, or all-off) materialise nothing', async () => {
+    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
+    expect(resolveSemanticEffort({ efforts: [] }, 'top')).toBe('')
+    expect(resolveSemanticEffort(undefined, 'lowest')).toBe('')
+    // deepseek thinking-disabled models: efforts = [Off] (ADR 0013 decision 1).
+    expect(resolveSemanticEffort({ efforts: [{ id: 'off', name: 'Off' }] }, 'top')).toBe('')
+    expect(resolveSemanticEffort({ efforts: [{ id: 'off', name: 'Off' }, { id: 'none', name: 'None' }] }, 'lowest')).toBe('')
+  })
+
+  it('off-ladder-only ids fall back to adapter position (last=top, first=lowest)', async () => {
+    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
+    const route = { efforts: [{ id: 'eco', name: 'Eco' }, { id: 'turbo', name: 'Turbo' }] }
+    expect(resolveSemanticEffort(route, 'top')).toBe('turbo')
+    expect(resolveSemanticEffort(route, 'lowest')).toBe('eco')
+  })
+
+  it('ladder tiers win over off-ladder tiers when both are present', async () => {
+    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
+    const route = { efforts: [{ id: 'low', name: 'Low' }, { id: 'turbo', name: 'Turbo' }] }
+    expect(resolveSemanticEffort(route, 'top')).toBe('low')
+    expect(resolveSemanticEffort(route, 'lowest')).toBe('low')
+  })
+
+  it('matches ladder ids case-insensitively and returns the original id', async () => {
+    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
+    const route = { efforts: [{ id: 'Low', name: 'Low' }, { id: 'XHigh', name: 'XHigh' }] }
+    expect(resolveSemanticEffort(route, 'top')).toBe('XHigh')
+    expect(resolveSemanticEffort(route, 'lowest')).toBe('Low')
+    expect(resolveSemanticEffort({ efforts: [{ id: 'OFF', name: 'Off' }, { id: 'low', name: 'Low' }] }, 'lowest')).toBe('low')
+  })
+})
+
 describe('valueInvalid (E4)', () => {
   it('flags a ready form whose value is not a recognizable config', async () => {
     const form = new FakeForm(baseConfig())
