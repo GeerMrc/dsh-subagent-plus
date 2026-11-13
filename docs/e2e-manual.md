@@ -130,7 +130,9 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | D4 | 点「恢复默认」（**无确认一步到位**）→ 保存 | 行清空＋回到派生态（按当前候选重新能力评分）；`cordis.patch.yml` 落 `nameMapDefaults: true` + 空 `nameMap`；恢复默认按钮**仍在**（常驻） |
 | D5 | 高级 → respectExplicit=开 → 保存 → 主 Agent 用 `subagent` 工具**显式指定**某模型（≠主会话当前模型）派 1 子 | 子会话 `request/header` = **显式指定的模型**（插件不覆盖）；关键词命中的队友名也不覆盖（ADR 0013 d4 判别点）；respectExplicit=关时同操作被派生/策略接管（对照组） |
 | D6 | 关键词队友实测 | 派出名字带 reviewer/dev/tester 的三个子智能体 → 三子会话分别走 最高/中/最低 物化档位（`request/header` 的 reasoningEffort 取证） |
-| D7 | **能力判别（ADR 0015 核心用例）**：在候选清单**末尾追加**一个更强模型（带 `max` 档，或目录 description 含 "higher cost/Stronger"），保存 | 审阅族（review/audit/verif/plan）**换到新模型**＋其最高档——证明评分排序而非位置取位（用户实测痛点的直接判别）；追加的是更弱模型时应只影响 test/qa 族 |
+| D7 | **基准判别（ADR 0016 核心用例）**：候选含 `Qwen3.8-27B-FP8` 与 `deepseek-v4.1-flash`（或同厂 27B 与新一代 flash） | 审阅族指 **deepseek-v4.1-flash**——内置基准快照排序，而非清单位置或参数量字面（用户反例成为判别用例；名称猜能力已证伪废弃） |
+| D9 | **导入导出闭环（ADR 0016 d3）**：点「导出调研任务」→剪贴板得 JSON 包（候选＋双语提示词）；把提示词交给任意强模型跑评估→回传 JSON→「导入评估」粘贴→应用 | 拒绝路径：含重复 model 或全空维度的包被拒并逐条指出；成功路径：每行显示命中状态（当前候选/知识库/未命中仍存）；给某候选打 90 分→该候选立即成为审阅族目标（导入优先于内置）；导入行可删可清空；Team 徽标亮起"待保存" |
+| D10 | 分区"待保存"徽标 | 改任一 Team 相关配置（恢复默认/编辑行/导入评估）→Team 标题旁徽标即现；保存后消失；仅改候选清单（Team 无自定义行）时 Team 徽标**不**亮（派生预览非存储变更） |
 | D8 | 子窗口徽章 | 子 Agent 输入框右侧徽章完整显示如 `strata/Qwen3.8-Flash-Next-NVFP4 · Xhigh`（不截断；title 有全文） |
 
 ## 10. 版本回退/降级安装注意

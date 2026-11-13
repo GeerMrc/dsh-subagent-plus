@@ -10,12 +10,19 @@
 - feat(team-map): **双源名字解析（ADR 0012）**：0.2.0 宿主 roster/tryMembership → 0.2.2+
   宿主 `subagents.namesOf`（含 UNAUTHORIZED 创建窗口吞错）；`agent/inbox/claimed`
   确定性挂钩补选（步准备捕获 selection 之前）。
-- feat(defaults)!: **默认映射安装即生效（ADR 0011→0013→0014→0015）**：12 行跨领域映射由候选清单
-  按**能力评分**派生（最强→review/audit/verif/plan·最高档；居中→执行族·中档；最轻→test/qa·最低档；
-  并列按清单序；无档/档外词表 floor 居末），候选增删改**全表重评**＋adapter 自愈（三时机重派生），
-  仅 spread 策略生效（R1 门控）；编辑即 copy-on-write 物化为自定义＋「恢复默认」**常驻单按钮**
-  （两态可见、直接生效、草稿级可撤销）；`nameMapDefaults` 缺省按存量迁移（空表→开、已有行→关，
-  客户端 #sync 同边界归一化——缺键文档打开即 clean 且派生）。取代起步按钮形态。
+- feat(defaults)!: **默认映射安装即生效（ADR 0011→0016）**：12 行跨领域映射由候选清单按**三维度
+  基准评分**派生（内置 KB 快照：LMArena text/coding＋webdev＋agent 子集 CC-BY-4.0、Aider polyglot
+  Apache-2.0；rank-fraction；缺段 0.5 中位不重归一；角色族独立权重三族独立排序；未收录＝三槽最后
+  备选），候选增删改全表重评＋adapter 自愈，仅 spread 策略生效（R1 门控）；编辑即 copy-on-write
+  物化为自定义＋「恢复默认」常驻单按钮（禁用态内联灰显）；`nameMapDefaults` 缺省按存量迁移
+  （#sync 双侧同边界归一化）。**名称猜能力（"27B 压 flash"）被实证证伪并废弃**——
+  deepseek-v4.1-flash（激活 8-16B）显著强于 Qwen3.8-27B（AA 40vs20/DeepSWE 77vs42），
+  同族 Flash-Next(6B激活) 亦压过 27B 稠密。取代起步按钮形态。
+- feat(evaluation)!: **能力评估导入导出闭环（ADR 0016 d3，L2）**：「导出调研任务」生成候选清单＋
+  双语分布位置判断提示词的 JSON 包；「导入评估」三层校验（schema 0-100 边界＋条数≤64 / 导入器
+  语义——重复拒＋逐条命中反馈＋全空拒＋asOf=调研执行日 / 运行时容错——手编坏行降级不 brick）；
+  `capabilityOverrides` 维度级覆盖 KB（0-100 线性 /100）；导入行列表/逐条删除/清空回退；
+  评分来源与快照日期页内可见。L1 远端自动同步留位下版（LiteLLM 模式四件套）。
 - feat(effort): **语义档位意图（ADR 0013 d1＋0014 修订）**：档位按模型实际档位表物化（梯子
   off<minimal<low<medium<high<xhigh<max，off/none 不自动选，全不在梯子按目录顺序，偶数上中位）；
   B 族改 **mid**（qwen 三族 Xhigh/Medium/Low——"medium 呢"的答案；zai 系 B=High 为有意识升档），
@@ -23,11 +30,11 @@
 - fix(config): **respectExplicit 死开关复活（ADR 0013 d4，二审 P-18）**：0010 迁移漏接导致
   UI/locale 承诺的行为运行时零引用；现于 agent/created、步边界、inbox/claimed 三处接回
   `explicitRouteOf`——显式指派（创建路由≠父路由）优先于关键词映射与策略链（钉定除外）。
-- fix(ui): 行内模型下拉去重（领头显示项与列表同名重复，用户截图命中）；悬空行显示位修复；
-  关键词框 140→96/模型框填满弹性轨（宽度比用户裁定）；删除操作移至**序号 chip 悬停**
-  （行尾 × 弹层越界，用户截图命中；行五轨→四轨，模型轨更宽）；候选清单行单行渲染
-  （原 label+sub 双行系既有设计，id 入悬停 title）；子窗口模型徽章 maxWidth 240→360
-  （长 id 截断，用户截图命中）。
+- fix(ui): 行内模型下拉去重（用户截图命中）；悬空行显示位修复；关键词框 140→96/模型框填满
+  弹性轨；删除移至**序号 chip 悬停**（行尾 × 越界；五轨→四轨）；候选行单行渲染；子窗口徽章
+  maxWidth 240→360（长 id 截断）；**恢复默认按钮伪下拉修复**（误用 dsmp-select 样式带下拉箭头
+  外观＋纯默认态点击零反馈——改专用按钮样式＋禁用态内联灰显＋title 说明）；Team 区**待保存徽标**
+  （分区脏态即改即现，免滚底）；恢复默认后分区即时反馈（徽标出现＋按钮回禁用双信号）。
 - feat(cap): nameMap 上限 16→32（ADR 0013 d5；原 16 对齐的官方 roster 已随 0.2.2-rc.2 删除，
   起步配置 12 行＋存量手工行需合并空间）。
 - feat(guard): 客户端/宿主边界守卫（任意 import 形态＋宿主包名集）。

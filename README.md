@@ -16,7 +16,7 @@
 | 推理强度 | 按所选模型自动加载其支持的思考档位（qwen 系 Off/Low/Medium/Xhigh、zai 系 Low/High/Max、无档位模型不显示） |
 | 健康降级 | 瞬态失败（限流/5xx/超时/断网）随官方重试换到下一健康路由（记账先于官方重试器，第一次失败即入冷却）；凭据/配额类失败冷却整个 provider，只影响后续指派 |
 | Team（角色关键词 → 路由） | 映射表（≤32 行，目标只能取自候选清单）：队友名包含关键词即命中（子串匹配，最长优先）；路由经 `agent.model.select()` 在创建期选定；健康降级步边界生效——v0.0.4 起，ADR 0006＋0007＋0008＋0010＋0012＋0013 |
-| 默认映射（安装即生效） | 装上插件即有 12 行跨领域角色映射（ADR 0014＋0015）：按候选模型**能力评分**指派（最强→review/audit/verif/plan·最高档；居中→research/dev/build/execute/write/design·中档；最轻→test/qa·最低档；并列按清单序）——候选增删改**全表重评**（尾部追加强模型→审阅族即换）；adapter 改档位集自愈；档位按各家模型实际档位表物化（梯子 off<minimal<low<medium<high<xhigh<max，无字面 id 依赖）；编辑任一行即物化为自定义（copy-on-write），「恢复默认」常驻单按钮 |
+| 默认映射（安装即生效） | 装上插件即有 12 行跨领域角色映射（ADR 0014→0016）：按候选模型**三维度基准评分**指派（overall/coding/webdev/agentic，角色族各持权重：质量把关族 coding 主导、执行构建族 webdev 倾斜）——评分锚定**内置基准快照**（LMArena CC-BY-4.0＋Aider Apache-2.0 等，快照日期页内可见）；三族独立排序（同模型可现于多族）；候选增删改全表重评；**未收录模型＝三槽最后备选**（绝不因 argmin 被推去接测试）；编辑任一行即物化为自定义（copy-on-write），「恢复默认」常驻单按钮 |
 | 只读徽章 | 子 Agent 窗口输入框右侧显示 `provider/model · 档位`（两段配色，悬停全文） |
 | 子窗口识别 | 子 Agent 列表弹窗中当前所在行的标题呈琥珀色（叠加官方加粗标记） |
 | 设置页 | 设置 → 子Agent增强：策略/清单（≤5）/兜底/高级全部图形化，保存即热生效（无需重启、不重置运行态） |
@@ -93,7 +93,7 @@ dsh --profile desktop --dump-config | grep dsh-subagent-plus
 
 **Team（角色关键词 → 路由）映射（v0.0.4 起，ADR 0006＋0007＋0008＋0010＋0012＋0013）**：队友名包含关键词即命中（子串匹配，最长优先）；命中＝强制指派（`respectExplicit=true` 时显式指派优先，见配置速览）。**路由在子智能体创建时经官方 `agent.model.select()` API 选定**（0.2.2+ 宿主的正规通道；名字解析双源：0.2.0 宿主 roster/tryMembership → 0.2.2+ 宿主 `subagents.namesOf`，ADR 0012）。映射目标只能取自候选清单；冷却中的路由在**下一步边界**自动换到下一健康候选或兜底（宿主禁止步中换路）。fork 队友默认不被改写；钉定下只读。**继承的 maxTokens 跟随新路由**（不再丢弃）。
 
-**默认映射（v0.0.4/ADR 0014＋0015，安装即生效）**：映射表在 `nameMapDefaults`（缺省按存量迁移：空表→开、已有行→关）开启时由候选清单按**能力评分**派生（最高梯子档为主信号、档数为并列破除、目录 description 文本仅破并列；无档/档外词表为 floor 居末），运行时三时机（llm 就绪/设置提交/adapter 更新防抖）重算，effort/description 逐模型经官方 `resolveModelInfo` 解析（缓存＋失效自愈；与客户端目录同源）。编辑任一行 → copy-on-write 物化为自定义普通行（不再自适应，悬空行照常显式防御）；「恢复默认」**常驻单按钮**（两态可见、点击直接生效、只改草稿不保存即可撤销）。**仅轮询/随机/优先级策略下派生生效**——钉定是强制指派（R1 门控）。元数据相同的模型不可区分（并列按清单序）；价格维度宿主置零不可得；自定义行的物化 id 在 adapter 改档位集时以 stale 选项可见（已知行为）。
+**默认映射（v0.0.4/ADR 0014→0016，安装即生效）**：映射表在 `nameMapDefaults` 开启时由候选清单按**三维度基准评分**派生——内置快照 KB（LMArena text/coding＋webdev＋agent 子集 CC-BY-4.0、Aider polyglot Apache-2.0；各维度 rank-fraction 百分位；缺段按 0.5 中位填充不重归一——缺席证据不得反超已证实能力；缺 coding 主锚标 estimated 不参与 S/F 胜出）＋**用户导入评估优先**（0-100 线性 /100；维度级覆盖）；渐进匹配（原样→别名→逐层剥量化/日期/新鲜度后缀→变体扇出前缀回退；provider 部署名绝不参与）。角色族权重＝opinionated defaults（S: coding .45/overall .25/agentic .20/webdev .10；B: coding .40/overall .30/webdev .20/agentic .10）；F＝S 权重下能力最弱者（成本/延迟间接代理）；**未收录模型对三槽一律最后备选**。KB 随版本月更（快照日期页内可见）；「恢复默认」常驻单按钮（禁用态内联灰显）；仅 spread 策略生效（R1 门控）。名称猜能力已被实证证伪并废弃（deepseek-v4.1-flash 显著强于 Qwen3.8-27B）。
 
 **maxTokens 行为（v0.0.4/ADR 0010 起）**：继承自父 Agent 的 `maxTokens` **跟随新路由持续生效**（不再丢弃）——与官方委托语义一致（`resolveChildAgentOptions` 本来就让子级继承 maxTokens，`agent.model.select()` 也不影响它）。
 
