@@ -233,7 +233,7 @@ export const settingsCss = `
   100% { }
 }
 .dsmp-flash { animation: dsmp-flash 1.8s ease-out 1; }
-@media (prefers-reduced-motion: reduce) { .dsmp-switch, .dsmp-switch > span { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .dsmp-switch, .dsmp-switch > span { transition: none; } .dsmp-flash { animation: none; } }
 `
 
 /** Route select: compact box (the closed value truncates with an ellipsis);
