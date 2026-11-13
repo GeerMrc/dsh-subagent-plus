@@ -328,7 +328,6 @@ type EditorProps = {
  *  merged card in SettingsSection owns the single border. */
 function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
-  const [resetArmed, setResetArmed] = useState(false)
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -466,16 +465,11 @@ function EditorRoutes(props: EditorProps) {
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
             <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
             <span style={{ flex: 1 }} />
-            {!byNameLocked && !draft.nameMapDefaults
-              ? (resetArmed
-                  ? (
-                    <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                      <span style={cardHeadingStyle}>{t('byname.resetConfirm')}</span>
-                      <button type="button" className="dsmp-select" style={{ ...routeSelectStyle, maxWidth: 88 }} onClick={() => { controller.resetNameMapDefaults(); setResetArmed(false) }}>{t('byname.reset')}</button>
-                      <button type="button" className="dsmp-select" style={{ ...routeSelectStyle, maxWidth: 64 }} onClick={() => { setResetArmed(false) }}>{t('byname.resetCancel')}</button>
-                    </span>
-                  )
-                  : <button type="button" className="dsmp-select" style={routeSelectStyle} onClick={() => { setResetArmed(true) }}>{t('byname.reset')}</button>)
+            {/* ADR 0015 d2: one persistent control in both modes (defaults-mode
+                clicks are idempotent re-derivations); it only edits the draft —
+                abandoning the page undoes an accidental click. */}
+            {!byNameLocked
+              ? <button type="button" className="dsmp-select" style={routeSelectStyle} title={t('byname.resetHint')} aria-label={t('byname.reset')} onClick={() => { controller.resetNameMapDefaults() }}>{t('byname.reset')}</button>
               : null}
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}

@@ -15,6 +15,7 @@
 import {
   deriveStarterRows,
   MAX_NAME_MAP_ENTRIES,
+  resolveNameMapDefaults,
   validateStrategyConfig,
   type NameMapEntryView,
   type Strategy,
@@ -450,6 +451,10 @@ export class SettingsSectionController {
       valueInvalid: snapshot.status === 'ready' && value === undefined,
     }
     if (value !== undefined) {
+      // ADR 0015 R3: normalize the migration default on BOTH sides at this one
+      // boundary — a pre-0014 document (field absent) opens clean and derived,
+      // never phantom-dirty.
+      value.nameMapDefaults = resolveNameMapDefaults(value.nameMapDefaults as boolean | undefined, value.nameMap?.length ?? 0)
       patch.draft = copyConfig(value)
       // The reloaded draft is the committed value, so the cooldown parse
       // flag from before a namespace flap must not keep the save blocked.

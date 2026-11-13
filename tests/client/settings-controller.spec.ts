@@ -575,6 +575,24 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     controller.dispose()
   })
 
+  it('a committed document missing nameMapDefaults opens clean and derived (Y4, R3)', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const legacy = defaultsConfig()
+    // A pre-0014 hand-edited document carries no nameMapDefaults key.
+    delete (legacy as Partial<PinConfig>).nameMapDefaults
+    const form = new FakeForm(legacy)
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const state = controller.snapshot()
+    // Both sides normalize: derived rows visible, migration default applied,
+    // and no phantom dirty (fieldOps sees no difference).
+    expect(state.draft?.nameMapDefaults).toBe(true)
+    expect(state.effectiveNameMap).toHaveLength(12)
+    expect(fieldOps(state.value!, state.draft!)).toEqual([])
+    controller.dispose()
+  })
+
   it('defaults-on with stored rows surfaces the degraded warning', async () => {
     const controller = await x5Harness({ ...defaultsConfig(), nameMap: [{ name: 'reviewer', provider: 'sz', model: 'qwen', reasoningEffort: '' }] })
     expect(controller.snapshot().degraded.some(message => message.includes('nameMapDefaults'))).toBe(true)
