@@ -19,10 +19,11 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
+import { kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
-import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
+import { buildResearchPackage, type RouteOption, type SettingsSectionController, type SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
 import {
@@ -30,6 +31,7 @@ import {
   nameInputStyle,
   nameTriggerStyle,
   chipTriggerStyle,
+  pendingBadgeStyle,
   resetButtonStyle,
   rowPopupButtonStyle,
   rowPopupStyle,
@@ -328,6 +330,9 @@ type EditorProps = {
  *  merged card in SettingsSection owns the single border. */
 function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importFeedback, setImportFeedback] = useState<string | undefined>(undefined)
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -335,6 +340,38 @@ function EditorRoutes(props: EditorProps) {
   // shown, so the mapping's route pickers lock instead of sourcing a list the
   // user cannot see or edit.
   const byNameLocked = draft.strategy === 'pinned'
+  const todayText = (): string => new Date().toISOString().slice(0, 10)
+  const exportResearch = (): void => {
+    const candidates = listed.map(route => ({
+      provider: route.provider,
+      model: route.model,
+      match: kbEntryFor(route.model) === undefined ? 'none' as const : 'kb' as const,
+    }))
+    const pkg = buildResearchPackage(candidates, todayText())
+    const text = JSON.stringify(pkg, null, 2)
+    void navigator.clipboard?.writeText(text).catch(() => undefined)
+    setImportFeedback(`${t('byname.research.export')}: ${(pkg.prompt_zh as string).length > 0 ? 'JSON' : ''} → clipboard`)
+    // Clipboard may be unavailable (remote web) — the import panel doubles as
+    // the fallback surface: open it prefilled with the package for copy.
+    setImportText(text)
+  }
+  const applyImport = (): void => {
+    try {
+      const parsed: unknown = JSON.parse(importText)
+      const rows = Array.isArray(parsed) ? parsed : undefined
+      if (rows === undefined) throw new Error('not an array')
+      const result = controller.importCapabilityOverrides(rows as never)
+      if (result.kind === 'rejected') {
+        setImportFeedback(t('byname.research.rejected').replace('{reasons}', result.reasons.join('；')))
+        return
+      }
+      const feedback = result.rows.map(row => `${row.model}: ${row.match === 'candidate' ? t('byname.research.matchCandidate') : row.match === 'kb' ? t('byname.research.matchKb') : t('byname.research.matchNone')}`).join(' · ')
+      setImportFeedback(`${t('common.pending')} — ${feedback}`)
+      setImportOpen(false)
+    } catch (error) {
+      setImportFeedback(t('byname.research.rejected').replace('{reasons}', String(error)))
+    }
+  }
   const pinnedRoute = state.routes.find(route => route.provider === draft.provider && route.model === draft.model) ?? null
   const fallbackRoute = state.routes.find(route => route.provider === draft.fallbackProvider && route.model === draft.fallbackModel) ?? null
   const pinnedHover = pinnedRoute === null && draft.provider === ''
@@ -463,6 +500,9 @@ function EditorRoutes(props: EditorProps) {
           <div style={cardHeaderRowStyle}>
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
             <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
+            {state.value !== undefined && state.draft !== undefined && (JSON.stringify(state.value.nameMap) !== JSON.stringify(state.draft.nameMap) || state.value.nameMapDefaults !== state.draft.nameMapDefaults || JSON.stringify(state.value.capabilityOverrides) !== JSON.stringify(state.draft.capabilityOverrides))
+              ? <span style={pendingBadgeStyle}>{t('common.pending')}</span>
+              : null}
             <span style={{ flex: 1 }} />
             {/* ADR 0015 d2 + 2026-11-14 fix: one persistent control in both
                 modes, styled as the plain action button it is (the select style
@@ -470,24 +510,77 @@ function EditorRoutes(props: EditorProps) {
                 nothing to reset — the button disables with an explanatory
                 title instead of firing a silent no-op; with stored rows being
                 ignored (degraded) it stays armed. */}
+            {/* ADR 0015 d2 + 2026-11-14 fix: one persistent control in both
+                modes, styled as the plain action button it is (the select style
+                made it look like a dropdown). In pure defaults mode there is
+                nothing to reset — the button disables with an explanatory
+                title instead of firing a silent no-op; with stored rows being
+                ignored (degraded) it stays armed. Disabled styling is an
+                INLINE spread (ADR 0016 d4): CSS classes lose to inline cursor. */}
             {!byNameLocked
               ? <button
                 type="button"
                 className="dsmp-hover"
-                style={resetButtonStyle}
+                style={{ ...resetButtonStyle, ...(draft.nameMapDefaults && draft.nameMap.length === 0 ? { opacity: 0.45, cursor: 'default' } : {}) }}
                 disabled={draft.nameMapDefaults && draft.nameMap.length === 0}
                 title={draft.nameMapDefaults && draft.nameMap.length === 0 ? t('byname.resetIdle') : t('byname.resetHint')}
                 aria-label={t('byname.reset')}
                 onClick={() => { controller.resetNameMapDefaults() }}
               >{t('byname.reset')}</button>
               : null}
+            {!byNameLocked
+              ? (
+                <span style={{ display: 'inline-flex', gap: 8 }}>
+                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85 }} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{t('byname.research.export')}</button>
+                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85 }} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportFeedback(undefined) }}>{t('byname.research.import')}</button>
+                </span>
+              )
+              : null}
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
           {!byNameLocked && draft.nameMapDefaults
-            ? <p style={hintStyle}>{listed.length > 0 ? t('byname.defaultsHint') : t('byname.defaultsEmpty')}</p>
+            ? <p style={hintStyle}>{listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>
+            : null}
+          {importOpen
+            ? (
+              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+                <span style={cardHeadingStyle}>{t('byname.research.importTitle')}</span>
+                <textarea
+                  className="dsmp-input"
+                  style={{ ...nameInputStyle, width: '100%', minWidth: 0, height: 120 }}
+                  value={importText}
+                  placeholder={t('byname.research.placeholder')}
+                  aria-label={t('byname.research.importTitle')}
+                  onChange={event => { setImportText(event.target.value) }}
+                />
+                <span style={{ display: 'inline-flex', gap: 8 }}>
+                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.9 }} onClick={applyImport}>{t('byname.research.apply')}</button>
+                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.9 }} onClick={() => { setImportOpen(false); setImportFeedback(undefined) }}>{t('byname.research.cancel')}</button>
+                </span>
+              </div>
+            )
+            : null}
+          {importFeedback !== undefined ? <p style={hintStyle}>{importFeedback}</p> : null}
+          {(draft.capabilityOverrides?.length ?? 0) > 0
+            ? (
+              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                  <span style={cardHeadingStyle}>{t('byname.research.source')}</span>
+                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
+                </span>
+                {draft.capabilityOverrides.map((row, index) => (
+                  <div key={`${row.model}\0${index}`} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                    <span style={hintStyle}>{row.model}</span>
+                    <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
+                    <span style={{ flex: 1 }} />
+                    <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} aria-label={t('byname.research.remove')} onClick={() => { controller.removeCapabilityOverride(index) }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )
             : null}
           {state.effectiveNameMap.length === 0
             ? (!byNameLocked && draft.nameMapDefaults ? null : <p style={hintStyle}>{t('byname.empty')}</p>)

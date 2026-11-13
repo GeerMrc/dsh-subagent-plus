@@ -344,6 +344,19 @@ export const resetButtonStyle: React.CSSProperties = {
   fontSize: 12,
 } as const
 
+/** "Pending save" badge for per-section dirty state (ADR 0016 d4): warn-coloured
+ *  chip beside the section title, so a change is visible without scrolling to
+ *  the unified footer. */
+export const pendingBadgeStyle: React.CSSProperties = {
+  fontSize: 11,
+  lineHeight: 1.5,
+  color: 'var(--dsw-alias-state-warning-primary, inherit)',
+  border: '0.5px solid var(--dsw-alias-border-l4)',
+  borderRadius: 999,
+  padding: '0 8px',
+  whiteSpace: 'nowrap',
+} as const
+
 export const chipTriggerStyle: React.CSSProperties = {
   background: 'transparent',
   border: 'none',
