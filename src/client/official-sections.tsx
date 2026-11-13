@@ -12,8 +12,7 @@
  * @module dsh-subagent-plus/client/official-sections
  */
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { QuestionIcon } from './host-icons.tsx'
+import { Info } from './settings-section.tsx'
 import { NS } from './locales.ts'
 import type { NamespaceFormState, OfficialLimitsController, OfficialLimitsValue } from './official-surfaces.ts'
 import {
@@ -24,17 +23,6 @@ import {
   invalidStyle,
   statusTextStyle,
 } from './settings-styles.ts'
-
-/** Hover ⓘ: the dsh-websearch pattern shared with the main section. */
-function Info({ label, text }: { label: string; text: string }) {
-  return (
-    <Tooltip label={text} side="bottom" delayMs={400} maxWidth={360} portal>
-      <button type="button" aria-label={label} style={{ border: 'none', background: 'transparent', color: 'inherit', opacity: 0.6, cursor: 'help', padding: 0, display: 'inline-flex' }}>
-        <QuestionIcon />
-      </button>
-    </Tooltip>
-  )
-}
 
 /** The status branches the limits block shares (loading / unavailable / invalid). */
 function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: PropsLocale<typeof NS>['t'] }) {
@@ -56,7 +44,7 @@ export function LimitsBlock(props: {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={cardHeaderRowStyle}>
         <h4 id="dsmp-limits" style={cardHeadingStyle}>{t('takeover.limitsTitle')}</h4>
-        <Info label={t('takeover.limitsHelp')} text={t('takeover.limitsHelp')} />
+        <Info label={t('takeover.limitsHelp')} text={t('takeover.limitsHelp')} delayMs={400} />
         <span style={{ flex: 1 }} />
       </div>
       <NsStatusLine state={state} t={t} />

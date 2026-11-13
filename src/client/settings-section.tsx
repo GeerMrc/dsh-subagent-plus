@@ -84,7 +84,9 @@ const routeFull = (route: { providerName: string; modelName: string; provider: s
   `${route.providerName} · ${routeId(route)} — ${route.modelName}`
 
 /** Hover ⓘ: the dsh-websearch pattern — Tooltip wraps a borderless help-cursor anchor. */
-function Info({ label, text, delayMs }: { label: string; text: string; delayMs: number }) {
+/** Shared hover ⓘ (V3): also used by the limits block — one implementation,
+ *  one infoButtonStyle. */
+export function Info({ label, text, delayMs }: { label: string; text: string; delayMs: number }) {
   return (
     <Tooltip label={text} side="bottom" delayMs={delayMs} maxWidth={360} portal>
       <button type="button" aria-label={label} style={infoButtonStyle}>
