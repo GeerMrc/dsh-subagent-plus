@@ -97,6 +97,22 @@ function Info({ label, text, delayMs }: { label: string; text: string; delayMs: 
 /** Hover/click "×" anchor of a by-name mapping row revealing its single
  *  remove action — the RowNameCell popover pattern minus the moves a mapping
  *  row never has (mapping order carries no meaning). */
+/** One-shot button feedback (V2, ADR 0016 UX note): the button itself swaps
+ *  its label and pulses (`.dsmp-flash`) for a short window, then reverts —
+ *  success is an event on the action source, not a paragraph below it. The
+ *  timer clears on unmount or when a newer flash replaces it. */
+function useActionFlash(durationMs = 2000): { label: string | undefined; flash: (label: string) => void } {
+  const [label, setLabel] = useState<string | undefined>(undefined)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current) }, [])
+  const flash = (text: string): void => {
+    if (timer.current !== null) clearTimeout(timer.current)
+    setLabel(text)
+    timer.current = setTimeout(() => { timer.current = null; setLabel(undefined) }, durationMs)
+  }
+  return { label, flash }
+}
+
 function RemoveMenu(props: { label: string; trigger: React.ReactNode; onRemove: () => void }) {
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLSpanElement | null>(null)
@@ -332,7 +348,10 @@ function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
-  const [importFeedback, setImportFeedback] = useState<string | undefined>(undefined)
+  const [importError, setImportError] = useState<string | undefined>(undefined)
+  const exportFlash = useActionFlash()
+  const importFlash = useActionFlash()
+  const resetFlash = useActionFlash()
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -357,30 +376,29 @@ function EditorRoutes(props: EditorProps) {
     const pkg = buildResearchPackage(candidates, todayText())
     const text = JSON.stringify(pkg, null, 2)
     void navigator.clipboard?.writeText(text)
-      .then(() => { setImportFeedback(`${t('byname.research.export')} → clipboard`) })
+      .then(() => { exportFlash.flash(t('byname.research.copied')) })
       .catch(() => {
         // Clipboard unavailable (remote web): open the import panel prefilled
         // with the package so the user can copy it manually.
         setImportText(text)
         setImportOpen(true)
-        setImportFeedback(`${t('byname.research.export')} — ${t('byname.research.importTitle')}`)
       })
   }
   const applyImport = (): void => {
+    setImportError(undefined)
     try {
       const parsed: unknown = JSON.parse(importText)
       const rows = Array.isArray(parsed) ? parsed : undefined
       if (rows === undefined) throw new Error('not an array')
       const result = controller.importCapabilityOverrides(rows as never)
       if (result.kind === 'rejected') {
-        setImportFeedback(t('byname.research.rejected').replace('{reasons}', result.reasons.join('；')))
+        setImportError(result.reasons.join('；'))
         return
       }
-      const feedback = result.rows.map(row => `${row.model}: ${row.match === 'candidate' ? t('byname.research.matchCandidate') : row.match === 'kb' ? t('byname.research.matchKb') : t('byname.research.matchNone')}`).join(' · ')
-      setImportFeedback(`${t('common.pending')} — ${feedback}`)
+      importFlash.flash(t('byname.research.imported').replace('{n}', String(result.rows.length)))
       setImportOpen(false)
     } catch (error) {
-      setImportFeedback(t('byname.research.rejected').replace('{reasons}', String(error)))
+      setImportError(String(error))
     }
   }
   const pinnedRoute = state.routes.find(route => route.provider === draft.provider && route.model === draft.model) ?? null
@@ -536,14 +554,14 @@ function EditorRoutes(props: EditorProps) {
                 disabled={draft.nameMapDefaults && draft.nameMap.length === 0}
                 title={draft.nameMapDefaults && draft.nameMap.length === 0 ? t('byname.resetIdle') : t('byname.resetHint')}
                 aria-label={t('byname.reset')}
-                onClick={() => { controller.resetNameMapDefaults() }}
-              >{t('byname.reset')}</button>
+                onClick={() => { controller.resetNameMapDefaults(); resetFlash.flash(t('byname.resetDone')) }}
+              >{resetFlash.label ?? t('byname.reset')}</button>
               : null}
             {!byNameLocked
               ? (
                 <span style={{ display: 'inline-flex', gap: 8 }}>
-                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85 }} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{t('byname.research.export')}</button>
-                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85 }} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportFeedback(undefined) }}>{t('byname.research.import')}</button>
+                  <button type="button" className={exportFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{exportFlash.label ?? t('byname.research.export')}</button>
+                  <button type="button" className={importFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportError(undefined) }}>{importFlash.label ?? t('byname.research.import')}</button>
                 </span>
               )
               : null}
@@ -567,14 +585,14 @@ function EditorRoutes(props: EditorProps) {
                   aria-label={t('byname.research.importTitle')}
                   onChange={event => { setImportText(event.target.value) }}
                 />
+                {importError !== undefined ? <p style={statusTextStyle('error')}>{t('byname.research.rejected').replace('{reasons}', importError)}</p> : null}
                 <span style={{ display: 'inline-flex', gap: 8 }}>
                   <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.9 }} onClick={applyImport}>{t('byname.research.apply')}</button>
-                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.9 }} onClick={() => { setImportOpen(false); setImportFeedback(undefined) }}>{t('byname.research.cancel')}</button>
+                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.9 }} onClick={() => { setImportOpen(false); setImportError(undefined) }}>{t('byname.research.cancel')}</button>
                 </span>
               </div>
             )
             : null}
-          {importFeedback !== undefined ? <p style={hintStyle}>{importFeedback}</p> : null}
           {(draft.capabilityOverrides?.length ?? 0) > 0 ? <p style={hintStyle}>{t('byname.research.calibration')}</p> : null}
           {(draft.capabilityOverrides?.length ?? 0) > 0
             ? (

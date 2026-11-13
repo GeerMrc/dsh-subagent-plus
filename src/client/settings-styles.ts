@@ -227,6 +227,12 @@ export const settingsCss = `
 .dsmp-invalid { border-color: var(--dsw-alias-state-error-primary) !important; }
 .dsmp-switch:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-focus-ring); outline-offset: 2px; }
 .dsmp-pop-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+@keyframes dsmp-flash {
+  0% { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-bg-layer-0); }
+  60% { border-color: var(--dsw-alias-state-business-primary); }
+  100% { }
+}
+.dsmp-flash { animation: dsmp-flash 1.8s ease-out 1; }
 @media (prefers-reduced-motion: reduce) { .dsmp-switch, .dsmp-switch > span { transition: none; } }
 `
 
