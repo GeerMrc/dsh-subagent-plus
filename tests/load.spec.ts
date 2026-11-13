@@ -512,3 +512,109 @@ describe('dual-source name resolution (ADR 0012, 0.2.2 hosts)', () => {
     expect(model.select).not.toHaveBeenCalled()
   })
 })
+
+describe('respectExplicit revival (W6, ADR 0013 d4)', () => {
+  /** The delegating parent's current route, served through the sessions store. */
+  function sessionsServing(route: { provider: string; model: string; reasoningEffort?: string }): object {
+    return { get: (): { requestHeader: () => { config: typeof route } } => ({ requestHeader: () => ({ config: route }) }) }
+  }
+  const parentRoute = { provider: 'sz', model: 'Qwen3.8-27B-FP8' }
+
+  /** A child created with an explicit zai pick that differs from the parent's sz route. */
+  function explicitChild(name = 'plan-reviewer'): Agent {
+    return memberAgent(name, { provider: 'zai', model: 'glm-5.3', reasoningEffort: 'low' }, { parentSession: 'p1' })
+  }
+
+  it('respectExplicit=true keeps the explicit pick over the keyword map (no select)', async () => {
+    const { ctx } = await byNameContext({ strategy: 'round-robin', respectExplicit: true, priority: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    ] })
+    ctx.provide('sessions', sessionsServing(parentRoute))
+    const agent = explicitChild()
+    await fireCreated(ctx, agent)
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    expect(model.select).not.toHaveBeenCalled()
+  })
+
+  it('respectExplicit=false routes the keyword map as usual (governance default)', async () => {
+    const { ctx } = await byNameContext({ strategy: 'round-robin', respectExplicit: false, priority: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    ] })
+    ctx.provide('sessions', sessionsServing(parentRoute))
+    const agent = explicitChild()
+    await fireCreated(ctx, agent)
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    expect(model.select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+  })
+
+  it('a child equal to the parent route is inheritance, not an explicit pick', async () => {
+    const { ctx } = await byNameContext({ strategy: 'round-robin', respectExplicit: true, priority: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    ] })
+    ctx.provide('sessions', sessionsServing(parentRoute))
+    const agent = memberAgent('plan-reviewer', { provider: 'sz', model: 'Qwen3.8-27B-FP8' }, { parentSession: 'p1' })
+    await fireCreated(ctx, agent)
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    expect(model.select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+  })
+
+  it('pinned stays a forced assignment: the explicit pick does not evade the pin', async () => {
+    const { ctx } = await byNameContext({ strategy: 'pinned', respectExplicit: true, nameMap: [], provider: 'hh', model: 'Qwen3.8-27B-FP8' })
+    ctx.provide('sessions', sessionsServing(parentRoute))
+    const agent = explicitChild('worker')
+    await fireCreated(ctx, agent)
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    expect(model.select).toHaveBeenCalledWith({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
+  })
+
+  it('explicit children keep their pick at step boundaries (no failover swap)', async () => {
+    const { ctx } = await byNameContext({ strategy: 'round-robin', respectExplicit: true, priority: [
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    ] })
+    ctx.provide('sessions', sessionsServing(parentRoute))
+    ctx.provide('llm', registered)
+    const agent = explicitChild()
+    await fireCreated(ctx, agent)
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    await dispatchFailure(ctx, agent, 'zai', 'AUTH')
+    await new Promise(r => setTimeout(r, 10))
+    expect(model.select).not.toHaveBeenCalled()
+  })
+
+  it('the inbox/claimed hook also yields to an explicit pick', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('subagents', {
+      namesOf: (a: object): { self?: string } | undefined => {
+        const n = teamNameOf.get(a)
+        return n === undefined ? undefined : { self: n }
+      },
+    })
+    ctx.provide('sessions', sessionsServing(parentRoute))
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'round-robin',
+      priority: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      ],
+      respectExplicit: true, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [{ name: 'reviewer', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    })
+    const agent = explicitChild()
+    void (ctx as unknown as { waterfall: (name: string, data: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/inbox/claimed', { agent }, async () => {})
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    expect(model.select).not.toHaveBeenCalled()
+  })
+})

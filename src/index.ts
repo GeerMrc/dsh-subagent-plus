@@ -45,6 +45,7 @@ import {
   candidateRoutes,
   classifyFailure,
   createSelectionState,
+  explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
   isValidKeyword,
@@ -290,10 +291,22 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return undefined
   }
 
-  /** Resolve the intended route for one child (byName > pinned > spread). */
+  /** Resolve the intended route for one child (explicit > byName > pinned > spread). */
   const resolveIntendedRoute = async (config: PinConfig, agent: Agent): Promise<PinRoute | undefined> => {
     if (childDepthOf(agent) <= 0) return undefined
     if (!config.pinForkChildren && isForkedChild(agent)) return undefined
+    // ADR 0013 d4 (respectExplicit revival): under a spread strategy, an
+    // explicit delegator pick — a creation route differing from the parent's
+    // current route — outranks both the keyword map and the strategy chain
+    // (the community resolution order: explicit spawn > declared policy).
+    // Pinned stays a forced assignment the switch never evades.
+    if (config.respectExplicit && resolveStrategyPlan(config).kind === 'spread') {
+      const explicit = explicitRouteOf(agent.options, parentRouteOf(ctx, agent))
+      if (explicit !== undefined) {
+        decisions.set(agent, { kind: 'explicit', route: explicit })
+        return undefined
+      }
+    }
     const byName = decideByName(config, agent)
     if (byName !== undefined) {
       // Health/registration check at select-time (ADR 0010 step-boundary semantics)
@@ -451,6 +464,10 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const config = live.current()
     if (config.nameMap.length === 0) return
     if (!config.pinForkChildren && isForkedChild(agent)) return
+    // ADR 0013 d4: an explicit delegator pick yields the same here as at
+    // agent/created — the keyword map never overrides it.
+    if (config.respectExplicit && resolveStrategyPlan(config).kind === 'spread'
+      && explicitRouteOf(agent.options, parentRouteOf(ctx, agent)) !== undefined) return
     const byName = decideByName(config, agent)
     if (byName === undefined) return
     const model = agentModelOf(agent)
