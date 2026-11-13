@@ -426,3 +426,89 @@ describe('runtime keyword defense (ADR 0007/0008, carrier-migrated)', () => {
     // get the pin route instead — which is correct behavior.
   })
 })
+
+describe('dual-source name resolution (ADR 0012, 0.2.2 hosts)', () => {
+  it('namesOf fallback fires when tryMembership is absent, via inbox/claimed', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    // No agentTeams service — 0.2.2 host: subagents.namesOf is the name source.
+    ctx.provide('subagents', {
+      namesOf: (a: object): { self?: string } | undefined => {
+        const n = teamNameOf.get(a)
+        return n === undefined ? undefined : { self: n }
+      },
+    })
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'round-robin',
+      priority: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      ],
+      respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [{ name: 'reviewer', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    })
+    const agent = memberAgent('plan-reviewer')
+    // Fire inbox/claimed — this is the deterministic hook for 0.2.2 hosts.
+    void (ctx as unknown as { waterfall: (name: string, data: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/inbox/claimed', { agent }, async () => {})
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    // reviewer keyword should select the hh route (from nameMap).
+    expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', model: 'Qwen3.8-27B-FP8' }))
+  })
+
+  it('namesOf UNAUTHORIZED during creation window is swallowed; inbox/claimed retries later', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    let authorized = false
+    ctx.provide('subagents', {
+      namesOf: (a: object): { self?: string } | undefined => {
+        if (!authorized) throw new Error('UNAUTHORIZED: agent has no active runtime owner')
+        const n = teamNameOf.get(a)
+        return n === undefined ? undefined : { self: n }
+      },
+    })
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'pinned',
+      priority: [{ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [{ name: 'reviewer', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    })
+    const agent = memberAgent('plan-reviewer')
+    // agent/created fires — namesOf throws UNAUTHORIZED, swallowed, no select yet.
+    await fireCreated(ctx, agent)
+    const model = (agent as unknown as { model: MockModel }).model
+    // Strategy chain (pinned with empty pin) doesn't fire select either — name missed.
+    // Now the creation window closes: inbox/claimed fires, namesOf works.
+    authorized = true
+    void (ctx as unknown as { waterfall: (name: string, data: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/inbox/claimed', { agent }, async () => {})
+    await new Promise(r => setTimeout(r, 10))
+    expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh' }))
+  })
+
+  it('lead name from namesOf is excluded', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('subagents', {
+      namesOf: (): { self?: string } | undefined => ({ self: 'lead' }),
+    })
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'pinned',
+      priority: [{ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [{ name: 'reviewer', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+    })
+    const agent = memberAgent('anything')
+    void (ctx as unknown as { waterfall: (name: string, data: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/inbox/claimed', { agent }, async () => {})
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    // 'lead' is excluded; nameMap miss → no by-name select.
+    // But strategy chain (pinned, empty pin, fallback empty) also no select.
+    expect(model.select).not.toHaveBeenCalled()
+  })
+})
