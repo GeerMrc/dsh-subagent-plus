@@ -45,6 +45,7 @@ import {
   candidateRoutes,
   classifyFailure,
   createSelectionState,
+  deriveStarterRows,
   explicitRouteOf,
   fallbackNotice,
   fallbackRouteOf,
@@ -180,7 +181,81 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     live.refresh()
     warnStructural(live.current())
     warnDegraded(live.current())
+    void rederive()
   })
+
+  // ─── ADR 0014 d2: derived defaults ───
+  // Per-route reasoning tiers resolved once and cached in this closure; the
+  // cache empties on adapter updates so derivation self-heals when a model's
+  // tier vocabulary changes.
+  const tierCache = new Map<string, readonly { id: string }[] | undefined>()
+  let derivedRows: readonly NameMapEntryView[] = []
+  let deriveGeneration = 0
+  let deriveInFlight: Promise<void> | undefined
+
+  const tiersOf = async (route: PinRoute): Promise<readonly { id: string }[] | undefined> => {
+    const key = routeKey(route)
+    if (tierCache.has(key)) return tierCache.get(key)
+    let llm: unknown
+    try {
+      llm = ctx.get('llm')
+    } catch (error) {
+      return undefined
+    }
+    if (llm === undefined || typeof llm !== 'object') return undefined
+    const resolve = (llm as { resolveModelInfo?: unknown }).resolveModelInfo
+    if (typeof resolve !== 'function') return undefined
+    try {
+      const settled = await (resolve as (provider: string, model: string) => unknown)(route.provider, route.model)
+      const efforts = (settled as { reasoning?: { efforts?: readonly { id: string }[] } } | undefined)?.reasoning?.efforts
+      const tiers = efforts === undefined ? undefined : efforts.map(effort => ({ id: effort.id }))
+      tierCache.set(key, tiers)
+      return tiers
+    } catch {
+      // Failures stay uncached — the next derivation retries.
+      return undefined
+    }
+  }
+
+  /** The effective mapping rows: derived under defaults-on (spread only, the
+   *  R1 gate — derivation must never outrank a configured pin), stored rows
+   *  otherwise. Derived rows only ever reference listed candidates, and
+   *  decideByName's priority guard drops any stale row after a config change. */
+  const effectiveNameMapOf = (config: PinConfig): readonly NameMapEntryView[] =>
+    config.nameMapDefaults && resolveStrategyPlan(config).kind === 'spread'
+      ? derivedRows
+      : config.nameMap ?? []
+
+  /** Re-derive the default rows from the live candidates (generation-guarded:
+   *  in-flight requests dedupe, a request landing mid-flight re-runs once so
+   *  the cache never settles on stale input). */
+  const rederive = (): Promise<void> => {
+    deriveGeneration += 1
+    if (deriveInFlight !== undefined) return deriveInFlight
+    deriveInFlight = (async () => {
+      try {
+        for (let settled = false; !settled;) {
+          const startedAt = deriveGeneration
+          const config = live.current()
+          derivedRows = config.nameMapDefaults && resolveStrategyPlan(config).kind === 'spread'
+            ? deriveStarterRows(await Promise.all(candidatesOf(config).map(async route => ({
+              provider: route.provider,
+              model: route.model,
+              efforts: await tiersOf(route),
+            }))))
+            : []
+          settled = deriveGeneration === startedAt
+        }
+      } finally {
+        deriveInFlight = undefined
+      }
+    })()
+    return deriveInFlight
+  }
+
+  // First derivation once the llm service exists (before that, derivation is
+  // dormant — the same semantics as an empty stored map).
+  ctx.inject(['llm'], () => { void rederive() })
 
   const health = new RouteHealth()
   const selection = createSelectionState()
@@ -251,12 +326,13 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   // ─── Decision logic (pure, reused by created + step-boundary select) ───
 
   const decideByName = (config: PinConfig, agent: Agent): ByNameDecision | undefined => {
-    if (config.nameMap.length === 0) return undefined
+    const rows = effectiveNameMapOf(config)
+    if (rows.length === 0) return undefined
     const memo = byNameDecisions.get(agent)
     if (memo !== undefined) return memo
     const name = nameOf(agent)
     if (name === undefined || name === '') return undefined
-    const row = matchByKeyword(name, config.nameMap)
+    const row = matchByKeyword(name, rows)
     if (row === undefined) return undefined
     if (!isValidKeyword(row.name) || row.provider === '' || row.model === ''
       || !config.priority.some(listed => listed.provider === row.provider && listed.model === row.model)) {
@@ -370,9 +446,9 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     // Fork children are excluded unless pinForkChildren (same semantics as before).
     if (!config.pinForkChildren && isForkedChild(agent)) {
       // A mapped name on a fork teammate: warn once (same as before).
-      if (!forkNameWarned && config.nameMap.length > 0) {
+      if (!forkNameWarned && effectiveNameMapOf(config).length > 0) {
         const name = nameOf(agent)
-        if (name !== undefined && matchByKeyword(name, config.nameMap) !== undefined) {
+        if (name !== undefined && matchByKeyword(name, effectiveNameMapOf(config)) !== undefined) {
           forkNameWarned = true
           ctx.logger.warn(`dsh-subagent-plus: role keyword "${name}" matches a fork teammate; fork children keep their inherited route (enable pinForkChildren to route them)`)
         }
@@ -383,6 +459,9 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     // ADR 0010 d2: ANY throw here rolls back the entire agent creation —
     // every async operation must be caught and degraded.
     try {
+      // ADR 0014 d2: await the in-flight derivation — a child arriving before
+      // the first derivation still sees the derived rows.
+      await rederive()
       const route = await resolveIntendedRoute(config, agent)
       if (route === undefined) return
       const selection: { provider: string; model: string; reasoningEffort?: string } = {
@@ -408,7 +487,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const failurePin = failurePlan.kind === 'pinned' ? resolvePin(config) : undefined
     if (!candidatesOf(config).some(route => route.provider === provider)
       && fallback?.provider !== provider && failurePin?.provider !== provider
-      && !config.nameMap.some(row => row.provider === provider)) return
+      && !effectiveNameMapOf(config).some(row => row.provider === provider)) return
     const now = Date.now()
     const until = now + Math.max(failure.providerRetryAfterMs ?? 0, config.cooldownMs)
     if (failureClass === 'sticky-provider') {
@@ -462,7 +541,10 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (childDepthOf(agent) <= 0) return
     if (byNameDecisions.has(agent)) return
     const config = live.current()
-    if (config.nameMap.length === 0) return
+    // Synchronous listener: reads the derived-rows cache only — before the
+    // first derivation completes, defaults mode is dormant (empty-map
+    // semantics) and agent/created performs the awaited derivation.
+    if (effectiveNameMapOf(config).length === 0) return
     if (!config.pinForkChildren && isForkedChild(agent)) return
     // ADR 0013 d4: an explicit delegator pick yields the same here as at
     // agent/created — the keyword map never overrides it.
@@ -489,7 +571,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   ctx.on('agent/request-error', async (payload, next): Promise<RequestErrorAction> => {
     const config = live.current()
     const routed = resolveStrategyPlan(config).kind === 'spread' || fallbackRouteOf(config) !== undefined
-      || config.nameMap.length > 0
+      || effectiveNameMapOf(config).length > 0
     if (routed && config.cooldownMs > 0) {
       recordFailure(config, payload.agent, payload.provider, payload.failure)
       // ADR 0010 d3: select the next healthy route for the next step.
@@ -554,9 +636,19 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return await next()
   })
 
-  // Adapter cache invalidation.
+  // Adapter cache invalidation + derived-tier self-healing behind a short
+  // merge window (adapter updates can burst).
   const forgetRegisteredRoutes = (): void => { registeredRoutes.clear() }
-  ctx.on('llm/adapters-updated', forgetRegisteredRoutes)
+  let adaptersTimer: ReturnType<typeof setTimeout> | undefined
+  ctx.on('llm/adapters-updated', () => {
+    forgetRegisteredRoutes()
+    tierCache.clear()
+    if (adaptersTimer !== undefined) clearTimeout(adaptersTimer)
+    adaptersTimer = setTimeout(() => {
+      adaptersTimer = undefined
+      void rederive()
+    }, 200)
+  })
 }
 
 /** One notice per agent per distinct route target. */

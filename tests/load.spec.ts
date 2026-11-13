@@ -618,3 +618,151 @@ describe('respectExplicit revival (W6, ADR 0013 d4)', () => {
     expect(model.select).not.toHaveBeenCalled()
   })
 })
+
+describe('derived defaults (X4, ADR 0014 d2)', () => {
+  /** llm face with mutable per-route reasoning tiers via resolveModelInfo. */
+  function tieredLlm(initial: Record<string, string[]>) {
+    const state = { tiers: initial }
+    return {
+      llm: {
+        listProviders: () => [{ id: 'sz' }, { id: 'hh' }, { id: 'zai' }],
+        listModels: async (provider: string) => (provider === 'zai' ? ['glm-5.3'] : ['Qwen3.8-27B-FP8']).map(id => ({ id })),
+        resolveModelInfo: (provider: string, model: string) => {
+          const efforts = state.tiers[`${provider}/${model}`]
+          return { reasoning: efforts === undefined ? undefined : { efforts: efforts.map(id => ({ id })) } }
+        },
+      },
+      setTiers: (next: Record<string, string[]>) => { state.tiers = next },
+    }
+  }
+  const qwenTiers: Record<string, string[]> = {
+    'sz/Qwen3.8-27B-FP8': ['off', 'low', 'medium', 'xhigh'],
+    'hh/Qwen3.8-27B-FP8': ['low', 'high', 'max'],
+  }
+  const twoCandidates = [
+    { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+  ]
+
+  async function derivedContext(overrides: Record<string, unknown> = {}, opts: { llm?: object; settings?: boolean; teams?: boolean } = {}): Promise<{ ctx: Context; warns: ReturnType<typeof vi.spyOn> }> {
+    const ctx = new Context()
+    contexts.push(ctx)
+    if (opts.llm !== undefined) ctx.provide('llm', opts.llm)
+    if (opts.settings === true) ctx.provide('settings', {})
+    if (opts.teams !== false) {
+      ctx.provide('agentTeams', {
+        tryMembership: (a: object): { name: string } | undefined => {
+          const n = teamNameOf.get(a)
+          return n === undefined ? undefined : { name: n }
+        },
+      })
+    }
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'round-robin',
+      priority: twoCandidates.map(entry => ({ ...entry })),
+      respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [], nameMapDefaults: true,
+      ...overrides,
+    })
+    return { ctx, warns: vi.spyOn(ctx.logger, 'warn') }
+  }
+
+  it('spread + defaults routes keywords with materialised top/mid/lowest tiers', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({}, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'xhigh' })
+    const dev = memberAgent('dev-worker')
+    await fireCreated(ctx, dev)
+    expect(((dev as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'high' })
+    const tester = memberAgent('tester-x')
+    await fireCreated(ctx, tester)
+    expect(((tester as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'low' })
+  })
+
+  it('pinned keeps derivation dormant even with candidates listed (R1)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({ strategy: 'pinned', provider: '', model: '' }, { llm })
+    const agent = memberAgent('plan-reviewer')
+    await fireCreated(ctx, agent)
+    await new Promise(r => setTimeout(r, 10))
+    expect(((agent as unknown as { model: MockModel }).model).select).not.toHaveBeenCalled()
+  })
+
+  it('custom mode keeps stored rows only; unmatched stems fall to the strategy chain', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({ nameMapDefaults: false, nameMap: [{ name: 'reviewer', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }] }, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
+    const dev = memberAgent('dev-worker')
+    await fireCreated(ctx, dev)
+    // No derived rows in custom mode — the spread strategy assigns the first candidate.
+    expect(((dev as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'Qwen3.8-27B-FP8' }))
+  })
+
+  it('a committed candidate-list change re-derives (settings document-updated)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llm)
+    ctx.provide('settings', {})
+    const config = {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'round-robin',
+      priority: twoCandidates.map(entry => ({ ...entry })),
+      respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [], nameMapDefaults: true,
+    }
+    await ctx.plugin(plugin, config)
+    const before = memberAgent('plan-reviewer')
+    await fireCreated(ctx, before)
+    expect(((before as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz' }))
+    // The user reorders the candidate list and saves.
+    config.priority = [twoCandidates[1]!, twoCandidates[0]!]
+    void (ctx as unknown as { emit: (name: string, ...args: unknown[]) => void }).emit('settings/document-updated', 'dsh-subagent-plus')
+    await new Promise(r => setTimeout(r, 30))
+    const after = memberAgent('plan-reviewer')
+    await fireCreated(ctx, after)
+    expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh' }))
+  })
+
+  it('adapter tier changes self-heal after adapters-updated (debounced)', async () => {
+    const mutable = tieredLlm({ ...qwenTiers, 'sz/Qwen3.8-27B-FP8': ['off', 'low', 'xhigh'] })
+    const { ctx } = await derivedContext({}, { llm: mutable.llm })
+    const before = memberAgent('plan-reviewer')
+    await fireCreated(ctx, before)
+    expect(((before as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'xhigh' }))
+    mutable.setTiers({ ...qwenTiers, 'sz/Qwen3.8-27B-FP8': ['off', 'low', 'high'] })
+    void (ctx as unknown as { emit: (name: string, ...args: unknown[]) => void }).emit('llm/adapters-updated')
+    await new Promise(r => setTimeout(r, 280))
+    const after = memberAgent('plan-reviewer')
+    await fireCreated(ctx, after)
+    expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'high' }))
+  })
+
+  it('inbox/claimed before the first derivation stays dormant; agent/created awaits it', async () => {
+    // No llm service at all: the inject-time first derivation never ran.
+    const { ctx } = await derivedContext()
+    const agent = memberAgent('plan-reviewer')
+    void (ctx as unknown as { waterfall: (name: string, data: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/inbox/claimed', { agent }, async () => {})
+    await new Promise(r => setTimeout(r, 10))
+    expect(((agent as unknown as { model: MockModel }).model).select).not.toHaveBeenCalled()
+    await fireCreated(ctx, agent)
+    // agent/created awaits the (tierless) derivation — rows exist, efforts absent.
+    expect(((agent as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+  })
+
+  it('request-error still records cooldowns for derived-route providers', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx, warns } = await derivedContext({ cooldownMs: 60_000 }, { llm })
+    const dev = memberAgent('dev-worker')
+    await fireCreated(ctx, dev)
+    await dispatchFailure(ctx, dev, 'hh', 'RATE_LIMIT')
+    expect(warns.mock.calls.some(args => String(args[0]).includes('cooling down'))).toBe(true)
+  })
+})
