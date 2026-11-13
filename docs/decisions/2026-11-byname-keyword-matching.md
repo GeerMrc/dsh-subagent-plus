@@ -32,7 +32,7 @@
 4. **datalist 整体删除**＋`name-suggestions.ts` 模块删除＋客户端 sessions 守卫消费段删除。
 5. **运行时防御扩展**：命中行还需 `isValidKeyword(entry.name)`（≥2 字符＋合法格式），否则整行未命中落策略链——防 mid-session 手编 1 字符关键词穿透（同悬空防御型）。
 6. **路由目标仍限定候选清单**（ADR 0007 不变）；悬空/半填双层防御、钉定只读、fork 不越过、冷却/兜底全部不动。
-7. **预置模板（不做）**：v0.0.4 不加；help 文案引导。
+7. **预置模板（不做）**：v0.0.4 不加；help 文案引导。（已被 [0011](2026-11-role-templates.md)→[0013](2026-11-universal-starter-template.md) 取代：v0.0.4 加入通用起步配置。）
 8. **config.ts JSDoc 同步改写**（"exact teammate name"→"role keyword"），连同 `NameMapEntryView.name` JSDoc。
 
 ## 影响

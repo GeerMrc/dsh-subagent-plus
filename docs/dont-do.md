@@ -57,6 +57,11 @@
 - **publish 撞上在途事务报 E409 "Cannot publish over previously staged version"**：同版本有发布事务已上传未定稿（另一终端在跑/浏览器仪式刚完成在收尾）。勿盲目重试——等几秒用 `npm view <pkg> versions dist-tags --json` 查最终态（注意 **curl 裸查 packument 可能命中 CDN 陈旧缓存**，以带凭证的 npm view 为准），成功则收工，未成功再排查。
 - **发布验证三验以 npm view ＋ shasum 对物为准**：`dist.shasum` 与本地 tarball 的 shasum 逐字节一致才能确认"上的是这份产物"；tarball HTTP 200 与版本清单作旁证。
 
+## 模板与配置承诺（v0.0.4 模板重构轮沉淀，2026-11-13）
+
+- **跨 provider 硬编码字面档位 id**：模板写死 `'high'`，qwen 系档位是 Off/Low/Medium/Xhigh（无 high）→ `#resolveEffort` 精确匹配静默降"默认"，默认档可能是 low——"质量优先"模板实际跑最低档，UI 无任何提示（用户实测命中，ADR 0013 决策 1）。跨 provider 的档位引用必须用**语义意图**（top/default/lowest）按实际档位表解析；且宿主 efforts 顺序是 adapter 展示顺序**不是强度顺序**，"取末位=最高"只能在档位 id 全不在公认梯子时兜底。
+- **配置承诺必须随架构迁移审计运行时引用**：ADR 0010 把模型改写从 agent/request 迁到 agent/created 时，`respectExplicit` 的运行时消费被一并删掉，但 UI 开关/locale/config JSDoc/docs 全部存活——对外承诺的行为成了死开关（`src/index.ts` 引用数为 0，二审 P-18 揪出）。删改任一执行路径前，grep 该路径消费的每个配置字段的引用数；UI/locale 承诺与运行时行为发版前必须对账。
+
 ## 客户端/宿主边界（v0.0.4 轮沉淀，2026-11-11 桌面启动崩溃 P0）
 
 - **客户端半边禁止值导入 `src/config.js`**：config.js 顶部 `import z from '@deepseek-ai/schemastery'`——桌面 client-modules 加载器的模块表里没有它（构建期宿主外部件），值导入会把 require 拖进 client bundle → **整个 web boot 拒活**（v0.0.4 测试包实测崩溃，弹窗 "require(\"@deepseek-ai/schemastery\") missed the module table"）。**类型导入（`import type`）编译即擦除，安全**。宿主/客户端共享常量必须放 `strategy.js`/`pin.js` 这类零宿主依赖模块（`MAX_NAME_MAP_ENTRIES` 先例）。机械守卫：`tests/client-boundary.spec.ts` 双扫源码值导入＋成品 bundle 字符串。教训链：单测在 node 环境能解析 node_modules 故全绿——**此类边界只有真实桌面/隔离 E2E 能暴露，人工实测门不可省**。
