@@ -114,13 +114,19 @@ export function canonicalize(raw) {
   name = name.replace(/^[a-z0-9_.-]+\//, '') // vendor namespace inside the model id
   name = name.replace(/:[a-z0-9-]+$/, '') // router variant suffixes
   name = name.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim()
+  // Strip date/snapshot suffixes BEFORE tokenising — split on '-' would shatter
+  // '2025-02-15' into tokens the per-token patterns can no longer see.
+  name = name.replace(/[\s-_]\d{4}-\d{2}-\d{2}$/, '').replace(/[\s-_]\d{8}$/, '').replace(/[\s-_]0\d{2}$/, '')
   let tokens = name.split(/[\s-_]+/).map(token => token.replace(/[^a-z0-9.]/g, '')).filter(Boolean)
+    // Pure-digit snapshot tokens (20260910, 0902) strip wherever they sit —
+    // version tokens (3.8, 4o, v4) carry dots/letters and never match.
+    .filter(token => !/^\d{8}$|^0\d{2}$|^\d{4}$|^\d{5,6}$/.test(token))
   const strip = () => { tokens = tokens.slice(0, -1) }
   let changed = true
   while (changed && tokens.length > 1) {
     changed = false
     const tail = tokens[tokens.length - 1]
-    if (QUANT_SUFFIX.test(`-${tail}`) || FRESH_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`)) { strip(); changed = true }
+    if (QUANT_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`)) { strip(); changed = true }
   }
   return tokens.join('-')
 }

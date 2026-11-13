@@ -626,7 +626,7 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     return {
       llm: {
         listProviders: () => [{ id: 'sz' }, { id: 'hh' }, { id: 'zai' }],
-        listModels: async (provider: string) => (provider === 'zai' ? ['glm-5.3'] : ['Qwen3.8-27B-FP8']).map(id => ({ id })),
+        listModels: async (provider: string) => (provider === 'zai' ? ['glm-5.3'] : ['Qwen3.8-27B-FP8', 'model-x1', 'model-x2', 'deepseek-v4.1-flash']).map(id => ({ id })),
         resolveModelInfo: (provider: string, model: string) => {
           const efforts = state.tiers[`${provider}/${model}`]
           return { reasoning: efforts === undefined ? undefined : { efforts: efforts.map(id => ({ id })) } }
@@ -636,13 +636,16 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     }
   }
   const qwenTiers: Record<string, string[]> = {
-    'sz/Qwen3.8-27B-FP8': ['off', 'low', 'medium', 'xhigh'],
-    'hh/Qwen3.8-27B-FP8': ['low', 'high', 'max'],
+    'sz/model-x1': ['off', 'low', 'medium', 'xhigh'],
+    'hh/model-x2': ['low', 'high', 'max'],
     'zai/glm-5.3': ['low', 'medium', 'high', 'xhigh', 'max'],
   }
+  // Fictional ids: unknown to the shipped KB, so slot order falls back to
+  // list order + the 0015 structural tie chain — deterministic and immune to
+  // snapshot refreshes. KB-truth is covered by the dedicated real-KB test below.
   const twoCandidates = [
-    { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
-    { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+    { provider: 'sz', model: 'model-x1', reasoningEffort: '' },
+    { provider: 'hh', model: 'model-x2', reasoningEffort: '' },
   ]
 
   async function derivedContext(overrides: Record<string, unknown> = {}, opts: { llm?: object; settings?: boolean; teams?: boolean } = {}): Promise<{ ctx: Context; warns: ReturnType<typeof vi.spyOn> }> {
@@ -673,36 +676,33 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
   it('spread + defaults routes keywords with materialised top/mid/lowest tiers', async () => {
     const { llm } = tieredLlm(qwenTiers)
     const { ctx } = await derivedContext({}, { llm })
-    // Capability order (ADR 0015): hh (max tier) outranks sz (xhigh) regardless of list order.
+    // All-unknown models: list-order fallback — S=first, B=F=second.
     const reviewer = memberAgent('plan-reviewer')
     await fireCreated(ctx, reviewer)
-    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'max' })
+    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'model-x1', reasoningEffort: 'xhigh' })
     const dev = memberAgent('dev-worker')
     await fireCreated(ctx, dev)
-    expect(((dev as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'medium' })
+    expect(((dev as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'model-x2', reasoningEffort: 'high' })
     const tester = memberAgent('tester-x')
     await fireCreated(ctx, tester)
-    expect(((tester as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'low' })
+    expect(((tester as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'model-x2', reasoningEffort: 'low' })
   })
 
-  it('runtime description hints rank equal-vocabulary candidates (Y3)', async () => {
-    const sameVocab: Record<string, string[]> = {
-      'sz/Qwen3.8-27B-FP8': ['off', 'low', 'medium', 'xhigh'],
-      'hh/Qwen3.8-27B-FP8': ['off', 'low', 'medium', 'xhigh'],
-    }
-    const descriptions: Record<string, string> = { 'hh/Qwen3.8-27B-FP8': 'Stronger agentic coding at higher cost.' }
-    const llm = {
-      listProviders: () => [{ id: 'sz' }, { id: 'hh' }, { id: 'zai' }],
-      listModels: async (provider: string) => (provider === 'zai' ? ['glm-5.3'] : ['Qwen3.8-27B-FP8']).map(id => ({ id })),
-      resolveModelInfo: (provider: string, model: string) => ({
-        description: descriptions[`${provider}/${model}`],
-        reasoning: { efforts: sameVocab[`${provider}/${model}`]?.map(id => ({ id })) },
-      }),
-    }
-    const { ctx } = await derivedContext({}, { llm })
+  it('the shipped KB ranks deepseek-v4.1-flash above qwen3.8-27b end-to-end (the user counterexample, Z3)', async () => {
+    const { kbEntryFor } = await import('../src/capability-scoring.js')
+    // Loud precondition: these entries must exist in the shipped snapshot —
+    // if a refresh drops either, rebuild and re-check this truth.
+    expect(kbEntryFor('Qwen3.8-27B-FP8') && kbEntryFor('deepseek-v4.1-flash'), 'shipped KB must carry both counterexample models').toBeTruthy()
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({
+      priority: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'hh', model: 'deepseek-v4.1-flash', reasoningEffort: '' },
+      ],
+    }, { llm })
     const reviewer = memberAgent('plan-reviewer')
     await fireCreated(ctx, reviewer)
-    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', reasoningEffort: 'xhigh' }))
+    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', model: 'deepseek-v4.1-flash' }))
   })
 
   it('pinned keeps derivation dormant even with candidates listed (R1)', async () => {
@@ -716,14 +716,14 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
 
   it('custom mode keeps stored rows only; unmatched stems fall to the strategy chain', async () => {
     const { llm } = tieredLlm(qwenTiers)
-    const { ctx } = await derivedContext({ nameMapDefaults: false, nameMap: [{ name: 'reviewer', provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }] }, { llm })
+    const { ctx } = await derivedContext({ nameMapDefaults: false, nameMap: [{ name: 'reviewer', provider: 'hh', model: 'model-x2', reasoningEffort: '' }] }, { llm })
     const reviewer = memberAgent('plan-reviewer')
     await fireCreated(ctx, reviewer)
-    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'Qwen3.8-27B-FP8' })
+    expect(((reviewer as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'hh', model: 'model-x2' })
     const dev = memberAgent('dev-worker')
     await fireCreated(ctx, dev)
     // No derived rows in custom mode — the spread strategy assigns the first candidate.
-    expect(((dev as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'Qwen3.8-27B-FP8' }))
+    expect(((dev as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1' }))
   })
 
   it('a settings commit runs re-derivation but keeps tier caches (tier changes invalidate via adapters-updated only)', async () => {
@@ -753,32 +753,33 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     })
     const before = memberAgent('plan-reviewer')
     await fireCreated(ctx, before)
-    expect(((before as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', reasoningEffort: 'max' }))
+    expect(((before as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1', reasoningEffort: 'xhigh' }))
     // Tier vocabularies change only through adapters-updated (the self-heal
     // test covers that path); a settings commit re-derives from cached tiers,
     // so a service-side tier mutation without adapters-updated must NOT leak
     // into the derived rows.
-    mutable.setTiers({ ...qwenTiers, 'hh/Qwen3.8-27B-FP8': ['low', 'high'] })
+    mutable.setTiers({ ...qwenTiers, 'sz/model-x1': ['off', 'low', 'high'] })
     void (ctx as unknown as { emit: (name: string, ...args: unknown[]) => void }).emit('settings/document-updated', 'dsh-subagent-plus')
     await new Promise(r => setTimeout(r, 30))
     const after = memberAgent('plan-reviewer')
     await fireCreated(ctx, after)
-    expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', reasoningEffort: 'max' }))
+    expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1', reasoningEffort: 'xhigh' }))
   })
 
-  it('adapter tier changes self-heal after adapters-updated (debounced, re-ranks capability)', async () => {
+  it('adapter tier changes self-heal after adapters-updated (debounced; effort re-materialises)', async () => {
     const mutable = tieredLlm(qwenTiers)
     const { ctx } = await derivedContext({}, { llm: mutable.llm })
     const before = memberAgent('plan-reviewer')
     await fireCreated(ctx, before)
-    expect(((before as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', reasoningEffort: 'max' }))
-    // hh loses its max tier → the S family re-ranks onto sz (xhigh) after the debounce.
-    mutable.setTiers({ ...qwenTiers, 'hh/Qwen3.8-27B-FP8': ['low', 'high'] })
+    expect(((before as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1', reasoningEffort: 'xhigh' }))
+    // x1's ladder changes — after the debounce the derived rows re-materialise
+    // the S family's top intent on the NEW ladder.
+    mutable.setTiers({ ...qwenTiers, 'sz/model-x1': ['off', 'low', 'high'] })
     void (ctx as unknown as { emit: (name: string, ...args: unknown[]) => void }).emit('llm/adapters-updated')
     await new Promise(r => setTimeout(r, 280))
     const after = memberAgent('plan-reviewer')
     await fireCreated(ctx, after)
-    expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', reasoningEffort: 'xhigh' }))
+    expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1', reasoningEffort: 'high' }))
   })
 
   it('inbox/claimed before the first derivation stays dormant; agent/created awaits it', async () => {
@@ -790,7 +791,7 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(((agent as unknown as { model: MockModel }).model).select).not.toHaveBeenCalled()
     await fireCreated(ctx, agent)
     // agent/created awaits the (tierless) derivation — rows exist, efforts absent.
-    expect(((agent as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'Qwen3.8-27B-FP8' })
+    expect(((agent as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith({ provider: 'sz', model: 'model-x1' })
   })
 
   it('request-error still records cooldowns for derived-route providers', async () => {
@@ -798,7 +799,9 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     const { ctx, warns } = await derivedContext({ cooldownMs: 60_000 }, { llm })
     const dev = memberAgent('dev-worker')
     await fireCreated(ctx, dev)
-    await dispatchFailure(ctx, dev, 'sz', 'RATE_LIMIT')
+    // dev's derived route is the B slot = hh/model-x2 (list-order median) —
+    // the by-name memo carries provider+model into the cooldown record.
+    await dispatchFailure(ctx, dev, 'hh', 'RATE_LIMIT')
     expect(warns.mock.calls.some(args => String(args[0]).includes('cooling down'))).toBe(true)
   })
 })

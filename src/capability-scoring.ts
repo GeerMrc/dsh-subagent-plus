@@ -9,7 +9,11 @@
  * evidence — ADR 0016 d1); a model absent from both is UNKNOWN and is the
  * last resort for every slot (never promoted by argmin — A-1).
  */
-import { KB, KB_AS_OF } from './capability-kb.js'
+import { KB, KB_AS_OF, type KbDims, type KbEntry } from './capability-kb.js'
+
+/** The KB face the resolver reads — injectable so tests pin behaviour against
+ *  fixture tables instead of the live snapshot. */
+export type KbTable = Record<string, KbEntry>
 
 /** The four capability dimensions the KB and overrides carry. */
 export type CapabilityDimension = 'overall' | 'coding' | 'webdev' | 'agentic'
@@ -50,12 +54,18 @@ export function canonicalizeModelId(raw: string): string {
   name = name.replace(/^[a-z0-9_.-]+\//, '') // vendor namespace inside the model id
   name = name.replace(/:[a-z0-9-]+$/, '') // router variant suffixes
   name = name.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim()
+  // Strip date/snapshot suffixes BEFORE tokenising — split on '-' would shatter
+  // '2025-02-15' into tokens the per-token patterns can no longer see.
+  name = name.replace(/[\s-_]\d{4}-\d{2}-\d{2}$/, '').replace(/[\s-_]\d{8}$/, '').replace(/[\s-_]0\d{2}$/, '')
   let tokens = name.split(/[\s-_]+/).map(token => token.replace(/[^a-z0-9.]/g, '')).filter(Boolean)
+    // Pure-digit snapshot tokens (20260910, 0902, 0117) strip wherever they sit —
+    // version tokens (3.8, 4o, v4) carry dots/letters and never match.
+    .filter(token => !/^\d{8}$|^0\d{2}$|^\d{4}$|^\d{5,6}$/.test(token))
   let changed = true
   while (changed && tokens.length > 1) {
     changed = false
     const tail = tokens[tokens.length - 1] ?? ''
-    if (QUANT_SUFFIX.test(`-${tail}`) || FRESH_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`)) {
+    if (QUANT_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`)) {
       tokens = tokens.slice(0, -1)
       changed = true
     }
@@ -79,23 +89,45 @@ export interface CapabilityView {
  *  suffix at a time and retry — so `Qwen3.8-Flash-Next-NVFP4` finds
  *  `qwen3.8-flash-next` even when the KB also holds the older
  *  `qwen3.8-flash`. Family fallback stays a future build-script concern. */
-function kbEntryFor(modelId: string): { dims: Partial<Record<CapabilityDimension, number>>; estimated: boolean } | undefined {
-  const direct = KB[canonicalizeModelId(modelId)]
+/** Progressive match against a KB table (ADR 0016 d1): exact → alias → strip
+ *  one suffix at a time and retry — so `Qwen3.8-Flash-Next-NVFP4` finds
+ *  `qwen3.8-flash-next` even when the table also holds the older
+ *  `qwen3.8-flash`. */
+export function kbEntryFor(modelId: string, kb: KbTable = KB): { dims: Partial<Record<CapabilityDimension, number>>; estimated: boolean } | undefined {
+  const direct = kb[canonicalizeModelId(modelId)]
   if (direct !== undefined) return { dims: direct.dims, estimated: direct.estimated === true }
   let stripped = String(modelId)
   for (let round = 0; round < 4; round += 1) {
     const next = stripOneSuffix(stripped)
     if (next === stripped) break
     stripped = next
-    const hit = KB[canonicalizeModelId(stripped)]
+    const hit = kb[canonicalizeModelId(stripped)]
     if (hit !== undefined) return { dims: hit.dims, estimated: hit.estimated === true }
+  }
+  // Variant fan-out fallback (ADR 0016 d1 family fallback, snapshot-scoped):
+  // a bare family query (`deepseek-v4.1-flash`) matches its variant entries
+  // (`…-flash-max`) by key prefix; prefer the entry with more dimensions, then
+  // the higher mean — deterministic under snapshot refreshes.
+  const stem = canonicalizeModelId(modelId)
+  const fanouts = Object.keys(kb).filter(key => key.startsWith(`${stem}-`))
+  if (fanouts.length > 0) {
+    const mean = (entry: { dims: KbDims }): number => {
+      const values = Object.values(entry.dims)
+      return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
+    }
+    const best = fanouts
+      .map(key => kb[key]!)
+      .sort((left, right) => Object.keys(right.dims).length - Object.keys(left.dims).length || mean(right) - mean(left))[0]!
+    return { dims: best.dims, estimated: best.estimated === true }
   }
   return undefined
 }
 
 function stripOneSuffix(raw: string): string {
   const key = canonicalizeModelId(raw)
-  const tail = /[-_]([a-z0-9.-]+)$/.exec(key)
+  // Single-token tails only — a '-' inside the class would let the greedy
+  // match cross dashes and strip several tokens at once.
+  const tail = /[-_]([a-z0-9.]+)$/.exec(key)
   if (tail === null) return raw
   return key.slice(0, Math.max(0, key.length - tail[1].length - 1))
 }
@@ -110,13 +142,13 @@ const asOverrideDims = (entry: CapabilityOverride): Partial<Record<CapabilityDim
 /** Resolve one model id through the L2 > L0 > missing chain (ADR 0016 d3).
  *  Dimension-level precedence: an override dimension wins; dimensions the
  *  override omits fall back to the KB; what neither has stays missing. */
-export function capabilityOf(modelId: string, overrides: readonly CapabilityOverride[] = []): CapabilityView {
+export function capabilityOf(modelId: string, overrides: readonly CapabilityOverride[] = [], kb: KbTable = KB): CapabilityView {
   const override = overrides.find(entry => canonicalizeModelId(entry.model) === canonicalizeModelId(modelId))
-  const kb = kbEntryFor(modelId)
-  if (override === undefined && kb === undefined) {
+  const kbHit = kbEntryFor(modelId, kb)
+  if (override === undefined && kbHit === undefined) {
     return { dims: {}, estimated: true, unknown: true, source: 'none' }
   }
-  const dims: Partial<Record<CapabilityDimension, number>> = { ...(kb?.dims ?? {}) }
+  const dims: Partial<Record<CapabilityDimension, number>> = { ...(kbHit?.dims ?? {}) }
   if (override !== undefined) {
     for (const [dimension, value] of Object.entries(asOverrideDims(override))) {
       dims[dimension as CapabilityDimension] = value as number

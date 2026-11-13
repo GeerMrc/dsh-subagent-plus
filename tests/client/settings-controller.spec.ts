@@ -91,6 +91,7 @@ function baseConfig(): PinConfig {
     fallbackReasoningEffort: '',
     nameMap: [],
     nameMapDefaults: false,
+    capabilityOverrides: [],
   }
 }
 
@@ -370,8 +371,8 @@ describe('effort dropdown data (E-04)', () => {
 const effortsCatalog: CatalogPort = {
   load: async () => ({
     groups: [
-      { id: 'sz', name: 'Qwen-SZ', models: [{ id: 'qwen', name: 'Qwen', reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }], defaultEffort: 'low' } }] },
-      { id: 'zai', name: '智谱', models: [{ id: 'glm', name: 'GLM', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }, { id: 'max', name: 'Max' }], defaultEffort: 'low' } }] },
+      { id: 'sz', name: 'Qwen-SZ', models: [{ id: 'cand-a', name: 'A', reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }], defaultEffort: 'low' } }] },
+      { id: 'zai', name: '智谱', models: [{ id: 'cand-b', name: 'B', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }, { id: 'max', name: 'Max' }], defaultEffort: 'low' } }] },
       { id: 'cm', name: 'cm', models: [{ id: 'kimi', name: 'Kimi' }] },
     ],
     failureCount: 0,
@@ -476,8 +477,8 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
       ...baseConfig(),
       strategy: 'round-robin' as never,
       priority: [
-        { provider: 'sz', model: 'qwen', reasoningEffort: '' },
-        { provider: 'zai', model: 'glm', reasoningEffort: '' },
+        { provider: 'sz', model: 'cand-a', reasoningEffort: '' },
+        { provider: 'zai', model: 'cand-b', reasoningEffort: '' },
       ],
       nameMap: [],
       nameMapDefaults: true,
@@ -499,11 +500,12 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     expect(state.effectiveNameMap).toHaveLength(12)
     expect(state.draft?.nameMap).toEqual([])
     expect(state.draft?.nameMapDefaults).toBe(true)
-    // Capability order (ADR 0015): zai (max tier) outranks sz (xhigh) regardless of list order.
+    // Both candidates unknown to the KB: list-order fallback — S=first,
+    // B=F=second; efforts materialise on each one's own ladder.
     const byName = (name: string) => state.effectiveNameMap.find(row => row.name === name)
-    expect(byName('review')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'max' })
-    expect(byName('dev')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'medium' })
-    expect(byName('test')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'low' })
+    expect(byName('review')).toMatchObject({ provider: 'sz', model: 'cand-a', reasoningEffort: 'xhigh' })
+    expect(byName('dev')).toMatchObject({ provider: 'zai', model: 'cand-b', reasoningEffort: 'high' })
+    expect(byName('test')).toMatchObject({ provider: 'zai', model: 'cand-b', reasoningEffort: 'low' })
     controller.dispose()
   })
 
@@ -513,7 +515,7 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     const state = controller.snapshot()
     expect(state.draft?.nameMapDefaults).toBe(false)
     expect(state.draft?.nameMap).toHaveLength(12)
-    expect(state.draft?.nameMap[0]).toMatchObject({ name: 'proofreader', provider: 'zai', model: 'glm', reasoningEffort: 'max' })
+    expect(state.draft?.nameMap[0]).toMatchObject({ name: 'proofreader', provider: 'sz', model: 'cand-a', reasoningEffort: 'xhigh' })
     // Effective map now mirrors the stored (custom) rows.
     expect(state.effectiveNameMap.every(row => state.draft?.nameMap.some(stored => stored.name === row.name))).toBe(true)
     controller.dispose()
@@ -542,7 +544,7 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
   it('unavailable candidates still derive — priority verbatim, R2 parity (Y3)', async () => {
     const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
     const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [
-      { provider: 'sz', model: 'qwen', reasoningEffort: '' },
+      { provider: 'sz', model: 'cand-a', reasoningEffort: '' },
       { provider: 'ghost', model: 'vanished', reasoningEffort: '' },
     ], nameMap: [], nameMapDefaults: true })
     const controller = new SettingsSectionController(form, effortsCatalog)
@@ -569,9 +571,9 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
   })
 
   it('pinned keeps the effective map at the stored rows (R1 mirror)', async () => {
-    const controller = await x5Harness({ ...defaultsConfig(), strategy: 'pinned' as never, nameMap: [{ name: 'reviewer', provider: 'sz', model: 'qwen', reasoningEffort: '' }] })
+    const controller = await x5Harness({ ...defaultsConfig(), strategy: 'pinned' as never, nameMap: [{ name: 'reviewer', provider: 'sz', model: 'cand-a', reasoningEffort: '' }] })
     const state = controller.snapshot()
-    expect(state.effectiveNameMap).toEqual([{ name: 'reviewer', provider: 'sz', model: 'qwen', reasoningEffort: '' }])
+    expect(state.effectiveNameMap).toEqual([{ name: 'reviewer', provider: 'sz', model: 'cand-a', reasoningEffort: '' }])
     controller.dispose()
   })
 
@@ -594,7 +596,7 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
   })
 
   it('defaults-on with stored rows surfaces the degraded warning', async () => {
-    const controller = await x5Harness({ ...defaultsConfig(), nameMap: [{ name: 'reviewer', provider: 'sz', model: 'qwen', reasoningEffort: '' }] })
+    const controller = await x5Harness({ ...defaultsConfig(), nameMap: [{ name: 'reviewer', provider: 'sz', model: 'cand-a', reasoningEffort: '' }] })
     expect(controller.snapshot().degraded.some(message => message.includes('nameMapDefaults'))).toBe(true)
     controller.dispose()
   })

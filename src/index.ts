@@ -242,12 +242,13 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
         for (let settled = false; !settled;) {
           const startedAt = deriveGeneration
           const config = live.current()
+          const withExtras = await Promise.all(candidatesOf(config).map(async route => ({
+            provider: route.provider,
+            model: route.model,
+            ...await catalogueExtrasOf(route),
+          })))
           derivedRows = config.nameMapDefaults && resolveStrategyPlan(config).kind === 'spread'
-            ? deriveStarterRows(await Promise.all(candidatesOf(config).map(async route => ({
-              provider: route.provider,
-              model: route.model,
-              ...await catalogueExtrasOf(route),
-            }))))
+            ? deriveStarterRows(withExtras, { overrides: config.capabilityOverrides ?? [] })
             : []
           settled = deriveGeneration === startedAt
         }
@@ -446,7 +447,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const agent = payload.agent
     if (childDepthOf(agent) <= 0) return
     const model = agentModelOf(agent)
-    if (model === undefined) return // Pre-0.2.2 host: no select() API; old agent/request fallback doesn't exist either (deprecated).
+    if (model === undefined) return
     let config = live.current()
     // Fork children are excluded unless pinForkChildren (same semantics as before).
     if (!config.pinForkChildren && isForkedChild(agent)) {

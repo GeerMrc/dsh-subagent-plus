@@ -10,12 +10,12 @@ describe('capability KB invariants (Z2, ADR 0016 d1)', () => {
     expect(Object.keys(KB).length).toBeLessThanOrEqual(2000)
   })
 
-  it('keys are canonical (lowercase, no quant/date/freshness tails) and unique', () => {
+  it('keys are canonical (lowercase, no quant/date snapshot tails; generation words kept) and unique', () => {
     const keys = Object.keys(KB)
     expect(new Set(keys).size).toBe(keys.length)
     for (const key of keys) {
       expect(key).toBe(key.toLowerCase())
-      expect(key).not.toMatch(/[-_](fp8|nvfp4|int8|awq|gguf|next|preview|latest|exp)$/)
+      expect(key).not.toMatch(/[-_](fp8|nvfp4|int8|awq|gguf|\d{8}|\d{4}-\d{2}-\d{2})$/)
     }
   })
 

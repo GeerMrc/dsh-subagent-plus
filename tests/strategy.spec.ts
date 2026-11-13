@@ -587,82 +587,105 @@ describe('semantic effort intents (X2, ADR 0014 d1)', () => {
   })
 })
 
-describe('capability-scored derivation (Y2, ADR 0015 d1)', () => {
-  const qwenA = { provider: 'st', model: 'flash', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
-  const qwenB = { provider: 'hh', model: '27b', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
-  const maxModel = { provider: 'zai', model: 'glm', efforts: [{ id: 'low' }, { id: 'high' }, { id: 'max' }] }
+describe('KB family-scored derivation (Z3, ADR 0016 d2/d3)', () => {
+  const kb = {
+    'qwen3.8-27b': { aliases: ['Qwen3.8-27B'], dims: { overall: 0.20, coding: 0.20, webdev: 0.15, agentic: 0.25 } },
+    'deepseek-v4.1-flash': { aliases: ['DeepSeek-V4.1-Flash'], dims: { overall: 0.90, coding: 0.95, webdev: 0.85, agentic: 0.92 } },
+    'qwen3.8-flash': { aliases: ['Qwen3.8-Flash'], dims: { overall: 0.30, coding: 0.35, webdev: 0.40, agentic: 0.30 } },
+    'qwen3.8-flash-next': { aliases: ['Qwen3.8-Flash-Next'], dims: { overall: 0.50, coding: 0.55, webdev: 0.60, agentic: 0.50 } },
+    'coding-specialist': { aliases: [], dims: { overall: 0.60, coding: 0.90, webdev: 0.20, agentic: 0.40 } },
+    'webdev-specialist': { aliases: [], dims: { overall: 0.60, coding: 0.30, webdev: 0.95, agentic: 0.40 } },
+  }
+  const at = (model: string, efforts: string[] = ['off', 'low', 'medium', 'xhigh']) =>
+    ({ provider: 'p', model, efforts: efforts.map(id => ({ id })) })
 
-  it('appending a stronger model at the END moves the S family to it (the user-reported discriminator)', () => {
-    const before = deriveStarterRows([qwenA, qwenB])
-    expect(before.find(r => r.name === 'review')?.provider).toBe('st') // tie → stored order
-    const after = deriveStarterRows([qwenA, qwenB, maxModel])
-    expect(after.find(r => r.name === 'review')?.provider).toBe('zai') // max ranks above xhigh
-    expect(after.find(r => r.name === 'dev')?.provider).toBe('st')    // B = upper median of sorted [zai, st, hh]
-    expect(after.find(r => r.name === 'test')?.provider).toBe('hh')   // F = weakest of the tie pair (stored order)
+  it("the user's counterexample: deepseek-v4.1-flash outranks Qwen3.8-27B for the S family", () => {
+    const rows = deriveStarterRows([at('Qwen3.8-27B-FP8'), at('deepseek-v4.1-flash')], { kb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('deepseek-v4.1-flash')
+    expect(rows.find(r => r.name === 'review')?.reasoningEffort).toBe('xhigh') // top within ITS OWN ladder
   })
 
-  it('identical vocabularies tie to the stored order (behaviour equals the ordinal era)', () => {
-    const rows = deriveStarterRows([qwenA, qwenB])
-    expect(rows.find(r => r.name === 'review')?.provider).toBe('st')
-    expect(rows.find(r => r.name === 'dev')?.provider).toBe('hh')
-    expect(rows.find(r => r.name === 'test')?.provider).toBe('hh')
+  it('progressive matching prefers the closer entry: Flash-Next-NVFP4 hits qwen3.8-flash-next, not the older flash', () => {
+    const rows = deriveStarterRows([at('Qwen3.8-Flash-Next-NVFP4'), at('qwen3.8-flash')], { kb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('Qwen3.8-Flash-Next-NVFP4')
   })
 
-  it('off-ladder-only and effort-less candidates floor below every on-ladder candidate', () => {
-    const offLadder = { provider: 'pi', model: 'turbo', efforts: [{ id: 'eco' }, { id: 'standard' }, { id: 'turbo' }] }
-    const rows = deriveStarterRows([offLadder, qwenA])
-    expect(rows.find(r => r.name === 'review')?.provider).toBe('st')
-    expect(rows.find(r => r.name === 'test')?.provider).toBe('pi')
-    const effortLess = { provider: 'cm', model: 'kimi' }
-    const withPlain = deriveStarterRows([effortLess, qwenA])
-    expect(withPlain.find(r => r.name === 'test')?.provider).toBe('cm')
+  it('missing evidence never outranks proven evidence (no renormalisation)', () => {
+    // sparse: only overall 0.9; complete: coding 0.8 with every dimension present.
+    const sparseKb = {
+      sparse: { aliases: [], dims: { overall: 0.9 } },
+      complete: { aliases: [], dims: { overall: 0.7, coding: 0.8, webdev: 0.7, agentic: 0.7 } },
+    }
+    const rows = deriveStarterRows([at('sparse'), at('complete')], { kb: sparseKb })
+    // S weight: complete = .45*.8+.25*.7+.20*.7+.10*.7 = .765; sparse = .25*.9 + .75*.5 = .6
+    expect(rows.find(r => r.name === 'review')?.model).toBe('complete')
   })
 
-  it('description hints break ties only: strong words lift, fast words sink', () => {
-    const strong = { ...qwenB, description: 'Stronger agentic coding at higher cost.' }
-    const rows = deriveStarterRows([qwenA, strong])
-    expect(rows.find(r => r.name === 'review')?.provider).toBe('hh')
-    const fast = { ...qwenB, description: 'Fast and cheap for routine tasks.' }
-    const sunk = deriveStarterRows([qwenA, fast])
-    expect(sunk.find(r => r.name === 'review')?.provider).toBe('st')
-    expect(sunk.find(r => r.name === 'test')?.provider).toBe('hh')
+  it('unknown models are the last resort for every slot — including F (A-1)', () => {
+    const rows = deriveStarterRows([at('qwen3.8-27b'), at('mystery-custom-deploy'), at('qwen3.8-flash')], { kb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('qwen3.8-flash')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('qwen3.8-27b') // the weakest KNOWN model — never the unknown mystery
+  })
+
+  it('estimated models never win S — they only ride the B ranking (A-6)', () => {
+    const estKb: import('../src/capability-scoring.js').KbTable = {
+      'anchored-model': { aliases: [], dims: { overall: 0.4, coding: 0.4, webdev: 0.4, agentic: 0.4 } },
+      'estimated-strong': { aliases: [], dims: { overall: 0.95, webdev: 0.95 }, estimated: true },
+    }
+    const rows = deriveStarterRows([at('estimated-strong'), at('anchored-model')], { kb: estKb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('anchored-model')
+  })
+
+  it('families rank independently: S takes the coding specialist, B tilts toward webdev', () => {
+    const rows = deriveStarterRows([at('coding-specialist'), at('webdev-specialist')], { kb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('coding-specialist')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('webdev-specialist')
+  })
+
+  it('slot tie rules: S keeps the earlier candidate, F the later (list order)', () => {
+    const tie = [at('qwen3.8-27b'), at('qwen3.8-27b-again', ['off', 'low', 'medium', 'xhigh'])]
+    const rows = deriveStarterRows(tie, { kb }) // both resolve to the same KB entry — a full tie
+    expect(rows.find(r => r.name === 'review')?.model).toBe('qwen3.8-27b')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('qwen3.8-27b-again')
+  })
+
+  it('overrides beat the KB on a linear /100 scale (mixed-scale snapshot, B-1)', () => {
+    const rows = deriveStarterRows(
+      [at('qwen3.8-27b'), at('deepseek-v4.1-flash')],
+      { kb, overrides: [{ model: 'qwen3.8-27b', coding: 85, overall: 85, webdev: 85, agentic: 85, asOf: '2026-11-14' }] },
+    )
+    // override 0.85 across the board beats the flash entry's weighted ≈0.9x? No — 0.85 < 0.95-weighted S score.
+    expect(rows.find(r => r.name === 'review')?.model).toBe('deepseek-v4.1-flash')
+    const lifted = deriveStarterRows(
+      [at('qwen3.8-27b'), at('deepseek-v4.1-flash')],
+      { kb, overrides: [{ model: 'qwen3.8-27b', coding: 95, overall: 95, webdev: 95, agentic: 95, asOf: '2026-11-14' }] },
+    )
+    expect(lifted.find(r => r.name === 'review')?.model).toBe('qwen3.8-27b')
+  })
+
+  it('partial overrides cover only their dimensions; the KB fills the rest', () => {
+    const rows = deriveStarterRows(
+      [at('qwen3.8-27b'), at('qwen3.8-flash')],
+      { kb, overrides: [{ model: 'qwen3.8-flash', coding: 90, asOf: '2026-11-14' }] },
+    )
+    expect(rows.find(r => r.name === 'review')?.model).toBe('qwen3.8-flash')
+  })
+
+  it('with no known candidate at all, slots fall back to list order (first / upper-median / last)', () => {
+    const rows = deriveStarterRows([at('alpha'), at('beta'), at('gamma')])
+    expect(rows.find(r => r.name === 'review')?.model).toBe('alpha')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('beta')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('gamma')
   })
 
   it('a sole candidate resolves every slot with materialised tiers', () => {
-    const rows = deriveStarterRows([qwenA])
+    const rows = deriveStarterRows([at('qwen3.8-27b')], { kb })
     expect(rows).toHaveLength(12)
-    expect(rows.find(r => r.name === 'review')).toMatchObject({ provider: 'st', reasoningEffort: 'xhigh' })
-    expect(rows.find(r => r.name === 'dev')).toMatchObject({ provider: 'st', reasoningEffort: 'medium' })
-    expect(rows.find(r => r.name === 'test')).toMatchObject({ provider: 'st', reasoningEffort: 'low' })
-  })
-
-  it('four candidates: B is the upper median of the capability-sorted list', () => {
-    const rows = deriveStarterRows([qwenA, qwenB, maxModel, { provider: 'cm', model: 'kimi' }])
-    // sorted: zai(max) > st/hh(xhigh, stored order st then hh) > cm(floor) → B = sorted[1] = st
-    expect(rows.find(r => r.name === 'dev')?.provider).toBe('st')
-    expect(rows.find(r => r.name === 'test')?.provider).toBe('cm')
+    expect(rows.find(r => r.name === 'review')).toMatchObject({ model: 'qwen3.8-27b', reasoningEffort: 'xhigh' })
   })
 
   it('no candidates derive no rows (dormant)', () => {
     expect(deriveStarterRows([])).toEqual([])
-  })
-
-  it('the score keys pin in order: tier rank beats tier count beats description (review #2)', () => {
-    // Same top rank, different active counts — the richer ladder wins the tie.
-    const lean = { provider: 'lean', model: 'x', efforts: [{ id: 'xhigh' }] }
-    const rich = { provider: 'rich', model: 'x', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
-    const rows = deriveStarterRows([lean, rich])
-    expect(rows.find(r => r.name === 'review')?.provider).toBe('rich')
-    // A strong description never outranks a higher ladder tier (key order).
-    const lowTierStrongDesc = { provider: 'desc', model: 'x', efforts: [{ id: 'low' }, { id: 'high' }], description: 'Stronger agentic coding at higher cost.' }
-    const highTierPlain = { provider: 'tier', model: 'x', efforts: [{ id: 'xhigh' }] }
-    const ranked = deriveStarterRows([lowTierStrongDesc, highTierPlain])
-    expect(ranked.find(r => r.name === 'review')?.provider).toBe('tier')
-    // Strong and fast hints in one description cancel to 0 (sum rule).
-    const both = { provider: 'both', model: 'x', efforts: [{ id: 'xhigh' }], description: 'Premium quality, fast and cheap.' }
-    const neither = { provider: 'neither', model: 'x', efforts: [{ id: 'xhigh' }] }
-    const cancelled = deriveStarterRows([both, neither])
-    expect(cancelled.find(r => r.name === 'review')?.provider).toBe('both') // equal scores → stored order
   })
 })
 

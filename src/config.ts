@@ -12,8 +12,8 @@
  * @module dsh-subagent-plus/config
  */
 import z from '@deepseek-ai/schemastery'
-import type { NameMapEntryView, PriorityEntryView, Strategy } from './strategy.js'
-import { MAX_NAME_MAP_ENTRIES, resolveNameMapDefaults, STRATEGIES } from './strategy.js'
+import type { CapabilityOverrideView, NameMapEntryView, PriorityEntryView, Strategy } from './strategy.js'
+import { MAX_CAPABILITY_OVERRIDES, MAX_NAME_MAP_ENTRIES, resolveNameMapDefaults, STRATEGIES } from './strategy.js'
 
 /** Plugin configuration; plain values only — runtime handles unwrap through {@link materializeConfig}. */
 export interface PinConfig {
@@ -47,6 +47,9 @@ export interface PinConfig {
   nameMap: NameMapEntryView[]
   /** Defaults mode (ADR 0014 d2): the effective mapping derives from the candidate list; false keeps the stored rows. */
   nameMapDefaults: boolean
+  /** User-imported capability evaluations (ADR 0016 d3, L2): raw model ids
+   *  matched progressively at read time; percentile-position scores 0-100. */
+  capabilityOverrides: CapabilityOverrideView[]
 }
 
 /** Upper bound on `priority` entries; enforced by the schema and the settings page. */
@@ -125,4 +128,13 @@ export const Config: z = z.object({
   // Deliberately no `.default()`: absent must survive parsing so
   // materializeConfig can apply the stored-rows migration rule (ADR 0014 d2).
   nameMapDefaults: z.boolean().volatile(),
+  capabilityOverrides: z.array(z.object({
+    model: z.string().default(''),
+    overall: z.union([z.number().min(0).max(100), z.const(undefined)]),
+    coding: z.union([z.number().min(0).max(100), z.const(undefined)]),
+    webdev: z.union([z.number().min(0).max(100), z.const(undefined)]),
+    agentic: z.union([z.number().min(0).max(100), z.const(undefined)]),
+    asOf: z.string().default(''),
+    note: z.string().default(''),
+  })).default([]).max(MAX_CAPABILITY_OVERRIDES).volatile(),
 })

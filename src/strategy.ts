@@ -5,7 +5,26 @@
  * explicit-route test. Clock and randomness are injected so every rule is
  * unit-testable without a live Host.
  */
+import { capabilityOf, familyScore, type CapabilityOverride, type KbTable } from './capability-scoring.js'
 import { routeId, type PinRoute, type RouteFields } from './pin.js'
+
+/** One user-imported capability evaluation row as the config schema materializes it (ADR 0016 d3). */
+export interface CapabilityOverrideView {
+  /** Raw model identifier as researched — matched progressively at read time. */
+  model: string
+  /** Percentile-position scores 0-100 (50≈median, 70≈top quartile, 90≈top decile). */
+  overall?: number
+  coding?: number
+  webdev?: number
+  agentic?: number
+  /** Research execution date (YYYY-MM-DD). */
+  asOf: string
+  /** Free-text provenance note — unverifiable, informational only. */
+  note?: string
+}
+
+/** Upper bound on user-imported capability overrides (ADR 0016 d3). */
+export const MAX_CAPABILITY_OVERRIDES = 64
 
 /** Upper bound on `nameMap` rows. Originally 16 to align with the official
  * roster's `DEFAULT_MAX_MEMBERS`; that roster left the host in 0.2.2-rc.2, and
@@ -110,17 +129,11 @@ const FAST_HINT = /fast|flash|lite|cheap/i
 const OFF_LADDER_FLOOR = -1
 
 /**
- * The capability score of one candidate (ADR 0015 d1), lexicographic
- * [topTierRank, activeTierCount, descHint]: the highest active on-ladder tier
- * is the signal; the active tier count is an explicit tie-break (a richer
- * ladder gives the mid intent more materialisation room — more tiers is not
- * "stronger"); description hints break remaining ties. Equal scores resolve by
- * the caller's stable sort — the stored candidate order, the user's
- * preference.
- * @param candidate - the candidate to score.
- * @returns the lexicographic score tuple.
+ * The 0015 structural tie chain — [topTierRank, activeTierCount, descHint] —
+ * retained as the fallback when KB family scores tie (ADR 0016 d2: benchmark
+ * truth first, host-structural signals only break its ties).
  */
-function capabilityScore(candidate: StarterCandidate): [number, number, number] {
+function legacyTuple(candidate: StarterCandidate): [number, number, number] {
   const active = (candidate.efforts ?? []).filter(effort => !DISABLED_EFFORT_IDS.has(effort.id.toLowerCase()))
   let top = OFF_LADDER_FLOOR
   for (const effort of active) {
@@ -132,27 +145,87 @@ function capabilityScore(candidate: StarterCandidate): [number, number, number] 
   return [top, active.length, descHint]
 }
 
+/** Options threading the L2 overrides and (for tests) a fixture KB through
+ *  the slot assignment (ADR 0016 d2/d3). */
+export interface SlotAssignmentOptions {
+  /** User-imported capability evaluations — highest-priority score layer. */
+  overrides?: readonly CapabilityOverride[]
+  /** Fixture KB for tests; the shipped snapshot is the default. */
+  kb?: KbTable
+}
+
+const fastHintOf = (candidate: StarterCandidate): number => (FAST_HINT.test(candidate.description ?? '') ? 1 : 0)
+
 /**
- * Assign the S/B/F slots by capability (ADR 0015 d1, replacing the ordinal
- * slots of 0014): candidates sort by score descending — stable, so ties keep
- * the stored order (the user's preference) — then S=strongest, B=upper
- * median `max(1, floor((n-1)/2))` of the sorted list (clamped to the last
- * index — a sole candidate resolves every slot), F=weakest (the
- * cheap/fast proxy). Any candidate change re-ranks the whole table, so
- * appending a stronger model at the end moves the S family to it.
- * @param candidates - the candidate routes in stored priority order, with
- *  catalogue tiers/description when available.
+ * Assign the S/B/F slots by KB family scores (ADR 0016 d2). Each family ranks
+ * the candidates by its own dimension weights — three independent orderings,
+ * no cross-family containment (the same model may serve several families).
+ * Ties fall through the 0015 structural chain, then the stored order (S/B
+ * take the earlier candidate, F the later). Unknown models are the LAST
+ * resort for every slot — including F, whose argmin would otherwise promote
+ * them (A-1); estimated models never win S/F, they only ride the B ranking
+ * (A-6). With no known candidate at all the slots fall back to list order
+ * (first / upper-median / last).
+ * @param candidates - the candidate routes in stored priority order.
+ * @param options - overrides and fixture KB.
  * @returns the candidate per slot, empty when no candidates exist.
  */
-export function assignSlotsByCapability(candidates: readonly StarterCandidate[]): { S?: StarterCandidate; B?: StarterCandidate; F?: StarterCandidate } {
+export function assignSlotsByCapability(candidates: readonly StarterCandidate[], options: SlotAssignmentOptions = {}): { S?: StarterCandidate; B?: StarterCandidate; F?: StarterCandidate } {
   if (candidates.length === 0) return {}
-  const sorted = [...candidates].sort((left, right) => {
-    const leftScore = capabilityScore(left)
-    const rightScore = capabilityScore(right)
-    return rightScore[0] - leftScore[0] || rightScore[1] - leftScore[1] || rightScore[2] - leftScore[2]
+  const overrides = options.overrides ?? []
+  const views = candidates.map((candidate, index) => ({
+    candidate,
+    view: options.kb === undefined ? capabilityOf(candidate.model, overrides) : capabilityOf(candidate.model, overrides, options.kb),
+    index,
+  }))
+  const legacyDiff = (a: typeof views[number], b: typeof views[number]): number => {
+    const left = legacyTuple(a.candidate)
+    const right = legacyTuple(b.candidate)
+    return right[0] - left[0] || right[1] - left[1] || right[2] - left[2]
+  }
+  const known = views.filter(entry => !entry.view.unknown)
+  const anchored = known.filter(entry => !entry.view.estimated)
+  const pool = anchored.length > 0 ? anchored : known
+  // Explicit reduce scans (not sort comparators): the per-slot tie rules stay
+  // readable and deterministic — S keeps the earlier candidate on ties, F the
+  // later one, and a fast-named model yields to F first.
+  const sPick = pool.length > 0
+    ? pool.reduce((best, entry) => {
+        const diff = familyScore(entry.view, 'S') - familyScore(best.view, 'S')
+        if (diff > 0) return entry
+        if (diff < 0) return best
+        const legacy = legacyDiff(entry, best)
+        if (legacy > 0) return entry
+        return best
+      })
+    : views[0]!
+  const fPick = pool.length > 0
+    ? pool.reduce((worst, entry) => {
+        const diff = familyScore(entry.view, 'S') - familyScore(worst.view, 'S')
+        if (diff < 0) return entry
+        if (diff > 0) return worst
+        const entryFast = fastHintOf(entry.candidate)
+        const worstFast = fastHintOf(worst.candidate)
+        if (entryFast > worstFast) return entry
+        if (entryFast < worstFast) return worst
+        const legacy = legacyDiff(entry, worst)
+        if (legacy < 0) return entry
+        return entry // F ties keep the LATER candidate (list order)
+      })
+    : views[views.length - 1]!
+  const bRanked = [...views].sort((a, b) => {
+    const left = a.view.unknown ? Number.NEGATIVE_INFINITY : familyScore(a.view, 'B')
+    const right = b.view.unknown ? Number.NEGATIVE_INFINITY : familyScore(b.view, 'B')
+    if (left !== right) return right - left
+    // Two unknowns tie at list order (the ADR's no-known fallback); the
+    // structural chain only breaks ties between scored candidates.
+    if (a.view.unknown && b.view.unknown) return a.index - b.index
+    const legacy = legacyDiff(a, b)
+    if (legacy !== 0) return legacy
+    return a.index - b.index
   })
-  const bIndex = Math.min(Math.max(1, Math.floor((sorted.length - 1) / 2)), sorted.length - 1)
-  return { S: sorted[0], B: sorted[bIndex], F: sorted[sorted.length - 1] }
+  const bIndex = Math.min(Math.max(1, Math.floor((bRanked.length - 1) / 2)), bRanked.length - 1)
+  return { S: sPick.candidate, B: bRanked[bIndex]!.candidate, F: fPick.candidate }
 }
 
 /**
@@ -166,9 +239,9 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[])
  *  catalogue tiers/description when available (missing tiers materialise '').
  * @returns the derived mapping rows.
  */
-export function deriveStarterRows(candidates: readonly StarterCandidate[]): NameMapEntryView[] {
+export function deriveStarterRows(candidates: readonly StarterCandidate[], options: SlotAssignmentOptions = {}): NameMapEntryView[] {
   if (candidates.length === 0) return []
-  const slots = assignSlotsByCapability(candidates)
+  const slots = assignSlotsByCapability(candidates, options)
   const rows: NameMapEntryView[] = []
   for (const row of STARTER_TEMPLATE_ROWS) {
     const route = slots[row.slot]
@@ -250,6 +323,8 @@ export interface StrategyConfigView {
   nameMap?: readonly NameMapEntryView[]
   /** Defaults mode (ADR 0014 d2): derived rows replace the stored ones while true. */
   nameMapDefaults?: boolean
+  /** User-imported capability evaluations (ADR 0016 d3); `undefined` is a pre-0016 configuration. */
+  capabilityOverrides?: readonly CapabilityOverrideView[]
 }
 
 /** How one configuration routes children. */
@@ -324,6 +399,24 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
     degraded.push(`dsh-subagent-plus: fallback repeats the listed route "${config.fallbackProvider}/${config.fallbackModel}"; it stays unused`)
   }
   const nameMap = config.nameMap ?? []
+  // ADR 0016 d3 runtime tolerance: overrides are auxiliary scoring data, never
+  // routing structure — a malformed or duplicated hand-edited row degrades
+  // (dropped / last-wins) with a warning instead of refusing to load.
+  const overrideModels = new Set<string>()
+  const seenOverrideModels = new Set<string>()
+  for (const entry of config.capabilityOverrides ?? []) {
+    if (entry.model === '') {
+      degraded.push('dsh-subagent-plus: capabilityOverrides row without a model id is ignored')
+      continue
+    }
+    if (seenOverrideModels.has(entry.model)) continue
+    if (overrideModels.has(entry.model)) {
+      degraded.push(`dsh-subagent-plus: capabilityOverrides repeats "${entry.model}"; the last row wins`)
+      overrideModels.delete(entry.model)
+    }
+    overrideModels.add(entry.model)
+    seenOverrideModels.add(entry.model)
+  }
   // ADR 0014 d2: with defaults on, derivation wins and stored rows sit
   // ignored — a hand-edited document in that state deserves a warning, not a
   // silent disappearance.

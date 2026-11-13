@@ -29,6 +29,7 @@ function plainConfig(overrides: Partial<PinConfig> = {}): PinConfig {
     fallbackReasoningEffort: '',
     nameMap: [],
     nameMapDefaults: false,
+    capabilityOverrides: [],
     ...overrides,
   }
 }
