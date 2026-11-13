@@ -487,7 +487,7 @@ export class SettingsSectionController {
     if (template === undefined) return { kind: 'unknown-template' }
     const state = this.snapshot()
     const draft = state.draft
-    if (draft === undefined) return { kind: 'unknown-template' }
+    if (draft === undefined) return { kind: 'rejected' }
     if (!this.starterGate().enabled) return { kind: 'rejected' }
     const existing = new Set(draft.nameMap.map(row => row.name))
     const needed = template.rows.filter(row => !existing.has(row.keyword)).length
@@ -513,7 +513,7 @@ export class SettingsSectionController {
     if (template === undefined) return { kind: 'unknown-template' }
     const state = this.snapshot()
     const draft = state.draft
-    if (draft === undefined) return { kind: 'unknown-template' }
+    if (draft === undefined) return { kind: 'rejected' }
     // Gate replay covers slot resolvability: with no available route no
     // template row resolves (S/B/F all need at least one).
     if (!this.starterGate().enabled) return { kind: 'rejected' }
@@ -535,7 +535,7 @@ export class SettingsSectionController {
    *  reports the degrade instead of hiding it. */
   #applyRows(template: RoleTemplate, skipKeywords: Set<string>): ApplyTemplateResult {
     const state = this.snapshot()
-    if (state.draft === undefined) return { kind: 'unknown-template' }
+    if (state.draft === undefined) return { kind: 'rejected' }
     const listed = listedRoutesOf(state).filter(route => route.available)
     let added = 0
     let unmaterialized = 0
