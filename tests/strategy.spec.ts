@@ -625,3 +625,27 @@ describe('resolveNameMapDefaults (X2, ADR 0014 d2 migration rule)', () => {
     expect(resolveNameMapDefaults(false, 0)).toBe(false)
   })
 })
+
+describe('nameMapDefaults validation (X3, ADR 0014 d2)', () => {
+  it('warns (degraded) when defaults-on ignores stored rows', () => {
+    const report = validateStrategyConfig({
+      ...base,
+      strategy: 'round-robin',
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [nm('dev', sz)],
+      nameMapDefaults: true,
+    } as Parameters<typeof validateStrategyConfig>[0])
+    expect(report.degraded.some(m => m.includes('nameMapDefaults'))).toBe(true)
+  })
+
+  it('no warning for defaults-off with rows, or defaults-on with none', () => {
+    const custom = validateStrategyConfig({
+      ...base, strategy: 'round-robin',
+      priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
+      nameMap: [nm('dev', sz)], nameMapDefaults: false,
+    } as Parameters<typeof validateStrategyConfig>[0])
+    expect(custom.degraded.some(m => m.includes('nameMapDefaults'))).toBe(false)
+    const fresh = validateStrategyConfig({ ...base, strategy: 'round-robin', nameMap: [], nameMapDefaults: true } as Parameters<typeof validateStrategyConfig>[0])
+    expect(fresh.degraded.some(m => m.includes('nameMapDefaults'))).toBe(false)
+  })
+})

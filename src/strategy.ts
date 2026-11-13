@@ -200,6 +200,8 @@ export interface StrategyConfigView {
   fallbackReasoningEffort: string
   /** By-name mapping rows (ADR 0006); `undefined` is a v0.0.3 configuration without the field. */
   nameMap?: readonly NameMapEntryView[]
+  /** Defaults mode (ADR 0014 d2): derived rows replace the stored ones while true. */
+  nameMapDefaults?: boolean
 }
 
 /** How one configuration routes children. */
@@ -274,6 +276,12 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
     degraded.push(`dsh-subagent-plus: fallback repeats the listed route "${config.fallbackProvider}/${config.fallbackModel}"; it stays unused`)
   }
   const nameMap = config.nameMap ?? []
+  // ADR 0014 d2: with defaults on, derivation wins and stored rows sit
+  // ignored — a hand-edited document in that state deserves a warning, not a
+  // silent disappearance.
+  if (config.nameMapDefaults === true && nameMap.length > 0) {
+    degraded.push('dsh-subagent-plus: nameMapDefaults is on; the stored nameMap rows are ignored while the derived defaults are in effect')
+  }
   if (nameMap.length > MAX_NAME_MAP_ENTRIES) {
     structural.push(`dsh-subagent-plus: nameMap lists ${nameMap.length} entries; at most ${MAX_NAME_MAP_ENTRIES} are allowed`)
   }

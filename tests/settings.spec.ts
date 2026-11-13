@@ -28,6 +28,7 @@ function plainConfig(overrides: Partial<PinConfig> = {}): PinConfig {
     fallbackModel: '',
     fallbackReasoningEffort: '',
     nameMap: [],
+    nameMapDefaults: false,
     ...overrides,
   }
 }
@@ -134,5 +135,20 @@ describe('Config schema nameMap (by-name mapping, ADR 0006)', () => {
     const row = { name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }
     const over = Array.from({ length: 33 }, (_, index) => ({ ...row, name: `dev-${index}` }))
     expect(() => parse({ nameMap: over })).toThrow()
+  })
+})
+
+describe('Config schema nameMapDefaults (X3, ADR 0014 d2)', () => {
+  const parse = (doc: unknown): PinConfig => materializeConfig((Config as unknown as (d: unknown) => import('../src/config.js').PinConfigRuntime)(doc))
+
+  it('absent field: empty stored map materializes defaults-on, non-empty lands on custom', () => {
+    expect(parse({ strategy: 'pinned' }).nameMapDefaults).toBe(true)
+    const withRows = parse({ strategy: 'pinned', nameMap: [{ name: 'dev', provider: 'sz', model: 'qwen', reasoningEffort: '' }] })
+    expect(withRows.nameMapDefaults).toBe(false)
+  })
+
+  it('explicit values are preserved regardless of stored rows', () => {
+    expect(parse({ strategy: 'pinned', nameMapDefaults: false, nameMap: [] }).nameMapDefaults).toBe(false)
+    expect(parse({ strategy: 'pinned', nameMapDefaults: true, nameMap: [{ name: 'dev', provider: 'sz', model: 'qwen', reasoningEffort: '' }] }).nameMapDefaults).toBe(true)
   })
 })

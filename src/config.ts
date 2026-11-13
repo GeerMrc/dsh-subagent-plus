@@ -13,7 +13,7 @@
  */
 import z from '@deepseek-ai/schemastery'
 import type { NameMapEntryView, PriorityEntryView, Strategy } from './strategy.js'
-import { MAX_NAME_MAP_ENTRIES, STRATEGIES } from './strategy.js'
+import { MAX_NAME_MAP_ENTRIES, resolveNameMapDefaults, STRATEGIES } from './strategy.js'
 
 /** Plugin configuration; plain values only — runtime handles unwrap through {@link materializeConfig}. */
 export interface PinConfig {
@@ -45,6 +45,8 @@ export interface PinConfig {
   fallbackReasoningEffort: string
   /** Role-keyword mapping rows (ADR 0008): substring match against teammate names → forced route; empty list leaves routing to the strategy chain. */
   nameMap: NameMapEntryView[]
+  /** Defaults mode (ADR 0014 d2): the effective mapping derives from the candidate list; false keeps the stored rows. */
+  nameMapDefaults: boolean
 }
 
 /** Upper bound on `priority` entries; enforced by the schema and the settings page. */
@@ -81,6 +83,11 @@ export function materializeConfig(runtime: PinConfigRuntime): PinConfig {
     // the (already-cast) config object instead.
     Object.assign(out, { [key]: unwrapped })
   }
+  // ADR 0014 d2 migration default: the schema deliberately carries no
+  // `.default()` (a static default would absorb "absent" at parse time), so
+  // an absent field lands here as undefined and resolves by stored rows —
+  // fresh configurations get defaults-on, hand-edited ones stay custom.
+  out.nameMapDefaults = resolveNameMapDefaults(out.nameMapDefaults as boolean | undefined, out.nameMap?.length ?? 0)
   return out
 }
 
@@ -115,4 +122,7 @@ export const Config: z = z.object({
     model: z.string().default(''),
     reasoningEffort: z.string().default(''),
   })).default([]).max(MAX_NAME_MAP_ENTRIES).volatile(),
+  // Deliberately no `.default()`: absent must survive parsing so
+  // materializeConfig can apply the stored-rows migration rule (ADR 0014 d2).
+  nameMapDefaults: z.boolean().volatile(),
 })
