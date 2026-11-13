@@ -10,11 +10,12 @@
 - feat(team-map): **双源名字解析（ADR 0012）**：0.2.0 宿主 roster/tryMembership → 0.2.2+
   宿主 `subagents.namesOf`（含 UNAUTHORIZED 创建窗口吞错）；`agent/inbox/claimed`
   确定性挂钩补选（步准备捕获 selection 之前）。
-- feat(defaults)!: **默认映射安装即生效（ADR 0011→0013→0014）**：12 行跨领域映射由候选清单
-  **自动派生**（review/audit/verif/plan→首选·最高档；research/dev/build/execute/write/design→中位·
-  **中档**；test/qa→末位·最低档），随清单与模型档位**动态自适应**（三时机重派生＋adapter 自愈），
-  仅 spread 策略生效（R1 门控）；编辑即 copy-on-write 物化为自定义＋「恢复默认」入口；
-  `nameMapDefaults` 缺省按存量迁移（空表→开、已有行→关）。取代起步按钮形态。
+- feat(defaults)!: **默认映射安装即生效（ADR 0011→0013→0014→0015）**：12 行跨领域映射由候选清单
+  按**能力评分**派生（最强→review/audit/verif/plan·最高档；居中→执行族·中档；最轻→test/qa·最低档；
+  并列按清单序；无档/档外词表 floor 居末），候选增删改**全表重评**＋adapter 自愈（三时机重派生），
+  仅 spread 策略生效（R1 门控）；编辑即 copy-on-write 物化为自定义＋「恢复默认」**常驻单按钮**
+  （两态可见、直接生效、草稿级可撤销）；`nameMapDefaults` 缺省按存量迁移（空表→开、已有行→关，
+  客户端 #sync 同边界归一化——缺键文档打开即 clean 且派生）。取代起步按钮形态。
 - feat(effort): **语义档位意图（ADR 0013 d1＋0014 修订）**：档位按模型实际档位表物化（梯子
   off<minimal<low<medium<high<xhigh<max，off/none 不自动选，全不在梯子按目录顺序，偶数上中位）；
   B 族改 **mid**（qwen 三族 Xhigh/Medium/Low——"medium 呢"的答案；zai 系 B=High 为有意识升档），
@@ -23,8 +24,10 @@
   UI/locale 承诺的行为运行时零引用；现于 agent/created、步边界、inbox/claimed 三处接回
   `explicitRouteOf`——显式指派（创建路由≠父路由）优先于关键词映射与策略链（钉定除外）。
 - fix(ui): 行内模型下拉去重（领头显示项与列表同名重复，用户截图命中）；悬空行显示位修复；
-  关键词框 140→96/模型框填满弹性轨（宽度比用户裁定）；随按钮形态删除确认/容量流
-  （W8 曾抓出并修复单路由 B 槽越界丢行 bug，机制保留在共享槽位函数中）。
+  关键词框 140→96/模型框填满弹性轨（宽度比用户裁定）；删除操作移至**序号 chip 悬停**
+  （行尾 × 弹层越界，用户截图命中；行五轨→四轨，模型轨更宽）；候选清单行单行渲染
+  （原 label+sub 双行系既有设计，id 入悬停 title）；子窗口模型徽章 maxWidth 240→360
+  （长 id 截断，用户截图命中）。
 - feat(cap): nameMap 上限 16→32（ADR 0013 d5；原 16 对齐的官方 roster 已随 0.2.2-rc.2 删除，
   起步配置 12 行＋存量手工行需合并空间）。
 - feat(guard): 客户端/宿主边界守卫（任意 import 形态＋宿主包名集）。

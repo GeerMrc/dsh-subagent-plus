@@ -118,18 +118,20 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 - 宿主致命恢复（sanitizeProfile）会重置 bundles 列表：插件随之停用、官方页回归，需在插件页重开。
 
 
-## 9. v0.0.4 默认映射与 respectExplicit Flow D
+## 9. v0.0.4 默认映射与 respectExplicit Flow D（ADR 0014＋0015）
 
-前置同 §7（设置页配置，profile patch 不放插件条目）；候选清单至少两条**带推理档位**的路由（如 `sz/Qwen3.8-27B-FP8`〔Off/Low/Medium/Xhigh〕＋ `zai/glm-5.3`〔Low/High/Max〕），策略=轮询（spread）。
+前置同 §7（设置页配置，profile patch 不放插件条目）；候选清单至少两条**带推理档位**的路由（如 `strata/Qwen3.8-Flash-Next-NVFP4`〔qwen 词表〕＋ `hh/Qwen3.8-27B-FP8`），策略=轮询（spread）。
 
 | # | 操作 | 通过标准 |
 |---|---|---|
-| D1 | 重启后打开设置页（**无任何操作**） | Team 区直接显示 12 行派生映射：S 族（review/audit/verif/plan）= 清单第 1 条＋**Xhigh**；B 族 6 行 = 第 2 条＋**High**（zai 中档）；test/qa = 第 2 条＋**Low**；qwen 单候选场景三族＝Xhigh/**Medium**/Low；行内模型下拉**无重复项**；显示"默认映射已启用"提示；无任何"未保存"脏态 |
-| D2 | 编辑任一派生行（如把 review 的档位改 Medium） | 全表物化为可编辑自定义行＋出现"自定义映射（不再自适应）"提示＋标题行右侧出现**恢复默认**按钮；页脚出现待保存脏态（正常——与候选清单编辑同一条保存路） |
-| D3 | defaults 态下候选清单增/删/重排（不点保存） | Team 派生行**即时自适应**（本地视图重算）：删掉 B 槽路由后 B 族落到新中位；清空候选→显示"派生休眠"提示 |
-| D4 | 自定义态点「恢复默认」→ 确认 → 保存 | 行清空＋回到派生态（12 行按当前候选重新派生）；`cordis.patch.yml` 落 `nameMapDefaults: true` + 空 `nameMap` |
+| D1 | 重启后打开设置页（**无任何操作**） | Team 区直接显示 12 行派生映射，按**能力**指派：评阅族（review/audit/verif/plan）= 评分最高候选＋其**最高档**；执行族 6 行 = 居中候选＋**中档**；test/qa = 评分最低候选＋最低档（并列时按清单顺序）；行内模型下拉**无重复项**；行尾无 ×、悬停**序号**出删除弹层（不越界）；候选清单行为**单行**；显示"默认映射已启用（按能力）"提示；标题行右侧有常驻**恢复默认**按钮；无任何未保存脏态 |
+| D2 | 编辑任一派生行（如把 review 行档位改一档） | 全表物化为可编辑自定义行＋"自定义映射（不再自适应）"提示；页脚出现待保存脏态（与候选清单编辑同一条保存路） |
+| D3 | defaults 态下候选清单增/删/重排（不点保存） | Team 派生行**即时全表重评**（本地视图重算）；删掉某候选后其承担的家族落到新评出的对应候选 |
+| D4 | 点「恢复默认」（**无确认一步到位**）→ 保存 | 行清空＋回到派生态（按当前候选重新能力评分）；`cordis.patch.yml` 落 `nameMapDefaults: true` + 空 `nameMap`；恢复默认按钮**仍在**（常驻） |
 | D5 | 高级 → respectExplicit=开 → 保存 → 主 Agent 用 `subagent` 工具**显式指定**某模型（≠主会话当前模型）派 1 子 | 子会话 `request/header` = **显式指定的模型**（插件不覆盖）；关键词命中的队友名也不覆盖（ADR 0013 d4 判别点）；respectExplicit=关时同操作被派生/策略接管（对照组） |
-| D6 | 关键词队友实测 | 发任务派出名字带 reviewer/dev/tester 的三个子智能体 → 三子会话分别走 Xhigh/High/Low 物化档位（子会话 `request/header` 的 reasoningEffort 取证） |
+| D6 | 关键词队友实测 | 派出名字带 reviewer/dev/tester 的三个子智能体 → 三子会话分别走 最高/中/最低 物化档位（`request/header` 的 reasoningEffort 取证） |
+| D7 | **能力判别（ADR 0015 核心用例）**：在候选清单**末尾追加**一个更强模型（带 `max` 档，或目录 description 含 "higher cost/Stronger"），保存 | 审阅族（review/audit/verif/plan）**换到新模型**＋其最高档——证明评分排序而非位置取位（用户实测痛点的直接判别）；追加的是更弱模型时应只影响 test/qa 族 |
+| D8 | 子窗口徽章 | 子 Agent 输入框右侧徽章完整显示如 `strata/Qwen3.8-Flash-Next-NVFP4 · Xhigh`（不截断；title 有全文） |
 
 ## 10. 版本回退/降级安装注意
 
