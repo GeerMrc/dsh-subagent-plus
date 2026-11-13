@@ -17,15 +17,37 @@ import type { PinConfig } from '../config.js'
 import type { SaveOutcome } from './unified-save.js'
 
 /** Template slot: S=first candidate (strong), B=middle, F=last (fast). */
-type Slot = 'S' | 'B' | 'F'
+export type Slot = 'S' | 'B' | 'F'
 
-/** One role-template definition (ADR 0011). */
+/** One starter-template definition (ADR 0013). */
 interface RoleTemplate {
   id: string
-  minRoutes: number
-  maxRoutes?: number
-  rows: ReadonlyArray<{ keyword: string; slot: Slot; effort?: string }>
+  rows: ReadonlyArray<{ keyword: string; slot: Slot; effort: EffortIntent }>
 }
+
+/**
+ * The universal starter template (ADR 0013 d2): one cross-domain table serving
+ * every session — dev sessions hit review/dev/test, game sessions
+ * design/write, research sessions research/plan; unmatched names fall through
+ * to the strategy chain. Row order is the equal-length cross-family
+ * tie-break order (matchByKeyword resolves ties by first occurrence), so the
+ * quality-gate family comes first: `test-planner` resolves to `plan` (S+top)
+ * and `design-review-dev` to `review` (S+top).
+ */
+export const STARTER_TEMPLATE_ROWS: ReadonlyArray<{ keyword: string; slot: Slot; effort: EffortIntent }> = [
+  { keyword: 'review', slot: 'S', effort: 'top' },
+  { keyword: 'audit', slot: 'S', effort: 'top' },
+  { keyword: 'verif', slot: 'S', effort: 'top' },
+  { keyword: 'plan', slot: 'S', effort: 'top' },
+  { keyword: 'research', slot: 'B', effort: 'default' },
+  { keyword: 'dev', slot: 'B', effort: 'default' },
+  { keyword: 'build', slot: 'B', effort: 'default' },
+  { keyword: 'execute', slot: 'B', effort: 'default' },
+  { keyword: 'write', slot: 'B', effort: 'default' },
+  { keyword: 'design', slot: 'B', effort: 'default' },
+  { keyword: 'test', slot: 'F', effort: 'lowest' },
+  { keyword: 'qa', slot: 'F', effort: 'lowest' },
+]
 
 
 /** Maximum candidate routes; mirrors the schema bound. */
@@ -220,7 +242,7 @@ const DISABLED_EFFORT_IDS = new Set(['off', 'none'])
  * @param intent - the row's semantic effort intent.
  * @returns the materialised effort id, or '' to follow the model default.
  */
-export function resolveSemanticEffort(route: Pick<RouteOption, 'efforts'> | undefined, intent: EffortIntent): string {
+export function resolveSemanticEffort(route: { efforts?: readonly { id: string; name?: string }[] } | undefined, intent: EffortIntent): string {
   if (intent === 'default') return ''
   const active = (route?.efforts ?? []).filter(effort => !DISABLED_EFFORT_IDS.has(effort.id.toLowerCase()))
   if (active.length === 0) return ''
@@ -403,71 +425,13 @@ export class SettingsSectionController {
     })
   }
 
-  // ─── ADR 0011: Role template quick-setup ───
+  // ─── ADR 0013: universal starter template ───
 
   readonly #templates: readonly RoleTemplate[] = [
-    {
-      id: 'quality-first',
-      minRoutes: 2,
-      rows: [
-        { keyword: 'reviewer', slot: 'S', effort: 'high' },
-        { keyword: 'auditor', slot: 'S', effort: 'high' },
-        { keyword: 'verifier', slot: 'S', effort: 'high' },
-        { keyword: 'planner', slot: 'S', effort: 'high' },
-        { keyword: 'builder', slot: 'B' },
-        { keyword: 'dev', slot: 'B' },
-        { keyword: 'executor', slot: 'B' },
-        { keyword: 'research', slot: 'B' },
-        { keyword: 'tester', slot: 'B' },
-      ],
-    },
-    {
-      id: 'three-tier',
-      minRoutes: 3,
-      rows: [
-        { keyword: 'reviewer', slot: 'S', effort: 'high' },
-        { keyword: 'auditor', slot: 'S', effort: 'high' },
-        { keyword: 'verifier', slot: 'S', effort: 'high' },
-        { keyword: 'planner', slot: 'S', effort: 'high' },
-        { keyword: 'builder', slot: 'B' },
-        { keyword: 'dev', slot: 'B' },
-        { keyword: 'executor', slot: 'B' },
-        { keyword: 'research', slot: 'B' },
-        { keyword: 'tester', slot: 'F', effort: 'low' },
-      ],
-    },
-    {
-      id: 'same-route',
-      minRoutes: 1,
-      maxRoutes: 1,
-      rows: [
-        { keyword: 'reviewer', slot: 'S', effort: 'high' },
-        { keyword: 'auditor', slot: 'S', effort: 'high' },
-        { keyword: 'verifier', slot: 'S', effort: 'high' },
-        { keyword: 'planner', slot: 'S', effort: 'high' },
-        { keyword: 'builder', slot: 'S' },
-        { keyword: 'dev', slot: 'S' },
-        { keyword: 'executor', slot: 'S' },
-        { keyword: 'research', slot: 'S' },
-        { keyword: 'tester', slot: 'S', effort: 'low' },
-      ],
-    },
-    {
-      id: 'content-production',
-      minRoutes: 2,
-      rows: [
-        { keyword: 'research', slot: 'S', effort: 'high' },
-        { keyword: 'reviewer', slot: 'S', effort: 'high' },
-        { keyword: 'dev', slot: 'B' },
-        { keyword: 'builder', slot: 'B' },
-        { keyword: 'executor', slot: 'B' },
-        { keyword: 'render', slot: 'B' },
-        { keyword: 'tester', slot: 'F' },
-      ],
-    },
+    { id: 'starter', rows: STARTER_TEMPLATE_ROWS },
   ]
 
-  /** Map a slot to a route from the listed candidates (H2: from listed, never hardcoded). */
+  /** Map a slot to a route from the listed candidates (ADR 0011 H2: from listed, never hardcoded). */
   #slotRoute(listed: readonly { provider: string; model: string; efforts?: readonly { id: string }[] }[], slot: Slot): { provider: string; model: string; efforts?: readonly { id: string }[] } | undefined {
     if (listed.length === 0) return undefined
     if (slot === 'S') return listed[0]
@@ -477,29 +441,28 @@ export class SettingsSectionController {
     return listed[Math.max(1, mid)]
   }
 
-  /** Resolve effort for a route, degraded to '' when the route has no matching effort (H5). */
-  #resolveEffort(route: { efforts?: readonly { id: string }[] } | undefined, effort: string | undefined): string {
-    if (effort === undefined || effort === '') return ''
-    if (route?.efforts === undefined || !route.efforts.some(e => e.id === effort)) return ''
-    return effort
+  /**
+   * The starter-template gate (ADR 0013 d2): 'locked' under the pinned
+   * strategy (by-name rows stay read-only), 'no-routes' with no available
+   * candidates, and 'no-efforts' when the sole available route has no
+   * materialisable tier — every row would land on the model default and the
+   * template's differentiation would silently collapse (the D2 lesson).
+   */
+  starterGate = (): { enabled: boolean; reason: 'locked' | 'no-routes' | 'no-efforts' | undefined } => {
+    const state = this.snapshot()
+    if (state.draft?.strategy === 'pinned') return { enabled: false, reason: 'locked' }
+    const available = listedRoutesOf(state).filter(route => route.available)
+    if (available.length === 0) return { enabled: false, reason: 'no-routes' }
+    if (available.length === 1
+      && resolveSemanticEffort(available[0], 'top') === ''
+      && resolveSemanticEffort(available[0], 'lowest') === '') return { enabled: false, reason: 'no-efforts' }
+    return { enabled: true, reason: undefined }
   }
 
-  /** Templates visible under the current candidate-list size (for the UI dropdown). */
+  /** The starter template when its gate passes (for the quick-setup entry). */
   visibleTemplates = (): { id: string; rowCount: number }[] => {
-    const available = listedRoutesOf(this.snapshot()).filter(route => route.available)
-    const listedCount = available.length
-    // U1 (ADR 0012 audit): T3 "same-route" requires the single route to have
-    // reasoning effort tiers — without efforts the template's purpose silently
-    // collapses (all rows get effort '').
-    const hasEfforts = available.some(route => route.efforts !== undefined && route.efforts.length > 0)
-    return this.#templates
-      .filter(t => {
-        if (listedCount < t.minRoutes) return false
-        if (t.maxRoutes !== undefined && listedCount > t.maxRoutes) return false
-        if (t.id === 'same-route' && !hasEfforts) return false
-        return true
-      })
-      .map(t => ({ id: t.id, rowCount: t.rows.length }))
+    if (!this.starterGate().enabled) return []
+    return this.#templates.map(t => ({ id: t.id, rowCount: t.rows.length }))
   }
 
   /**
@@ -556,7 +519,7 @@ export class SettingsSectionController {
           name: row.keyword,
           provider: route.provider,
           model: route.model,
-          reasoningEffort: this.#resolveEffort(route, row.effort),
+          reasoningEffort: resolveSemanticEffort(route, row.effort),
         })
       }
     })

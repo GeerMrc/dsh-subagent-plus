@@ -414,6 +414,88 @@ describe('semantic effort resolution (W2, ADR 0013)', () => {
   })
 })
 
+describe('starter template (W3, ADR 0013 d2)', () => {
+  /** Two effort-bearing routes: sz (qwen Off/Low/Medium/Xhigh) and zai (Low/High/Max). */
+  const effortsCatalog: CatalogPort = {
+    load: async () => ({
+      groups: [
+        { id: 'sz', name: 'Qwen-SZ', models: [{ id: 'qwen', name: 'Qwen', reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }], defaultEffort: 'low' } }] },
+        { id: 'zai', name: '智谱', models: [{ id: 'glm', name: 'GLM', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }, { id: 'max', name: 'Max' }], defaultEffort: 'low' } }] },
+        { id: 'cm', name: 'cm', models: [{ id: 'kimi', name: 'Kimi' }] },
+      ],
+      failureCount: 0,
+    }),
+  }
+
+  it('defines 12 valid unique stems with the quality family first (tie-break order)', async () => {
+    const { STARTER_TEMPLATE_ROWS } = await import('../../src/client/settings-controller.js')
+    const { isValidKeyword } = await import('../../src/strategy.js')
+    expect(STARTER_TEMPLATE_ROWS).toHaveLength(12)
+    const keywords = STARTER_TEMPLATE_ROWS.map(row => row.keyword)
+    expect(new Set(keywords).size).toBe(12)
+    for (const keyword of keywords) expect(isValidKeyword(keyword)).toBe(true)
+    expect(keywords.slice(0, 4)).toEqual(['review', 'audit', 'verif', 'plan'])
+    expect(keywords.slice(10)).toEqual(['test', 'qa'])
+  })
+
+  it('equal-length cross-family ties resolve to the quality family by row order', async () => {
+    const { STARTER_TEMPLATE_ROWS } = await import('../../src/client/settings-controller.js')
+    const { matchByKeyword } = await import('../../src/strategy.js')
+    const map = STARTER_TEMPLATE_ROWS.map(row => ({ name: row.keyword, provider: 'sz', model: 'qwen', reasoningEffort: '' }))
+    expect(matchByKeyword('test-planner', map)?.name).toBe('plan')
+    expect(matchByKeyword('design-review-dev', map)?.name).toBe('review')
+    expect(matchByKeyword('code-reviewer', map)?.name).toBe('review')
+    expect(matchByKeyword('qa-engineer', map)?.name).toBe('qa')
+    // Accepted collision recorded in ADR 0013: 'test' ⊆ 'latest'.
+    expect(matchByKeyword('latest-digest', map)?.name).toBe('test')
+  })
+
+  it('gate locks under pinned, reports no-routes and no-efforts otherwise', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm({ ...baseConfig(), strategy: 'pinned' as never })
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'locked' })
+
+    controller.setStrategy('round-robin')
+    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'no-routes' })
+
+    const routes = controller.snapshot().routes
+    controller.addRoute(routes.find(route => route.provider === 'cm') ?? routes[0]!) // kimi: no tiers
+    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'no-efforts' })
+
+    controller.removeRoute(0)
+    controller.addRoute(routes.find(route => route.provider === 'sz') ?? routes[0]!) // qwen: has tiers
+    expect(controller.starterGate()).toEqual({ enabled: true, reason: undefined })
+    controller.dispose()
+  })
+
+  it('applies 12 rows with semantic efforts materialised from actual tiers', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [
+      { provider: 'sz', model: 'qwen', reasoningEffort: '' },
+      { provider: 'zai', model: 'glm', reasoningEffort: '' },
+    ] })
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    expect(controller.applyTemplate('starter')).toBe('applied')
+    const rows = controller.snapshot().draft?.nameMap ?? []
+    expect(rows).toHaveLength(12)
+    const byName = (name: string) => rows.find(row => row.name === name)
+    // S family → first listed route (qwen) + top tier = xhigh — NOT '' (the D1 bug).
+    expect(byName('review')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
+    expect(byName('plan')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
+    // B family → second listed route (glm) + model default ('').
+    expect(byName('dev')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: '' })
+    // F family → last listed route (glm) + lowest tier = low.
+    expect(byName('test')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
+    expect(byName('qa')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
+    controller.dispose()
+  })
+})
+
 describe('valueInvalid (E4)', () => {
   it('flags a ready form whose value is not a recognizable config', async () => {
     const form = new FakeForm(baseConfig())
