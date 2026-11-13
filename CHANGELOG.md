@@ -1,18 +1,35 @@
 # Changelog
 
-## v0.0.4 (2026-11-11) — Team（角色关键词 → 路由）· agent.model.select() 架构（ADR 0006-0010）
+## v0.0.4 (2026-11-11) — Team（角色关键词 → 路由）· agent.model.select() 架构 · 通用起步配置（ADR 0006-0013，未发布）
 
 - feat(team-map)!: **角色关键词子串匹配（ADR 0008）**：设置卡「Team（角色关键词 → 路由）」
-  分区（≤16 行），队友名包含关键词即命中（最长优先）；未命中走策略链。
+  分区（≤32 行），队友名包含关键词即命中（最长优先）；未命中走策略链。
 - feat(team-map)!: **agent.model.select() 架构迁移（ADR 0010）**：路由在子智能体创建时经
   官方 API 选定（0.2.2+ 正规通道），替代已禁用的 agent/request 瀑布改写。健康降级在步边界
   生效（宿主禁止步中换路）。异常封堵：创建监听器内任何错误降级不冒泡（防回滚子代理创建）。
-- feat(team-map): 候选清单为映射唯一来源（ADR 0007）；悬空/半填/非法关键词双层防御；
-  钉定下只读；agentTeams 守卫消费（未装 Team 休眠）；fork 排除＋一次性 warn。
-- feat(team-map): pre-step 通知读 modelSelection 真值；maxTokens 继承预算跟随新路由（ADR 0010）。
+- feat(team-map): **双源名字解析（ADR 0012）**：0.2.0 宿主 roster/tryMembership → 0.2.2+
+  宿主 `subagents.namesOf`（含 UNAUTHORIZED 创建窗口吞错）；`agent/inbox/claimed`
+  确定性挂钩补选（步准备捕获 selection 之前）。
+- feat(starter)!: **通用起步配置（ADR 0011→0013）**：单按钮一键填入 12 行跨领域映射
+  （review/audit/verif/plan→首选·最高档；research/dev/build/execute/write/design→中位·默认档；
+  test/qa→末位·最低档），一张表服务所有会话场景；替换旧版四个场景专用模板。
+- feat(effort): **语义档位意图（ADR 0013 d1）**：模板档位按模型实际档位表物化（公认梯子
+  off<low<medium<high<xhigh<max 就近解析，off/none 不自动选，全不在梯子按目录顺序取首末，
+  无非 off 档一律默认）；无法物化的行计数提示，不静默降级。修复 D1：qwen 系（无 high 档）
+  上"质量优先"模板全部静默降默认、实际效果与意图相反。
+- fix(config): **respectExplicit 死开关复活（ADR 0013 d4，二审 P-18）**：0010 迁移漏接导致
+  UI/locale 承诺的行为运行时零引用；现于 agent/created、步边界、inbox/claimed 三处接回
+  `explicitRouteOf`——显式指派（创建路由≠父路由）优先于关键词映射与策略链（钉定除外）。
+- fix(ui): 容量分模式预检（replace 全表/merge 仅新增）；确认期前置条件完整重放（清单清空/
+  策略锁定/容量不足→拒绝且不动草稿，replace 不再可能清空后零写入）；容量不足渲染所需/剩余
+  行数（激活死 locale 键）；W8 覆盖面清扫抓出并修复单路由 B 槽越界丢行 bug。
+- feat(cap): nameMap 上限 16→32（ADR 0013 d5；原 16 对齐的官方 roster 已随 0.2.2-rc.2 删除，
+  起步配置 12 行＋存量手工行需合并空间）。
 - feat(guard): 客户端/宿主边界守卫（任意 import 形态＋宿主包名集）。
-- docs: README 双语、settings/strategy 手册、ADR 0006＋0007＋0008＋0009＋0010。
-- 留待：Flow F 隔离 E2E；DOM 渲染级测试仍为既有技术债。
+- docs: README 双语、settings/strategy 手册、ADR 0006-0013、dont-do 两条沉淀
+  （跨 provider 硬编码字面档位 id／配置承诺须随迁移审计运行时引用）。
+- 留待：DOM 渲染级测试仍为既有技术债；命名预设集（多套映射＋切换）与 per-workspace
+  覆盖为后续方向（ADR 0013 不做面）。
 
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 

@@ -118,6 +118,18 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 - 宿主致命恢复（sanitizeProfile）会重置 bundles 列表：插件随之停用、官方页回归，需在插件页重开。
 
 
-## 9. 版本回退/降级安装注意
+## 9. v0.0.4 起步配置与 respectExplicit Flow D
+
+前置同 §7（设置页配置，profile patch 不放插件条目）；候选清单至少两条**带推理档位**的路由（如 `sz/Qwen3.8-27B-FP8`〔Off/Low/Medium/Xhigh〕＋ `zai/glm-5.3`〔Low/High/Max〕）。
+
+| # | 操作 | 通过标准 |
+|---|---|---|
+| D1 | 设置页 → Team 区 → 点「填入通用起步配置」 | 草稿出现 12 行；S 家族（review/audit/verif/plan）= 清单第 1 条＋档位 **Xhigh**（非"默认"——D1 修复的判别点）；B 家族 6 行 = 第 2 条＋"默认"；test/qa = 第 2 条＋ **Low**；页内出现"已填入 12 行（尚未保存）"摘要；**保存**后 `cordis.patch.yml` 的 nameMap 含 `reasoningEffort: xhigh` 行 |
+| D2 | 非空表再点起步按钮 | 内联三选（替换/合并/取消）；合并放不下时（填至 ≥21 行）合并按钮禁用并显示所需/剩余 |
+| D3 | 确认打开期间把候选清单清空 → 点「替换」 | **拒绝且草稿原样保留**（不清空不写入）；无"全清零写入"路径 |
+| D4 | 唯一路由且无档位（如 kimi 单候选） | 按钮禁用，悬停显示"唯一候选路由无推理档位"原因 |
+| D5 | 高级 → respectExplicit=开 → 保存 → 策略=轮询 → 主 Agent 用 `subagent` 工具**显式指定**某模型（≠主会话当前模型）派 1 子 | 子会话 `request/header` = **显式指定的模型**（插件不覆盖）；关键词命中的队友名也不覆盖（ADR 0013 d4 判别点）；respectExplicit=关时同操作被映射/策略接管（对照组） |
+
+## 10. 版本回退/降级安装注意
 
 从更高版本（如 0.2.5）降到低版本（如 v0.0.1）时，pnpm 视为版本回退——删 `node_modules/dsh-subagent-plus` 后 `pnpm install --force`（必要时先 `pnpm store prune`），并用 grep 安装产物内容确认版本（不要只看 MD5 对比本地 lib）。
