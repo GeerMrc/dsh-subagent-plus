@@ -119,6 +119,26 @@ function agentTeamsOf(ctx: Context): AgentTeamsLike | undefined {
     : undefined
 }
 
+/** Structural view of the `subagents` service (ADR 0012): 0.2.2+ hosts expose
+ *  namesOf() as the official per-agent name lookup (replacing the removed
+ *  roster/tryMembership architecture — "teammates are subagents"). */
+interface SubagentsLike {
+  namesOf(agent: object): { self?: string } | undefined
+}
+
+function subagentsOf(ctx: Context): SubagentsLike | undefined {
+  let service: unknown
+  try {
+    service = ctx.get('subagents')
+  } catch {
+    return undefined
+  }
+  if (service === undefined || typeof service !== 'object') return undefined
+  return typeof (service as { namesOf?: unknown }).namesOf === 'function'
+    ? service as SubagentsLike
+    : undefined
+}
+
 /** Read agent.model if present (0.2.2+ hosts; older hosts lack the property). */
 function agentModelOf(agent: Agent): AgentModelLike | undefined {
   const model = (agent as { model?: unknown }).model
@@ -188,6 +208,39 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     return fallback
   }
 
+  /**
+   * Dual-source name resolution (ADR 0012): try the roster-based tryMembership
+   * first (0.2.0 hosts); on hosts without it, fall back to the official
+   * subagents.namesOf() API (0.2.2+). UNAUTHORIZED from namesOf during the
+   * creation window (before resident registration) is swallowed — the
+   * inbox/claimed hook retries later.
+   */
+  const nameOf = (agent: Agent): string | undefined => {
+    const teams = agentTeamsOf(ctx)
+    if (teams !== undefined) {
+      return teams.tryMembership(agent)?.name
+    }
+    const subs = subagentsOf(ctx)
+    if (subs === undefined) {
+      if (!agentTeamsAbsentWarned) {
+        agentTeamsAbsentWarned = true
+        ctx.logger.warn('dsh-subagent-plus: neither agentTeams.tryMembership nor subagents.namesOf is available; by-name mapping stays dormant (children follow the strategy chain)')
+      }
+      return undefined
+    }
+    try {
+      const names = subs.namesOf(agent)
+      if (names === undefined) return undefined
+      const name = names.self
+      if (name === undefined || name === '' || name === 'lead') return undefined
+      return name
+    } catch {
+      // UNAUTHORIZED during the creation window (agent/created time) — the
+      // inbox/claimed hook will retry after resident registration.
+      return undefined
+    }
+  }
+
   const rowRoute = (row: NameMapEntryView): PinRoute => ({
     provider: row.provider,
     model: row.model,
@@ -200,17 +253,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (config.nameMap.length === 0) return undefined
     const memo = byNameDecisions.get(agent)
     if (memo !== undefined) return memo
-    const teams = agentTeamsOf(ctx)
-    if (teams === undefined) {
-      if (!agentTeamsAbsentWarned) {
-        agentTeamsAbsentWarned = true
-        ctx.logger.warn('dsh-subagent-plus: the agentTeams service is unavailable; by-name mapping stays dormant (children follow the strategy chain)')
-      }
-      return undefined
-    }
-    const membership = teams.tryMembership(agent)
-    if (membership === undefined) return undefined
-    const name = membership.name
+    const name = nameOf(agent)
     if (name === undefined || name === '') return undefined
     const row = matchByKeyword(name, config.nameMap)
     if (row === undefined) return undefined
@@ -315,8 +358,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (!config.pinForkChildren && isForkedChild(agent)) {
       // A mapped name on a fork teammate: warn once (same as before).
       if (!forkNameWarned && config.nameMap.length > 0) {
-        const teams = agentTeamsOf(ctx)
-        const name = teams?.tryMembership(agent)?.name
+        const name = nameOf(agent)
         if (name !== undefined && matchByKeyword(name, config.nameMap) !== undefined) {
           forkNameWarned = true
           ctx.logger.warn(`dsh-subagent-plus: role keyword "${name}" matches a fork teammate; fork children keep their inherited route (enable pinForkChildren to route them)`)
@@ -396,6 +438,35 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       // Degrade silently; the child keeps its current route for the next step.
     }
   }
+
+  // ─── ADR 0012: inbox/claimed hook — deterministic by-name routing on 0.2.2+ hosts.
+  // Fires synchronously during preStep's inbox.claim(), BEFORE model.current()
+  // captures the selection (host agent.ts:293→294). At this point the subagents
+  // service's resident table is populated and namesOf() works. The WeakMap
+  // idempotence gate prevents re-selecting for already-decided agents.
+  ctx.on('agent/inbox/claimed', (payload: { agent: Agent }) => {
+    const agent = payload.agent
+    if (childDepthOf(agent) <= 0) return
+    if (byNameDecisions.has(agent)) return
+    const config = live.current()
+    if (config.nameMap.length === 0) return
+    if (!config.pinForkChildren && isForkedChild(agent)) return
+    const byName = decideByName(config, agent)
+    if (byName === undefined) return
+    const model = agentModelOf(agent)
+    if (model === undefined) return
+    try {
+      const route = byName.route
+      model.select({
+        provider: route.provider,
+        model: route.model,
+        ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort }),
+      })
+      ctx.logger.info(`dsh-subagent-plus: selected route "${routeId(route)}" for "${byName.name}" at inbox/claimed (ADR 0012)`)
+    } catch {
+      // Degrade silently; the agent keeps its inherited/strategy route.
+    }
+  })
 
   // Failure recording + step-boundary select (prepend: before llm-retry vetoes).
   ctx.on('agent/request-error', async (payload, next): Promise<RequestErrorAction> => {
