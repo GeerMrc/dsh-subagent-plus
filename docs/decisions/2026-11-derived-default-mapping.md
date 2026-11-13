@@ -1,6 +1,6 @@
 # 0014 — 通用映射安装即默认派生（取代 0013 d2/d3，修订 d1）
 
-日期：2026-11-13 ｜ 状态：用户批准（v0.0.4 未发布原地重构，纯功能，不动版本号）｜ 关联：[0013](2026-11-universal-starter-template.md)、[0012](2026-11-dual-name-resolution.md)、[0010](2026-11-agent-model-select-migration.md)
+日期：2026-11-13 ｜ 状态：用户批准（v0.0.4 未发布原地重构，纯功能，不动版本号）；决策 1 的序数槽位被 [0015](2026-11-capability-derivation.md) 取代（能力评分排序指派），其余存活 ｜ 关联：[0013](2026-11-universal-starter-template.md)、[0012](2026-11-dual-name-resolution.md)、[0010](2026-11-agent-model-select-migration.md)
 
 ## 取代/存活清单
 

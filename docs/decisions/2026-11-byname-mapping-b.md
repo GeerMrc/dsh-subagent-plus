@@ -14,7 +14,7 @@
 4. **记账 provider 子句保留**：0006 决策 4 的 nameMap provider 归因子句在严格 B 下冗余，保留为防御层（手编配置穿透时仍记账），注释更新。
 5. **队友名 UX＝input＋原生 datalist 建议**（纯下拉在"Team 未跑时预配"场景不可用）：建议集＝客户端守卫 `ctx.get('sessions')` 读 `projectionsBySession` 中 `agentTeam` 投影聚合队友名（未装 Team bundle/无在跑队伍→空集静默降级）∪ 本表已用名；名字校验/红框/重名检测不变。
 6. **分区改名**：zh「Team（队友名 → 路由）」/ en "Team (teammate name → route)"。
-7. **布局单行化**：映射行改专用五轨 Grid `auto auto minmax(0,1fr) auto auto`（序号/名字 176/路由弹性≤240/档位≤120/删除），对齐候选清单行视觉几何；此前折行根因＝3 轨模板承载 5 子元素触发 Grid 隐式第二行（与宽度无关）。
+7. **布局单行化**：映射行改专用五轨 Grid `auto auto minmax(0,1fr) auto auto`（序号/名字 176/路由弹性≤240/档位≤120/删除），对齐候选清单行视觉几何；此前折行根因＝3 轨模板承载 5 子元素触发 Grid 隐式第二行（与宽度无关）。（**已被 [0015](2026-11-capability-derivation.md) 决策 3 取代**：删除挂序号 chip 悬停，五轨→四轨）
 
 ## 影响
 

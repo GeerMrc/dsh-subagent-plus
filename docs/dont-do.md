@@ -59,7 +59,10 @@
 
 ## 模板与配置承诺（v0.0.4 模板重构轮沉淀，2026-11-13）
 
+- **行内弹层必须锚定在行首列或走 portal**：锚在末列的非 portal nowrap 弹层必然越过卡片右缘（×删除弹层溢出设置页，用户截图命中）——同构件换锚到首列（RowNameCell 先例）即消除。
+- **常驻功能控件不做态驱动的消失**："恢复默认"按钮按 nameMapDefaults 态显隐，用户恢复保存后按钮消失、误以为功能丢失——常驻入口应两态可见（幂等态点击无害），语义进 title。
 - **交付态默认优于向导按钮**："起步配置"单按钮＋确认三选＋容量预检＋未保存提醒，用户实测两连问"为什么要有这一步"——开箱即用的派生默认（derived defaults＋copy-on-write＋恢复默认入口）才是正解；预填式向导只该出现在默认值无法从环境推导时。
+
 - **受控 select 的领头显示 option 必须与选项列表去重**：`<option value="">{currentLabel}</option>` 领头项在当前值 ∈ 列表时与同名条目重复（用户截图命中两个同名模型）；领头项只在 dangling/incomplete 显示位有意义，且 dangling 行 value 须置 '' 才真正显示。
 - **删除门禁（如 starterGate）前先枚举它拦截的全部场景在新设计里的归宿**：0014 删 starterGate 时若不重新设计"pinned 下不派生"（R1），派生会凌驾钉定且编辑入口被 byNameLocked 锁死——门禁不是死代码清单，是场景清单。
 - **schemastery 字段级 transform 无 sibling 访问**：条件迁移默认（"字段缺失时按另一字段取值"）不能写在字段 schema 上，也不能给字段 `.default()`（host 解析层吃掉"缺失"使迁移永不触发）——放 materializeConfig 后处理。
