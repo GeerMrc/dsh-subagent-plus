@@ -332,7 +332,7 @@ export const PAGE_STYLE_CSS = `
 /** Name input of a by-name mapping row (ADR 0006): the standard input face
  *  sized to a teammate-name column instead of a full-width field. */
 export const nameInputStyle: React.CSSProperties = {
-  ...inputStyle, width: 140, minWidth: 132, flex: '0 1 auto', height: 30,
+  ...inputStyle, width: 96, minWidth: 88, flex: '0 1 auto', height: 30,
 }
 
 /** Hover/click "×" anchor of a mapping row: the RowNameCell popover trigger

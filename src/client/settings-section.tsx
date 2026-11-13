@@ -328,6 +328,7 @@ type EditorProps = {
  *  merged card in SettingsSection owns the single border. */
 function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
+  const [resetArmed, setResetArmed] = useState(false)
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -455,26 +456,46 @@ function EditorRoutes(props: EditorProps) {
           </select>
         </div>
 
-        {/* Role-keyword mapping (ADR 0008): teammates whose names contain a
-            row's keyword run that row's route (longest keyword wins); targets
-            come from the candidate list; empty table = dormant. Pinned locks
-            route pickers but configured rows keep working. */}
+        {/* Role-keyword mapping (ADR 0008 + 0014): teammates whose names contain
+            a row's keyword run that row's route (longest keyword wins). Under
+            defaults mode the rows derive from the candidate list and adapt
+            live (ADR 0014 d2); the first edit materialises them into ordinary
+            custom rows. Pinned locks route pickers (the R1 mirror). */}
         <div style={fieldRowStyle}>
           <div style={cardHeaderRowStyle}>
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
             <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
+            <span style={{ flex: 1 }} />
+            {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
+              ? (resetArmed
+                  ? (
+                    <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                      <span style={cardHeadingStyle}>{t('byname.resetConfirm')}</span>
+                      <button type="button" className="dsmp-select" style={{ ...routeSelectStyle, maxWidth: 88 }} onClick={() => { controller.resetNameMapDefaults(); setResetArmed(false) }}>{t('byname.reset')}</button>
+                      <button type="button" className="dsmp-select" style={{ ...routeSelectStyle, maxWidth: 64 }} onClick={() => { setResetArmed(false) }}>{t('byname.resetCancel')}</button>
+                    </span>
+                  )
+                  : <button type="button" className="dsmp-select" style={routeSelectStyle} onClick={() => { setResetArmed(true) }}>{t('byname.reset')}</button>)
+              : null}
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
-          {draft.nameMap.length === 0
-            ? <p style={hintStyle}>{t('byname.empty')}</p>
+          {!byNameLocked && draft.nameMapDefaults
+            ? <p style={hintStyle}>{listed.some(route => route.available) ? t('byname.defaultsHint') : t('byname.defaultsEmpty')}</p>
+            : null}
+          {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
+            ? <p style={hintStyle}>{t('byname.customHint')}</p>
+            : null}
+          {state.effectiveNameMap.length === 0
+            ? (!byNameLocked && draft.nameMapDefaults ? null : <p style={hintStyle}>{t('byname.empty')}</p>)
             : (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {draft.nameMap.map((row, index) => {
+                {state.effectiveNameMap.map((row, index) => {
                   const listedHit = listed.find(candidate =>
                     candidate.provider === row.provider && candidate.model === row.model) ?? null
                   const catalogHit = state.routes.find(candidate =>
                     candidate.provider === row.provider && candidate.model === row.model) ?? null
-                  const duplicate = row.name !== '' && draft.nameMap.some((other, otherIndex) =>
+                  const storedRows = draft.nameMapDefaults ? state.effectiveNameMap : draft.nameMap
+                  const duplicate = row.name !== '' && storedRows.some((other, otherIndex) =>
                     otherIndex !== index && other.name === row.name)
                   const nameInvalid = duplicate || !isValidKeyword(row.name)
                   const routeIncomplete = row.provider === '' || row.model === ''
@@ -500,8 +521,8 @@ function EditorRoutes(props: EditorProps) {
                       />
                       <select
                         className="dsmp-select"
-                        style={routeSelectStyle}
-                        value={listedHit !== null ? routeValue(listedHit) : routeIncomplete ? '' : routeValue(row)}
+                        style={{ ...routeSelectStyle, width: '100%' }}
+                        value={listedHit !== null ? routeValue(listedHit) : ''}
                         disabled={byNameLocked}
                         aria-label={t('byname.title')}
                         title={routeTitle}
@@ -510,7 +531,11 @@ function EditorRoutes(props: EditorProps) {
                           if (next !== null) controller.setNameRowRoute(index, next)
                         }}
                       >
-                        <option value="">{currentLabel}</option>
+                        {/* Leading display option only for incomplete/dangling
+                            rows — a listed hit renders identically among the
+                            options below, and duplicating it showed two
+                            same-named entries (the Q4 report). */}
+                        {listedHit === null ? <option value="">{currentLabel}</option> : null}
                         {listed.map(candidate => (
                           <option key={routeValue(candidate)} value={routeValue(candidate)} title={routeFull(candidate)}>{routeShort(candidate)}</option>
                         ))}
@@ -539,7 +564,7 @@ function EditorRoutes(props: EditorProps) {
               className="dsmp-select"
               style={routeSelectStyle}
               value=""
-              disabled={byNameLocked || draft.nameMap.length >= MAX_NAME_MAP_ENTRIES}
+              disabled={byNameLocked || state.effectiveNameMap.length >= MAX_NAME_MAP_ENTRIES}
               aria-label={t('byname.add')}
               onChange={event => {
                 const route = routeFromValue(listed, event.target.value)
