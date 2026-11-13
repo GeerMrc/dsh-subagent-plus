@@ -364,56 +364,6 @@ describe('effort dropdown data (E-04)', () => {
   })
 })
 
-describe('semantic effort resolution (W2, ADR 0013)', () => {
-  const qwenEfforts = [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }]
-
-  it('resolves top/lowest by the strength ladder, skipping off tiers', async () => {
-    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
-    const route = { efforts: qwenEfforts }
-    expect(resolveSemanticEffort(route, 'top')).toBe('xhigh')
-    expect(resolveSemanticEffort(route, 'lowest')).toBe('low')
-    expect(resolveSemanticEffort(route, 'default')).toBe('')
-  })
-
-  it('the ladder wins over non-monotonic adapter display order', async () => {
-    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
-    // Adapter order is display order, not strength order (ADR 0013 decision 1).
-    const route = { efforts: [{ id: 'xhigh', name: 'Xhigh' }, { id: 'medium', name: 'Medium' }, { id: 'low', name: 'Low' }] }
-    expect(resolveSemanticEffort(route, 'top')).toBe('xhigh')
-    expect(resolveSemanticEffort(route, 'lowest')).toBe('low')
-  })
-
-  it('no non-off tiers (empty, undefined, or all-off) materialise nothing', async () => {
-    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
-    expect(resolveSemanticEffort({ efforts: [] }, 'top')).toBe('')
-    expect(resolveSemanticEffort(undefined, 'lowest')).toBe('')
-    // deepseek thinking-disabled models: efforts = [Off] (ADR 0013 decision 1).
-    expect(resolveSemanticEffort({ efforts: [{ id: 'off', name: 'Off' }] }, 'top')).toBe('')
-    expect(resolveSemanticEffort({ efforts: [{ id: 'off', name: 'Off' }, { id: 'none', name: 'None' }] }, 'lowest')).toBe('')
-  })
-
-  it('off-ladder-only ids fall back to adapter position (last=top, first=lowest)', async () => {
-    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
-    const route = { efforts: [{ id: 'eco', name: 'Eco' }, { id: 'turbo', name: 'Turbo' }] }
-    expect(resolveSemanticEffort(route, 'top')).toBe('turbo')
-    expect(resolveSemanticEffort(route, 'lowest')).toBe('eco')
-  })
-
-  it('ladder tiers win over off-ladder tiers when both are present', async () => {
-    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
-    const route = { efforts: [{ id: 'low', name: 'Low' }, { id: 'turbo', name: 'Turbo' }] }
-    expect(resolveSemanticEffort(route, 'top')).toBe('low')
-    expect(resolveSemanticEffort(route, 'lowest')).toBe('low')
-  })
-
-  it('matches ladder ids case-insensitively and returns the original id', async () => {
-    const { resolveSemanticEffort } = await import('../../src/client/settings-controller.js')
-    const route = { efforts: [{ id: 'Low', name: 'Low' }, { id: 'XHigh', name: 'XHigh' }] }
-    expect(resolveSemanticEffort(route, 'top')).toBe('XHigh')
-    expect(resolveSemanticEffort(route, 'lowest')).toBe('Low')
-    expect(resolveSemanticEffort({ efforts: [{ id: 'OFF', name: 'Off' }, { id: 'low', name: 'Low' }] }, 'lowest')).toBe('low')
-  })
-})
 
 /** Catalog with two effort-bearing routes: sz (qwen Off/Low/Medium/Xhigh), zai (Low/High/Max), plus a tierless cm. */
 const effortsCatalog: CatalogPort = {
@@ -429,7 +379,7 @@ const effortsCatalog: CatalogPort = {
 
 describe('starter template (W3, ADR 0013 d2)', () => {
   it('defines 12 valid unique stems with the quality family first (tie-break order)', async () => {
-    const { STARTER_TEMPLATE_ROWS } = await import('../../src/client/settings-controller.js')
+    const { STARTER_TEMPLATE_ROWS } = await import('../../src/strategy.js')
     const { isValidKeyword } = await import('../../src/strategy.js')
     expect(STARTER_TEMPLATE_ROWS).toHaveLength(12)
     const keywords = STARTER_TEMPLATE_ROWS.map(row => row.keyword)
@@ -440,7 +390,7 @@ describe('starter template (W3, ADR 0013 d2)', () => {
   })
 
   it('equal-length cross-family ties resolve to the quality family by row order', async () => {
-    const { STARTER_TEMPLATE_ROWS } = await import('../../src/client/settings-controller.js')
+    const { STARTER_TEMPLATE_ROWS } = await import('../../src/strategy.js')
     const { matchByKeyword } = await import('../../src/strategy.js')
     const map = STARTER_TEMPLATE_ROWS.map(row => ({ name: row.keyword, provider: 'sz', model: 'qwen', reasoningEffort: '' }))
     expect(matchByKeyword('test-planner', map)?.name).toBe('plan')
@@ -488,8 +438,8 @@ describe('starter template (W3, ADR 0013 d2)', () => {
     // S family → first listed route (qwen) + top tier = xhigh — NOT '' (the D1 bug).
     expect(byName('review')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
     expect(byName('plan')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
-    // B family → second listed route (glm) + model default ('').
-    expect(byName('dev')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: '' })
+    // B family → second listed route (glm) + mid tier (high on low/high/max, ADR 0014 d1).
+    expect(byName('dev')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'high' })
     // F family → last listed route (glm) + lowest tier = low.
     expect(byName('test')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
     expect(byName('qa')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
@@ -745,7 +695,7 @@ describe('starter template slot & gate coverage (W8, review P-21)', () => {
     expect(result).toEqual({ kind: 'applied', added: 12, unmaterialized: 0 })
     expect(rows.every(row => row.provider === 'p0' && row.model === 'm0')).toBe(true)
     expect(rows.find(row => row.name === 'review')?.reasoningEffort).toBe('xhigh')
-    expect(rows.find(row => row.name === 'dev')?.reasoningEffort).toBe('')
+    expect(rows.find(row => row.name === 'dev')?.reasoningEffort).toBe('xhigh') // 2 active tiers: mid = upper median (ADR 0014 d1)
     expect(rows.find(row => row.name === 'test')?.reasoningEffort).toBe('low')
   })
 

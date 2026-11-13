@@ -12,12 +12,18 @@
  *
  * @module dsh-subagent-plus/client/settings-controller
  */
-import { MAX_NAME_MAP_ENTRIES, validateStrategyConfig, type Strategy } from '../strategy.js'
+import {
+  MAX_NAME_MAP_ENTRIES,
+  resolveSemanticEffort,
+  slotRouteAt,
+  STARTER_TEMPLATE_ROWS,
+  validateStrategyConfig,
+  type EffortIntent,
+  type Slot,
+  type Strategy,
+} from '../strategy.js'
 import type { PinConfig } from '../config.js'
 import type { SaveOutcome } from './unified-save.js'
-
-/** Template slot: S=first candidate (strong), B=middle, F=last (fast). */
-export type Slot = 'S' | 'B' | 'F'
 
 /** One starter-template definition (ADR 0013). */
 interface RoleTemplate {
@@ -39,30 +45,6 @@ export type ApplyTemplateResult =
   | { kind: 'insufficient-capacity'; needed: number; free: number }
   | { kind: 'rejected' }
   | { kind: 'unknown-template' }
-
-/**
- * The universal starter template (ADR 0013 d2): one cross-domain table serving
- * every session — dev sessions hit review/dev/test, game sessions
- * design/write, research sessions research/plan; unmatched names fall through
- * to the strategy chain. Row order is the equal-length cross-family
- * tie-break order (matchByKeyword resolves ties by first occurrence), so the
- * quality-gate family comes first: `test-planner` resolves to `plan` (S+top)
- * and `design-review-dev` to `review` (S+top).
- */
-export const STARTER_TEMPLATE_ROWS: ReadonlyArray<{ keyword: string; slot: Slot; effort: EffortIntent }> = [
-  { keyword: 'review', slot: 'S', effort: 'top' },
-  { keyword: 'audit', slot: 'S', effort: 'top' },
-  { keyword: 'verif', slot: 'S', effort: 'top' },
-  { keyword: 'plan', slot: 'S', effort: 'top' },
-  { keyword: 'research', slot: 'B', effort: 'default' },
-  { keyword: 'dev', slot: 'B', effort: 'default' },
-  { keyword: 'build', slot: 'B', effort: 'default' },
-  { keyword: 'execute', slot: 'B', effort: 'default' },
-  { keyword: 'write', slot: 'B', effort: 'default' },
-  { keyword: 'design', slot: 'B', effort: 'default' },
-  { keyword: 'test', slot: 'F', effort: 'lowest' },
-  { keyword: 'qa', slot: 'F', effort: 'lowest' },
-]
 
 
 /** Maximum candidate routes; mirrors the schema bound. */
@@ -231,45 +213,6 @@ export function effortDefaultLabel(route: Pick<RouteOption, 'efforts' | 'default
   if (route?.defaultEffort === undefined) return withoutName
   const name = route.efforts?.find(effort => effort.id === route.defaultEffort)?.name ?? route.defaultEffort
   return withName.replace('{name}', name)
-}
-
-/** Semantic effort intent a template row expresses (ADR 0013): resolved against
- *  the route's actual tiers at apply time, never a literal provider id. */
-export type EffortIntent = 'top' | 'default' | 'lowest'
-
-/** Recognised effort strength ladder, weakest to strongest (ADR 0013). The host
- *  publishes efforts in adapter-preferred display order, which is not a
- *  strength order — the ladder ranks ids whose vocabulary is known. */
-const EFFORT_LADDER = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
-
-/** Effort ids that mean "reasoning disabled" — excluded from automatic picks
- *  (a manual row may still choose them). 'off' has live instances
- *  (deepseek/qwen); 'none' is a preventive exclusion with none observed. */
-const DISABLED_EFFORT_IDS = new Set(['off', 'none'])
-
-/**
- * Resolve a semantic effort intent against a route's actual tiers (ADR 0013):
- * ladder-ranked ids win ('off'/'none' never picked automatically); ids off the
- * ladder fall back to adapter position (last = top, first = lowest) only when
- * no tier is on the ladder. `default` stays absent ('' — the host materialises
- * the model's own default); no non-disabled tiers materialise nothing.
- * @param route - the route the template row targets, when known.
- * @param intent - the row's semantic effort intent.
- * @returns the materialised effort id, or '' to follow the model default.
- */
-export function resolveSemanticEffort(route: { efforts?: readonly { id: string; name?: string }[] } | undefined, intent: EffortIntent): string {
-  if (intent === 'default') return ''
-  const active = (route?.efforts ?? []).filter(effort => !DISABLED_EFFORT_IDS.has(effort.id.toLowerCase()))
-  if (active.length === 0) return ''
-  const ranked = active.map(effort => ({ id: effort.id, rank: EFFORT_LADDER.indexOf(effort.id.toLowerCase()) }))
-  const onLadder = ranked.filter(effort => effort.rank >= 0)
-  if (onLadder.length > 0) {
-    const pick = intent === 'top'
-      ? onLadder.reduce((best, entry) => (entry.rank > best.rank ? entry : best))
-      : onLadder.reduce((best, entry) => (entry.rank < best.rank ? entry : best))
-    return pick.id
-  }
-  return (intent === 'top' ? active[active.length - 1] : active[0]).id
 }
 
 /** Options for the add-select: catalogue routes not already listed. */
@@ -446,17 +389,8 @@ export class SettingsSectionController {
     { id: 'starter', rows: STARTER_TEMPLATE_ROWS },
   ]
 
-  /** Map a slot to a route from the listed candidates (ADR 0011 H2: from
-   *  listed, never hardcoded). A sole candidate resolves every slot — the
-   *  single-route case differentiates rows by effort, not route (ADR 0013 d2). */
-  #slotRoute(listed: readonly { provider: string; model: string; efforts?: readonly { id: string }[] }[], slot: Slot): { provider: string; model: string; efforts?: readonly { id: string }[] } | undefined {
-    if (listed.length === 0) return undefined
-    if (slot === 'S') return listed[0]
-    if (slot === 'F') return listed[listed.length - 1]
-    // B: middle; for 2 items, pick the second (different from S)
-    const mid = Math.max(1, Math.floor((listed.length - 1) / 2))
-    return listed[Math.min(mid, listed.length - 1)]
-  }
+  /** Map a slot to a listed candidate — shared implementation (ADR 0014 X2). */
+  #slotRoute = slotRouteAt
 
   /**
    * The starter-template gate (ADR 0013 d2): 'locked' under the pinned
@@ -546,7 +480,7 @@ export class SettingsSectionController {
         const route = this.#slotRoute(listed, row.slot)
         if (route === undefined) continue
         const effort = resolveSemanticEffort(route, row.effort)
-        if (row.effort !== 'default' && effort === '') unmaterialized += 1
+        if (effort === '') unmaterialized += 1
         d.nameMap.push({
           name: row.keyword,
           provider: route.provider,

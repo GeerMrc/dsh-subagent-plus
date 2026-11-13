@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PinRoute } from '../src/pin.js'
 import {
   assignedNotice,
+  deriveStarterRows,
   candidateRoutes,
   classifyFailure,
   createSelectionState,
@@ -18,7 +19,10 @@ import {
   pinFallbackNotice,
   pinSkippedNotice,
   reassignedNotice,
+  resolveNameMapDefaults,
+  resolveSemanticEffort,
   resolveStrategyPlan,
+  STARTER_TEMPLATE_ROWS,
   RouteHealth,
   routeKey,
   selectChildRoute,
@@ -519,5 +523,105 @@ describe('by-name notice text (S-09 helpers)', () => {
     expect(byNameSkippedNotice('researcher', 'sz/Qwen3.8-27B-FP8')).toBe(
       '[按角色跳过 model keyword skipped: 匹配角色 "researcher" 的路由 sz/Qwen3.8-27B-FP8 未注册且无可用兜底，本子智能体仍将运行该路由（预期响亮失败）｜role route sz/Qwen3.8-27B-FP8 for "researcher" unregistered with no usable fallback; the child still runs it and fails loudly — dsh-subagent-plus]',
     )
+  })
+})
+
+
+describe('semantic effort intents (X2, ADR 0014 d1)', () => {
+  it('top/mid/lowest on the qwen vocabulary: xhigh / medium / low', () => {
+    const qwen = { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }] }
+    expect(resolveSemanticEffort(qwen, 'top')).toBe('xhigh')
+    expect(resolveSemanticEffort(qwen, 'mid')).toBe('medium')
+    expect(resolveSemanticEffort(qwen, 'lowest')).toBe('low')
+  })
+
+  it('mid takes the upper median on even ladders (4 tiers → 3rd; 2 tiers → 2nd)', () => {
+    const four = { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }, { id: 'xhigh' }] }
+    expect(resolveSemanticEffort(four, 'mid')).toBe('high')
+    const two = { efforts: [{ id: 'off' }, { id: 'low' }] }
+    expect(resolveSemanticEffort(two, 'mid')).toBe('low')
+    expect(resolveSemanticEffort(two, 'top')).toBe('low')
+  })
+
+  it('zai vocabulary: mid=high among low/high/max', () => {
+    const zai = { efforts: [{ id: 'low' }, { id: 'high' }, { id: 'max' }] }
+    expect(resolveSemanticEffort(zai, 'mid')).toBe('high')
+    expect(resolveSemanticEffort(zai, 'top')).toBe('max')
+  })
+
+  it('minimal ranks below low on the ladder', () => {
+    const tiers = { efforts: [{ id: 'minimal' }, { id: 'low' }, { id: 'high' }] }
+    expect(resolveSemanticEffort(tiers, 'lowest')).toBe('minimal')
+    expect(resolveSemanticEffort(tiers, 'mid')).toBe('low')
+  })
+
+  it('ladder ranks win over non-monotonic display order; mixed sets rank on-ladder tiers only', () => {
+    const shuffled = { efforts: [{ id: 'xhigh' }, { id: 'medium' }, { id: 'low' }] }
+    expect(resolveSemanticEffort(shuffled, 'mid')).toBe('medium')
+    const mixed = { efforts: [{ id: 'low' }, { id: 'turbo' }] }
+    expect(resolveSemanticEffort(mixed, 'mid')).toBe('low')
+  })
+
+  it('off-ladder-only ids fall back to catalog order with the upper median', () => {
+    const three = { efforts: [{ id: 'eco' }, { id: 'standard' }, { id: 'turbo' }] }
+    expect(resolveSemanticEffort(three, 'mid')).toBe('standard')
+    const two = { efforts: [{ id: 'eco' }, { id: 'turbo' }] }
+    expect(resolveSemanticEffort(two, 'mid')).toBe('turbo')
+  })
+
+  it('matches ladder ids case-insensitively and returns the original id', () => {
+    const route = { efforts: [{ id: 'Low' }, { id: 'XHigh' }] }
+    expect(resolveSemanticEffort(route, 'top')).toBe('XHigh')
+    expect(resolveSemanticEffort(route, 'lowest')).toBe('Low')
+    expect(resolveSemanticEffort({ efforts: [{ id: 'OFF' }, { id: 'low' }] }, 'lowest')).toBe('low')
+  })
+
+  it('no non-disabled tiers (empty, undefined, all off/none) materialise nothing', () => {
+    expect(resolveSemanticEffort({ efforts: [] }, 'mid')).toBe('')
+    expect(resolveSemanticEffort(undefined, 'mid')).toBe('')
+    expect(resolveSemanticEffort({ efforts: [{ id: 'off' }, { id: 'none' }] }, 'top')).toBe('')
+  })
+})
+
+describe('deriveStarterRows (X2, ADR 0014 d2)', () => {
+  const qwen = { provider: 'sz', model: 'qwen', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
+  const plain = { provider: 'zai', model: 'glm' }
+
+  it('derives 12 rows in stem order with materialised tiers from one candidate', () => {
+    const rows = deriveStarterRows([qwen])
+    expect(rows).toHaveLength(12)
+    expect(rows.map(row => row.name)).toEqual(STARTER_TEMPLATE_ROWS.map(row => row.keyword))
+    const byName = (name: string) => rows.find(row => row.name === name)
+    expect(byName('review')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'xhigh' })
+    expect(byName('dev')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'medium' })
+    expect(byName('test')).toMatchObject({ provider: 'sz', model: 'qwen', reasoningEffort: 'low' })
+  })
+
+  it('slots adapt to the candidate count: S=first, B upper-middle, F=last', () => {
+    const two = deriveStarterRows([qwen, plain])
+    expect(two.find(r => r.name === 'review')?.model).toBe('qwen')
+    expect(two.find(r => r.name === 'dev')?.model).toBe('glm')
+    expect(two.find(r => r.name === 'test')?.model).toBe('glm')
+    const three = deriveStarterRows([qwen, { ...plain, model: 'mid' }, { ...plain, model: 'last' }])
+    expect(three.find(r => r.name === 'dev')?.model).toBe('mid')
+    const five = deriveStarterRows([qwen, { ...plain, model: 'a' }, { ...plain, model: 'b' }, { ...plain, model: 'c' }, { ...plain, model: 'd' }])
+    expect(five.find(r => r.name === 'dev')?.model).toBe('b')
+    expect(five.find(r => r.name === 'test')?.model).toBe('d')
+  })
+
+  it('no candidates derive no rows (dormant)', () => {
+    expect(deriveStarterRows([])).toEqual([])
+  })
+})
+
+describe('resolveNameMapDefaults (X2, ADR 0014 d2 migration rule)', () => {
+  it('absent field: empty stored map → defaults on; non-empty → custom', () => {
+    expect(resolveNameMapDefaults(undefined, 0)).toBe(true)
+    expect(resolveNameMapDefaults(undefined, 3)).toBe(false)
+  })
+
+  it('explicit values are preserved regardless of stored rows', () => {
+    expect(resolveNameMapDefaults(true, 5)).toBe(true)
+    expect(resolveNameMapDefaults(false, 0)).toBe(false)
   })
 })

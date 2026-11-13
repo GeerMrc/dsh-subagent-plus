@@ -14,6 +14,139 @@ import { routeId, type PinRoute, type RouteFields } from './pin.js'
  * import it without dragging schemastery into the client bundle. */
 export const MAX_NAME_MAP_ENTRIES = 32
 
+/** Semantic effort intent a derived row expresses (ADR 0014 d1): resolved
+ *  against the route's actual tiers at derive time, never a literal id. */
+export type EffortIntent = 'top' | 'mid' | 'lowest'
+
+/** Recognised effort strength ladder, weakest to strongest (ADR 0014 d1).
+ *  `minimal` is a declarative seat for pi-ai-style pass-through vocabularies;
+ *  the host publishes efforts in adapter-preferred display order, which is
+ *  not a strength order — the ladder ranks ids whose vocabulary is known. */
+const EFFORT_LADDER = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/** Effort ids that mean "reasoning disabled" — excluded from automatic picks
+ *  (a manual row may still choose them). 'off' has live instances
+ *  (deepseek/qwen); 'none' is a preventive exclusion with none observed. */
+const DISABLED_EFFORT_IDS = new Set(['off', 'none'])
+
+/**
+ * Resolve a semantic effort intent against a route's actual tiers (ADR 0014):
+ * ladder-ranked ids win ('off'/'none' never picked automatically); mid takes
+ * the upper median of the ladder-ranked tiers (the B-slot precedent: two
+ * tiers pick the second); ids off the ladder fall back to adapter position
+ * with the same upper-median rule only when no tier is on the ladder; no
+ * non-disabled tiers materialise nothing.
+ * @param route - the route the row targets, when known.
+ * @param intent - the row's semantic effort intent.
+ * @returns the materialised effort id, or '' to follow the model default.
+ */
+export function resolveSemanticEffort(route: { efforts?: readonly { id: string }[] } | undefined, intent: EffortIntent): string {
+  const active = (route?.efforts ?? []).filter(effort => !DISABLED_EFFORT_IDS.has(effort.id.toLowerCase()))
+  if (active.length === 0) return ''
+  const pick = (ordered: readonly { id: string }[]): string =>
+    intent === 'top' ? ordered[ordered.length - 1]!.id
+      : intent === 'lowest' ? ordered[0]!.id
+        : ordered[Math.ceil((ordered.length - 1) / 2)]!.id
+  const onLadder = active
+    .map(effort => ({ id: effort.id, rank: EFFORT_LADDER.indexOf(effort.id.toLowerCase()) }))
+    .filter(effort => effort.rank >= 0)
+    .sort((left, right) => left.rank - right.rank)
+  if (onLadder.length > 0) return pick(onLadder)
+  return pick(active)
+}
+
+/** Template slot: S=first candidate (strong), B=middle, F=last (fast). */
+export type Slot = 'S' | 'B' | 'F'
+
+/**
+ * The universal starter stems (ADR 0013 d2 / 0014): one cross-domain table
+ * serving every session — dev sessions hit review/dev/test, game sessions
+ * design/write, research sessions research/plan; unmatched names fall through
+ * to the strategy chain. Row order is the equal-length cross-family
+ * tie-break order (matchByKeyword resolves ties by first occurrence), so the
+ * quality-gate family comes first: `test-planner` resolves to `plan` (S+top)
+ * and `design-review-dev` to `review` (S+top). B rows take `mid` since ADR
+ * 0014 (qwen: medium; the old `default` intent materialised low there and
+ * collided with the F family).
+ */
+export const STARTER_TEMPLATE_ROWS: ReadonlyArray<{ keyword: string; slot: Slot; effort: EffortIntent }> = [
+  { keyword: 'review', slot: 'S', effort: 'top' },
+  { keyword: 'audit', slot: 'S', effort: 'top' },
+  { keyword: 'verif', slot: 'S', effort: 'top' },
+  { keyword: 'plan', slot: 'S', effort: 'top' },
+  { keyword: 'research', slot: 'B', effort: 'mid' },
+  { keyword: 'dev', slot: 'B', effort: 'mid' },
+  { keyword: 'build', slot: 'B', effort: 'mid' },
+  { keyword: 'execute', slot: 'B', effort: 'mid' },
+  { keyword: 'write', slot: 'B', effort: 'mid' },
+  { keyword: 'design', slot: 'B', effort: 'mid' },
+  { keyword: 'test', slot: 'F', effort: 'lowest' },
+  { keyword: 'qa', slot: 'F', effort: 'lowest' },
+]
+
+/** One candidate route with its reasoning tiers, the derive input (ADR 0014). */
+export interface StarterCandidate {
+  /** Registered provider id. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** The model's reasoning tiers from the catalogue, when known. */
+  efforts?: readonly { id: string }[]
+}
+
+/**
+ * Map a slot to a candidate (ADR 0011 H2: from the listed candidates, never
+ * hardcoded). A sole candidate resolves every slot — the single-route case
+ * differentiates rows by effort, not route (ADR 0013 d2).
+ * @param listed - candidates in stored priority order.
+ * @param slot - the slot to resolve.
+ * @returns the candidate, or undefined when none are listed.
+ */
+export function slotRouteAt(listed: readonly StarterCandidate[], slot: Slot): StarterCandidate | undefined {
+  if (listed.length === 0) return undefined
+  if (slot === 'S') return listed[0]
+  if (slot === 'F') return listed[listed.length - 1]
+  const mid = Math.max(1, Math.floor((listed.length - 1) / 2))
+  return listed[Math.min(mid, listed.length - 1)]
+}
+
+/**
+ * Derive the default mapping rows from the candidate list (ADR 0014 d2):
+ * stems × S/B/F slots × top/mid/lowest intents, efforts materialised from
+ * each candidate's actual tiers. Rows only ever reference listed candidates
+ * and legal stems, so the derived table bypasses stored-config validation by
+ * construction; an empty candidate list derives no rows (dormant).
+ * @param candidates - the candidate routes in stored priority order, with
+ *  catalogue tiers when available (missing tiers materialise '').
+ * @returns the derived mapping rows.
+ */
+export function deriveStarterRows(candidates: readonly StarterCandidate[]): NameMapEntryView[] {
+  const rows: NameMapEntryView[] = []
+  for (const row of STARTER_TEMPLATE_ROWS) {
+    const route = slotRouteAt(candidates, row.slot)
+    if (route === undefined) continue
+    rows.push({
+      name: row.keyword,
+      provider: route.provider,
+      model: route.model,
+      reasoningEffort: resolveSemanticEffort(route, row.effort),
+    })
+  }
+  return rows
+}
+
+/**
+ * The `nameMapDefaults` migration rule (ADR 0014 d2): an absent field means
+ * defaults-on only for a fresh configuration — a hand-edited document with
+ * stored rows lands on custom so derivation never silently replaces them.
+ * @param field - the stored field value, undefined when the document predates it.
+ * @param storedRowCount - the stored nameMap row count.
+ * @returns the effective defaults-mode flag.
+ */
+export function resolveNameMapDefaults(field: boolean | undefined, storedRowCount: number): boolean {
+  return field ?? storedRowCount === 0
+}
+
 /** Closed set of selection strategies; `pinned` is the v0.1.x single-route behaviour. */
 export const STRATEGIES = ['pinned', 'round-robin', 'random', 'priority'] as const
 
