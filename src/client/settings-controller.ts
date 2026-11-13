@@ -12,11 +12,14 @@
  *
  * @module dsh-subagent-plus/client/settings-controller
  */
+import { kbEntryFor } from '../capability-scoring.js'
 import {
   deriveStarterRows,
+  MAX_CAPABILITY_OVERRIDES,
   MAX_NAME_MAP_ENTRIES,
   resolveNameMapDefaults,
   validateStrategyConfig,
+  type CapabilityOverrideView,
   type NameMapEntryView,
   type Strategy,
 } from '../strategy.js'
@@ -204,6 +207,46 @@ export function addableRoutesOf(draft: PinConfig | undefined, routes: readonly R
   return routes.filter(route => !draft.priority.some(entry => entry.provider === route.provider && entry.model === route.model))
 }
 
+/** One research-package candidate entry. */
+export interface ResearchCandidate {
+  provider: string
+  model: string
+  /** Where the model currently resolves (candidate / kb / none). */
+  match: 'candidate' | 'kb' | 'none'
+}
+
+/**
+ * Build the exportable research package (ADR 0016 d3): the current candidates
+ * with their match status plus the bilingual research prompt. The consumer
+ * feeds the prompt to any capable model and imports the JSON it produces.
+ * @param candidates - effective candidate list with match status.
+ * @returns the JSON-serialisable package.
+ */
+export function buildResearchPackage(candidates: readonly ResearchCandidate[], today: string): Record<string, unknown> {
+  return {
+    schema: 1,
+    exportedAt: today,
+    dimensions: ['overall', 'coding', 'webdev', 'agentic'],
+    candidates: candidates.map(entry => ({ provider: entry.provider, model: entry.model, match: entry.match })),
+    prompt_zh: [
+      '你是模型能力评估员。请对下列模型在四个维度上给出 0-100 的能力评分。',
+      '评分表达该模型相对当前主流模型总体的位置：50≈主流中位、70≈前四分之一、90≈前 10%。',
+      '维度：overall（综合）/ coding（编码）/ webdev（前端网页开发）/ agentic（自主任务·工具使用）。',
+      '输出一个 JSON 数组，每项 {"model": "<原样模型 id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "调研执行日期(YYYY-MM-DD)", "note": "简短依据"}。',
+      '只输出 JSON，不要解释。模型列表：',
+      ...candidates.map(entry => `- ${entry.model}${entry.match === 'none' ? '（未知模型，请按同类定位估计）' : ''}`),
+    ].join('\n'),
+    prompt_en: [
+      'You are a model-capability evaluator. Score the models below 0-100 on four dimensions.',
+      'Scores express each model\'s position against the current mainstream population: 50≈median, 70≈top quartile, 90≈top decile.',
+      'Dimensions: overall / coding / webdev (frontend web development) / agentic (autonomous tool use).',
+      'Output a JSON array, one object per model: {"model": "<exact id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "YYYY-MM-DD research date", "note": "brief basis"}.',
+      'JSON only, no prose. Models:',
+      ...candidates.map(entry => `- ${entry.model}${entry.match === 'none' ? ' (unknown model — estimate by comparable positioning)' : ''}`),
+    ].join('\n'),
+  }
+}
+
 /**
  * Draft-editing controller for the plugin's settings section.
  */
@@ -342,8 +385,56 @@ export class SettingsSectionController {
     // client must not unilaterally drop candidates the runtime still sees.
     const candidates = listedRoutesOf(this.#state)
       .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts, description: route.description }))
-    draft.nameMap = deriveStarterRows(candidates).map(row => ({ ...row }))
+    const overrides = draft.capabilityOverrides ?? []
+    draft.nameMap = deriveStarterRows(candidates, { overrides }).map(row => ({ ...row }))
     draft.nameMapDefaults = false
+  }
+
+  /** Import-time feedback for one override row: where the model resolves. */
+  #overrideMatch(model: string): 'candidate' | 'kb' | 'none' {
+    if (this.#state.draft?.priority.some(entry => entry.model === model) === true) return 'candidate'
+    if (kbEntryFor(model) !== undefined) return 'kb'
+    return 'none'
+  }
+
+  /**
+   * Import user-researched capability evaluations (ADR 0016 d3). Semantic
+   * validation happens HERE (the schema bounds shape): duplicate models and
+   * all-dimension-empty rows reject with per-row reasons; accepted rows land
+   * in the draft and ride the unified save. Each accepted row reports where
+   * its model currently resolves so the UI can surface stale entries.
+   * @param rows - evaluated rows as the research package produced them.
+   * @returns 'imported' with per-row feedback, or 'rejected' with reasons.
+   */
+  importCapabilityOverrides = (rows: readonly CapabilityOverrideView[]): { kind: 'imported'; rows: { model: string; match: 'candidate' | 'kb' | 'none' }[] } | { kind: 'rejected'; reasons: string[] } => {
+    const reasons: string[] = []
+    const seen = new Set<string>()
+    rows.forEach((row, index) => {
+      if (row.model === '') reasons.push(`#${index + 1}: missing model id`)
+      if (seen.has(row.model)) reasons.push(`#${index + 1}: duplicate model "${row.model}"`)
+      seen.add(row.model)
+      if (row.overall === undefined && row.coding === undefined && row.webdev === undefined && row.agentic === undefined) {
+        reasons.push(`#${index + 1}: "${row.model}" carries no dimension score`)
+      }
+    })
+    if (rows.length > MAX_CAPABILITY_OVERRIDES) reasons.push(`at most ${MAX_CAPABILITY_OVERRIDES} rows are allowed`)
+    if (reasons.length > 0) return { kind: 'rejected', reasons }
+    this.#edit(draft => {
+      // Import replaces the previous import wholesale (the research package is
+      // one coherent evaluation); existing rows from an older import go.
+      draft.capabilityOverrides = rows.map(row => ({ ...row }))
+    })
+    return { kind: 'imported', rows: rows.map(row => ({ model: row.model, match: this.#overrideMatch(row.model) })) }
+  }
+
+  /** Remove one override row from the draft (unified save persists). */
+  removeCapabilityOverride = (index: number): void => {
+    this.#edit(draft => { draft.capabilityOverrides.splice(index, 1) })
+  }
+
+  /** Drop every override — scoring falls back to the bundled KB snapshot. */
+  clearCapabilityOverrides = (): void => {
+    this.#edit(draft => { draft.capabilityOverrides = [] })
   }
 
   /** Re-enable derivation: clears the stored rows and returns to defaults mode. */
@@ -480,7 +571,7 @@ export class SettingsSectionController {
       // R1 mirror of the runtime gate), stored rows otherwise.
       this.#state.effectiveNameMap = draft.nameMapDefaults && draft.strategy !== 'pinned'
         ? deriveStarterRows(listedRoutesOf(this.#state)
-          .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts, description: route.description })))
+          .map(route => ({ provider: route.provider, model: route.model, efforts: route.efforts, description: route.description })), { overrides: draft.capabilityOverrides ?? [] })
         : draft.nameMap.map(row => ({ ...row }))
     } else {
       this.#state.addableRoutes = [...this.#state.routes]

@@ -601,3 +601,69 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     controller.dispose()
   })
 })
+
+describe('capability override import (Z4, ADR 0016 d3)', () => {
+  const today = '2026-11-14'
+
+  it('rejects duplicate model rows and all-dimension-empty rows at import time', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm(baseConfig())
+    const controller = new SettingsSectionController(form, emptyCatalogPort)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('form') })
+    const duplicated = controller.importCapabilityOverrides([
+      { model: 'alpha', coding: 80, asOf: today },
+      { model: 'alpha', coding: 90, asOf: today },
+    ])
+    expect(duplicated.kind).toBe('rejected')
+    if (duplicated.kind === 'rejected') expect(duplicated.reasons.some(text => text.includes('alpha'))).toBe(true)
+    expect(controller.snapshot().draft?.capabilityOverrides).toEqual([])
+    const empty = controller.importCapabilityOverrides([{ model: 'beta', asOf: today }])
+    expect(empty.kind).toBe('rejected')
+    controller.dispose()
+  })
+
+  it('imports rows with per-row match feedback against the live catalogue', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [
+      { provider: 'sz', model: 'cand-a', reasoningEffort: '' },
+      { provider: 'zai', model: 'cand-b', reasoningEffort: '' },
+    ] })
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const result = controller.importCapabilityOverrides([
+      { model: 'cand-a', coding: 90, webdev: 70, asOf: today },
+      { model: 'Qwen3.8-27B-FP8', coding: 20, asOf: today },   // KB-known, not a current candidate
+      { model: 'mystery-deploy', overall: 60, asOf: today },   // known nowhere — stored anyway
+    ])
+    expect(result.kind).toBe('imported')
+    if (result.kind === 'imported') {
+      expect(result.rows[0]?.match).toBe('candidate')
+      expect(result.rows[1]?.match).toBe('kb')
+      expect(result.rows[2]?.match).toBe('none')
+    }
+    expect(controller.snapshot().draft?.capabilityOverrides).toHaveLength(3)
+    controller.dispose()
+  })
+
+  it('overrides lift a candidate over the KB-known one in the derived view', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [
+      { provider: 'sz', model: 'cand-a', reasoningEffort: '' },
+      { provider: 'zai', model: 'cand-b', reasoningEffort: '' },
+    ], nameMap: [], nameMapDefaults: true })
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const before = controller.snapshot().effectiveNameMap.find(row => row.name === 'review')?.model
+    expect(before).toBe('cand-a') // list-order fallback with both unknown
+    controller.importCapabilityOverrides([{ model: 'cand-b', overall: 90, coding: 90, webdev: 90, agentic: 90, asOf: today }])
+    const after = controller.snapshot().effectiveNameMap.find(row => row.name === 'review')?.model
+    expect(after).toBe('cand-b') // 0.9 across the board beats the 0.5-median fill
+    controller.dispose()
+  })
+})
+
+/** An empty catalogue port for form-only tests. */
+const emptyCatalogPort: CatalogPort = { load: async () => ({ groups: [], failureCount: 0 }) }
