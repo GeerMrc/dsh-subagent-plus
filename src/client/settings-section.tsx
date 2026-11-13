@@ -51,7 +51,6 @@ import {
   advancedTitleStyle,
   routeNameStyle,
   routeSelectStyle,
-  routeSubStyle,
   saveButtonStyle,
   selectStyle,
   settingsCss,
@@ -132,7 +131,6 @@ function RemoveMenu(props: { label: string; trigger: React.ReactNode; onRemove: 
  *  boundary rows never render a dead action. */
 function RowNameCell(props: {
   label: string
-  sub: string
   popupLabel: string
   index: number
   count: number
@@ -168,15 +166,16 @@ function RowNameCell(props: {
         type="button"
         className="dsmp-hover"
         style={nameTriggerStyle}
+        title={props.popupLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={props.popupLabel}
         onClick={() => { setOpen(true) }}
       >
-        <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <span style={routeNameStyle}>{props.label}</span>
-          <span style={routeSubStyle}>{props.sub}</span>
-        </span>
+        {/* Single line (ADR 0015 d4, superseding the two-line label+sub): the
+            full provider/model id lives in the title/popup; row height now
+            matches the by-name rows. */}
+        <span style={routeNameStyle}>{props.label}</span>
       </button>
       {open
         ? (
@@ -395,8 +394,7 @@ function EditorRoutes(props: EditorProps) {
                   <div key={routeValue(route)} className="dsmp-hover" style={listRowStyle}>
                     <span style={indexChipStyle}>{index + 1}</span>
                     <RowNameCell
-                      label={`${route.providerName} · ${route.modelName}`}
-                      sub={`${routeId(route)}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
+                      label={`${route.providerName} · ${route.modelName}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
                       popupLabel={`${t('list.rowActions')} ${routeId(route)}`}
                       index={index} count={listed.length}
                       moveUp={t('list.moveUp')} moveDown={t('list.moveDown')} remove={t('list.remove')}

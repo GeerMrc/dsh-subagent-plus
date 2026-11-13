@@ -157,15 +157,6 @@ export const routeNameStyle = {
   whiteSpace: 'nowrap' as const,
 } as const
 
-export const routeSubStyle = {
-  fontSize: 11,
-  lineHeight: 1.5,
-  color: 'var(--dsw-alias-label-tertiary)',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap' as const,
-} as const
-
 /* Track follows the dsh-websearch switch shape (36x20, pad 2, r10): green
    only when enabled — the advanced-fold semantics. */
 export const switchStyle = (checked: boolean) => ({
