@@ -44,7 +44,8 @@ function copyLimits(source: OfficialLimitsValue): OfficialLimitsValue {
 
 /** Per-namespace render state: one status machine per official namespace.
  *  Save failure/conflict feedback is the unified footer's domain; this state
- *  keeps only the `saved` chip the section header renders. */
+ *  carries a `saved` flag consumed by tests only (the header chip was removed
+ *  in the V1 interaction unification — the unified footer owns the ack). */
 export interface NamespaceFormState<Value> {
   /** `unavailable` flips only this section (T7); the card keeps rendering. */
   status: 'loading' | 'ready' | 'unavailable'

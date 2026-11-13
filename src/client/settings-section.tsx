@@ -551,7 +551,7 @@ function EditorRoutes(props: EditorProps) {
             {!byNameLocked
               ? <button
                 type="button"
-                className="dsmp-hover"
+                className={resetFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'}
                 style={{ ...resetButtonStyle, ...(draft.nameMapDefaults && draft.nameMap.length === 0 ? { opacity: 0.45, cursor: 'default' } : {}) }}
                 disabled={draft.nameMapDefaults && draft.nameMap.length === 0}
                 title={draft.nameMapDefaults && draft.nameMap.length === 0 ? t('byname.resetIdle') : t('byname.resetHint')}

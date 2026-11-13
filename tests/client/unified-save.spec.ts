@@ -228,12 +228,12 @@ describe('UnifiedSaveController', () => {
 })
 
 /** Controller over participants returning the given outcomes (reused per call). */
-function savedSetup(outcomes: SaveOutcome[]): { controller: UnifiedSaveController; calls: number } {
+function savedSetup(outcomes: SaveOutcome[]): { controller: UnifiedSaveController } {
   let calls = 0
   const controller = new UnifiedSaveController([
     { key: 'first', save: async () => outcomes[calls++] ?? 'saved' },
   ])
-  return { controller, calls }
+  return { controller }
 }
 
 describe('saved auto-dismiss (V1 — success is an event, not a state)', () => {
@@ -274,6 +274,7 @@ describe('saved auto-dismiss (V1 — success is an event, not a state)', () => {
       const { controller } = savedSetup(['saved'])
       await controller.save()
       controller.dispose()
+      expect(vi.getTimerCount()).toBe(0) // the timer itself is gone, not just guarded
       vi.advanceTimersByTime(10_000)
       // No throw, and snapshot untouched past the disposed save: true.
       expect(controller.snapshot().saved).toBe(true)
