@@ -474,12 +474,6 @@ export class SettingsSectionController {
     return { enabled: true, reason: undefined }
   }
 
-  /** The starter template when its gate passes (for the quick-setup entry). */
-  visibleTemplates = (): { id: string; rowCount: number }[] => {
-    if (!this.starterGate().enabled) return []
-    return this.#templates.map(t => ({ id: t.id, rowCount: t.rows.length }))
-  }
-
   /**
    * Start applying a template (ADR 0013 d3). An empty table applies directly;
    * a non-empty one returns 'confirm' carrying mode-aware numbers — replace

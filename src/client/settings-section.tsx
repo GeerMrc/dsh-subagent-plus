@@ -22,7 +22,7 @@ import type { OfficialLimitsController } from './official-surfaces.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
-import type { RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
+import type { ApplyTemplateResult, RouteOption, SettingsSectionController, SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
 import {
@@ -208,6 +208,7 @@ function EffortSelect(props: {
   defaultHoverPlainLabel: string
   noneLabel: string
   staleTitle?: string
+  disabled?: boolean
 }) {
   const hasEfforts = props.route?.efforts !== undefined && props.route.efforts.length > 0
   // Distinguish "not in the catalogue" (stored effort kept verbatim) from a
@@ -219,7 +220,7 @@ function EffortSelect(props: {
       className="dsmp-select"
       style={{ ...routeSelectStyle, maxWidth: 120 }}
       value={hasEfforts ? props.value : ''}
-      disabled={!hasEfforts}
+      disabled={!hasEfforts || props.disabled === true}
       aria-label={props.label}
       title={hasEfforts ? (props.value === '' ? effortDefaultLabel(props.route, props.defaultHoverLabel, props.defaultHoverPlainLabel) : props.value) : noneTitle}
       onChange={event => { props.onChange(event.target.value) }}
@@ -327,10 +328,29 @@ type EditorProps = {
  *  merged card in SettingsSection owns the single border. */
 function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
-  const [pendingTemplateId, setPendingTemplateId] = useState<string | undefined>(undefined)
-  const [showTemplateConfirm, setShowTemplateConfirm] = useState(false)
   const [templateWarning, setTemplateWarning] = useState<string | undefined>(undefined)
+  const [templateSummary, setTemplateSummary] = useState<string | undefined>(undefined)
+  const [pendingConfirm, setPendingConfirm] = useState<{ id: string; mergeFeasible: boolean; needed: number; free: number } | undefined>(undefined)
   const draft = state.draft
+  // The draft object is replaced only when the form reloads the committed
+  // value (namespace flap or save conflict); drop any inline confirm built
+  // against the old draft at that single point (ADR 0013, the D16 repair).
+  useEffect(() => { setPendingConfirm(undefined) }, [draft])
+  /** Surface a template result: counts on success, numbers or a reason on refusal. */
+  const reportTemplateResult = (result: ApplyTemplateResult): void => {
+    setTemplateWarning(undefined)
+    setTemplateSummary(undefined)
+    if (result.kind === 'applied') {
+      setTemplateSummary(t('byname.templates.applied').replace('{n}', String(result.added))
+        + (result.unmaterialized > 0
+          ? ' ' + t('byname.templates.appliedUnmaterialized').replace('{m}', String(result.unmaterialized))
+          : ''))
+    } else if (result.kind === 'insufficient-capacity') {
+      setTemplateWarning(t('byname.templates.insufficient').replace('{n}', String(result.needed)).replace('{m}', String(result.free)))
+    } else {
+      setTemplateWarning(t('byname.templates.unavailable'))
+    }
+  }
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
   // ADR 0007 decision 3: under the pinned strategy the candidate list is not
@@ -524,7 +544,8 @@ function EditorRoutes(props: EditorProps) {
                         label={`${t('strategy.effort')} ${listedHit !== null ? routeId(listedHit) : t('byname.name')}`} route={listedHit !== null ? catalogHit ?? undefined : undefined}
                         value={listedHit !== null ? row.reasoningEffort : ''}
                         onChange={value => { controller.setNameRowEffort(index, value) }}
-                        defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')}
+                        disabled={byNameLocked}
+                        defaultLabel={t('effort.default')} defaultHoverLabel={t('effort.defaultHover')} defaultHoverPlainLabel={t('effort.defaultHoverPlain')} noneLabel={t('effort.none')} staleTitle={t('list.unavailable')}
                       />
                       <RemoveMenu label={t('byname.remove')} onRemove={() => { controller.removeNameRow(index) }} />
                     </div>
@@ -557,67 +578,64 @@ function EditorRoutes(props: EditorProps) {
             </select>
           </div>
         </div>
-{/* ADR 0011: quick-setup template dropdown — same visual language as
-              the manual add dropdown; three-fold disabled (H1: byNameLocked /
-              full / empty candidates); non-empty table shows inline
-              replace/merge/cancel (no modal). */}
+{/* ADR 0013: universal starter template — a single gated button (locked /
+              no available route / sole route without tiers shows the reason as
+              its title); a non-empty table confirms inline replace/merge/cancel
+              with merge disabled when it cannot fit. */}
           <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <span style={cardHeadingStyle}>{t('byname.templates.label')}</span>
               <Info label={t('byname.templates.hint')} text={t('byname.templates.hint')} delayMs={400} />
             </span>
             <span style={{ flex: 1 }} />
-            <select
-              className="dsmp-select"
-              style={routeSelectStyle}
-              value=""
-              disabled={byNameLocked || draft.nameMap.length >= MAX_NAME_MAP_ENTRIES || listed.length === 0}
-              aria-label={t('byname.templates.placeholder')}
-              onChange={event => {
-                const templateId = event.target.value
-                if (templateId === '') return
-                setTemplateWarning(undefined)
-                const result = controller.applyTemplate(templateId)
-                if (result.kind === 'confirm') {
-                  // Show inline confirm UI (replace/merge/cancel)
-                  setPendingTemplateId(templateId)
-                  setShowTemplateConfirm(true)
-                } else if (result.kind === 'insufficient-capacity') {
-                  setTemplateWarning(t('byname.templates.insufficient').replace('{n}', String(result.needed)).replace('{m}', String(result.free)))
-                } else if (result.kind === 'rejected' || result.kind === 'unknown-template') {
-                  setTemplateWarning(t('byname.templates.unavailable'))
-                }
-                // 'applied': rows are in the draft; the select resets to ''.
-              }}
-            >
-              <option value="">{t('byname.templates.placeholder')}</option>
-              {controller.visibleTemplates().map(({ id, rowCount }) => {
-                const label = id === 'quality-first' ? t('byname.templates.quality-first')
-                  : id === 'three-tier' ? t('byname.templates.three-tier')
-                  : id === 'same-route' ? t('byname.templates.same-route')
-                  : id === 'content-production' ? t('byname.templates.content-production')
-                  : id
-                return <option key={id} value={id}>{t('byname.templates.rowCount').replace('{label}', label).replace('{n}', String(rowCount))}</option>
-              })}
-            </select>
+            {(() => {
+              const gate = controller.starterGate()
+              const gateTitle = gate.reason === 'locked' ? t('byname.pinnedHint')
+                : gate.reason === 'no-routes' ? t('byname.emptyList')
+                  : gate.reason === 'no-efforts' ? t('byname.templates.noEfforts')
+                    : undefined
+              return (
+                <button
+                  type="button"
+                  className="dsmp-select"
+                  style={routeSelectStyle}
+                  disabled={!gate.enabled}
+                  aria-label={t('byname.templates.apply')}
+                  title={gateTitle}
+                  onClick={() => {
+                    const result = controller.applyTemplate('starter')
+                    if (result.kind === 'confirm') {
+                      setPendingConfirm({ id: 'starter', mergeFeasible: result.mergeFeasible, needed: result.needed, free: result.free })
+                      return
+                    }
+                    reportTemplateResult(result)
+                  }}
+                >{t('byname.templates.apply')}</button>
+              )
+            })()}
           </div>
+          {templateSummary !== undefined ? (
+            <div style={{ ...fieldRowStyle, flexWrap: 'wrap' }}>{templateSummary}</div>
+          ) : null}
           {templateWarning !== undefined ? (
             <div style={{ ...fieldRowStyle, flexWrap: 'wrap' }}>{templateWarning}</div>
           ) : null}
-          {showTemplateConfirm && pendingTemplateId !== undefined ? (
+          {pendingConfirm !== undefined ? (
             <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={cardHeadingStyle}>{t('byname.templates.confirmTitle')}</span>
               <span style={{ flex: 1 }} />
               <button type="button" className="dsmp-select" style={routeSelectStyle}
-                onClick={() => { controller.applyTemplateConfirm(pendingTemplateId, 'replace'); setShowTemplateConfirm(false); setPendingTemplateId(undefined) }}>
+                onClick={() => { const id = pendingConfirm.id; setPendingConfirm(undefined); reportTemplateResult(controller.applyTemplateConfirm(id, 'replace')) }}>
                 {t('byname.templates.replace')}
               </button>
               <button type="button" className="dsmp-select" style={routeSelectStyle}
-                onClick={() => { controller.applyTemplateConfirm(pendingTemplateId, 'merge'); setShowTemplateConfirm(false); setPendingTemplateId(undefined) }}>
+                disabled={!pendingConfirm.mergeFeasible}
+                title={!pendingConfirm.mergeFeasible ? t('byname.templates.insufficient').replace('{n}', String(pendingConfirm.needed)).replace('{m}', String(pendingConfirm.free)) : undefined}
+                onClick={() => { const id = pendingConfirm.id; setPendingConfirm(undefined); reportTemplateResult(controller.applyTemplateConfirm(id, 'merge')) }}>
                 {t('byname.templates.merge')}
               </button>
               <button type="button" className="dsmp-select" style={routeSelectStyle}
-                onClick={() => { setShowTemplateConfirm(false); setPendingTemplateId(undefined) }}>
+                onClick={() => { setPendingConfirm(undefined) }}>
                 {t('byname.templates.cancel')}
               </button>
             </div>
