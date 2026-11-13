@@ -23,8 +23,10 @@ export interface CapabilityOverrideView {
   note?: string
 }
 
-/** Upper bound on user-imported capability overrides (ADR 0016 d3). */
-export const MAX_CAPABILITY_OVERRIDES = 64
+/** Upper bound on user-imported capability overrides (ADR 0016 d3, Z8:
+ *  raised to fit a full model-catalogue research package, not just the
+ *  candidate list). */
+export const MAX_CAPABILITY_OVERRIDES = 256
 
 /** Upper bound on `nameMap` rows. Originally 16 to align with the official
  * roster's `DEFAULT_MAX_MEMBERS`; that roster left the host in 0.2.2-rc.2, and

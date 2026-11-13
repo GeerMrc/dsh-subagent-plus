@@ -342,10 +342,17 @@ function EditorRoutes(props: EditorProps) {
   const byNameLocked = draft.strategy === 'pinned'
   const todayText = (): string => new Date().toISOString().slice(0, 10)
   const exportResearch = (): void => {
-    const candidates = listed.map(route => ({
+    // Full-catalogue scope (ADR 0016 d3, Z8): evaluations are a durable,
+    // configuration-independent corpus — the research package covers every
+    // model the host catalogue serves, not just the current candidate list, so
+    // an imported score applies whenever its model later joins the candidates.
+    const listedKeys = new Set(draft.priority.map(entry => `${entry.provider}/${entry.model}`))
+    const candidates = state.routes.map(route => ({
       provider: route.provider,
       model: route.model,
-      match: kbEntryFor(route.model) === undefined ? 'none' as const : 'kb' as const,
+      match: listedKeys.has(`${route.provider}/${route.model}`)
+        ? 'candidate' as const
+        : kbEntryFor(route.model) === undefined ? 'none' as const : 'kb' as const,
     }))
     const pkg = buildResearchPackage(candidates, todayText())
     const text = JSON.stringify(pkg, null, 2)

@@ -667,3 +667,20 @@ describe('capability override import (Z4, ADR 0016 d3)', () => {
 
 /** An empty catalogue port for form-only tests. */
 const emptyCatalogPort: CatalogPort = { load: async () => ({ groups: [], failureCount: 0 }) }
+
+describe('research package scope (Z8 — full catalogue, configuration-independent)', () => {
+  it('buildResearchPackage marks candidates and unknowns and stays JSON-serialisable', async () => {
+    const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
+    const pkg = buildResearchPackage([
+      { provider: 'sz', model: 'cand-a', match: 'candidate' },
+      { provider: 'zai', model: 'Qwen3.8-27B-FP8', match: 'kb' },
+      { provider: 'cm', model: 'mystery-deploy', match: 'none' },
+    ], '2026-11-14') as { schema: number; candidates: { model: string; match: string }[]; prompt_zh: string }
+    expect(pkg.schema).toBe(1)
+    expect(pkg.candidates).toHaveLength(3)
+    expect(pkg.prompt_zh).toContain('完整模型目录')
+    expect(pkg.prompt_zh).toContain('cand-a（当前候选）')
+    expect(pkg.prompt_zh).toContain('mystery-deploy（未知模型')
+    expect(() => JSON.stringify(pkg)).not.toThrow()
+  })
+})

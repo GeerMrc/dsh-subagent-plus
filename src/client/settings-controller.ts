@@ -232,17 +232,19 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
       '你是模型能力评估员。请对下列模型在四个维度上给出 0-100 的能力评分。',
       '评分表达该模型相对当前主流模型总体的位置：50≈主流中位、70≈前四分之一、90≈前 10%。',
       '维度：overall（综合）/ coding（编码）/ webdev（前端网页开发）/ agentic（自主任务·工具使用）。',
+      '清单为当前环境的完整模型目录（并非都在使用）；请依据公开基准与社区实测知识评分，标注了"当前候选"的模型正在使用中。',
       '输出一个 JSON 数组，每项 {"model": "<原样模型 id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "调研执行日期(YYYY-MM-DD)", "note": "简短依据"}。',
       '只输出 JSON，不要解释。模型列表：',
-      ...candidates.map(entry => `- ${entry.model}${entry.match === 'none' ? '（未知模型，请按同类定位估计）' : ''}`),
+      ...candidates.map(entry => `- ${entry.model}${entry.match === 'candidate' ? '（当前候选）' : entry.match === 'none' ? '（未知模型，请按同类定位估计）' : ''}`),
     ].join('\n'),
     prompt_en: [
       'You are a model-capability evaluator. Score the models below 0-100 on four dimensions.',
       'Scores express each model\'s position against the current mainstream population: 50≈median, 70≈top quartile, 90≈top decile.',
       'Dimensions: overall / coding / webdev (frontend web development) / agentic (autonomous tool use).',
+      'The list is the FULL model catalogue of this environment (not all are in use); ground your scores in public benchmarks and community testing. Models marked "current candidate" are actively listed.',
       'Output a JSON array, one object per model: {"model": "<exact id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "YYYY-MM-DD research date", "note": "brief basis"}.',
       'JSON only, no prose. Models:',
-      ...candidates.map(entry => `- ${entry.model}${entry.match === 'none' ? ' (unknown model — estimate by comparable positioning)' : ''}`),
+      ...candidates.map(entry => `- ${entry.model}${entry.match === 'candidate' ? ' (current candidate)' : entry.match === 'none' ? ' (unknown model — estimate by comparable positioning)' : ''}`),
     ].join('\n'),
   }
 }
