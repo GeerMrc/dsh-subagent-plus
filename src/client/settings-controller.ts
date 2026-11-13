@@ -357,7 +357,10 @@ export class SettingsSectionController {
   }
 
   removeNameRow = (index: number): void => {
-    this.#edit(draft => { draft.nameMap.splice(index, 1) })
+    this.#edit(draft => {
+      this.#materializeDefaultsInto(draft)
+      draft.nameMap.splice(index, 1)
+    })
   }
 
   setNameRowName = (index: number, name: string): void => {

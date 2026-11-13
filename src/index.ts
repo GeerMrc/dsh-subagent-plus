@@ -442,7 +442,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (childDepthOf(agent) <= 0) return
     const model = agentModelOf(agent)
     if (model === undefined) return // Pre-0.2.2 host: no select() API; old agent/request fallback doesn't exist either (deprecated).
-    const config = live.current()
+    let config = live.current()
     // Fork children are excluded unless pinForkChildren (same semantics as before).
     if (!config.pinForkChildren && isForkedChild(agent)) {
       // A mapped name on a fork teammate: warn once (same as before).
@@ -460,8 +460,10 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     // every async operation must be caught and degraded.
     try {
       // ADR 0014 d2: await the in-flight derivation — a child arriving before
-      // the first derivation still sees the derived rows.
+      // the first derivation still sees the derived rows; re-read the config
+      // afterwards so a commit landing inside that window is not missed.
       await rederive()
+      config = live.current()
       const route = await resolveIntendedRoute(config, agent)
       if (route === undefined) return
       const selection: { provider: string; model: string; reasoningEffort?: string } = {
@@ -649,6 +651,8 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       void rederive()
     }, 200)
   })
+  // Dispose hygiene: a scheduled debounce must not fire past fiber teardown.
+  ctx.effect(() => () => { if (adaptersTimer !== undefined) clearTimeout(adaptersTimer) })
 }
 
 /** One notice per agent per distinct route target. */

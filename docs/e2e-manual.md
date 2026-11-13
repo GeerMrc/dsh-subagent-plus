@@ -131,6 +131,6 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | D5 | 高级 → respectExplicit=开 → 保存 → 主 Agent 用 `subagent` 工具**显式指定**某模型（≠主会话当前模型）派 1 子 | 子会话 `request/header` = **显式指定的模型**（插件不覆盖）；关键词命中的队友名也不覆盖（ADR 0013 d4 判别点）；respectExplicit=关时同操作被派生/策略接管（对照组） |
 | D6 | 关键词队友实测 | 发任务派出名字带 reviewer/dev/tester 的三个子智能体 → 三子会话分别走 Xhigh/High/Low 物化档位（子会话 `request/header` 的 reasoningEffort 取证） |
 
-## ## 10. 版本回退/降级安装注意
+## 10. 版本回退/降级安装注意
 
 从更高版本（如 0.2.5）降到低版本（如 v0.0.1）时，pnpm 视为版本回退——删 `node_modules/dsh-subagent-plus` 后 `pnpm install --force`（必要时先 `pnpm store prune`），并用 grep 安装产物内容确认版本（不要只看 MD5 对比本地 lib）。

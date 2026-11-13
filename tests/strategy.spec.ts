@@ -535,12 +535,16 @@ describe('semantic effort intents (X2, ADR 0014 d1)', () => {
     expect(resolveSemanticEffort(qwen, 'lowest')).toBe('low')
   })
 
-  it('mid takes the upper median on even ladders (4 tiers → 3rd; 2 tiers → 2nd)', () => {
-    const four = { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }, { id: 'xhigh' }] }
-    expect(resolveSemanticEffort(four, 'mid')).toBe('high')
-    const two = { efforts: [{ id: 'off' }, { id: 'low' }] }
-    expect(resolveSemanticEffort(two, 'mid')).toBe('low')
-    expect(resolveSemanticEffort(two, 'top')).toBe('low')
+  it('mid takes the upper median on even ACTIVE tier counts (review #5)', () => {
+    // 4 active on-ladder tiers: low < medium < high < xhigh → 3rd (high).
+    expect(resolveSemanticEffort({ efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }, { id: 'xhigh' }] }, 'mid')).toBe('high')
+    // 2 active on-ladder tiers: low < high → 2nd (high).
+    expect(resolveSemanticEffort({ efforts: [{ id: 'low' }, { id: 'high' }] }, 'mid')).toBe('high')
+    // Disabled tiers never count toward the median.
+    expect(resolveSemanticEffort({ efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }, { id: 'xhigh' }] }, 'mid')).toBe('high')
+    const oneActive = { efforts: [{ id: 'off' }, { id: 'low' }] }
+    expect(resolveSemanticEffort(oneActive, 'mid')).toBe('low')
+    expect(resolveSemanticEffort(oneActive, 'top')).toBe('low')
   })
 
   it('zai vocabulary: mid=high among low/high/max', () => {

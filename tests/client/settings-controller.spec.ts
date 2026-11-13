@@ -528,6 +528,16 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     controller.dispose()
   })
 
+  it('removing a derived row materialises the table too (review #1)', async () => {
+    const controller = await x5Harness()
+    controller.removeNameRow(3)
+    const state = controller.snapshot()
+    expect(state.draft?.nameMapDefaults).toBe(false)
+    expect(state.draft?.nameMap).toHaveLength(11)
+    expect(state.effectiveNameMap).toHaveLength(11)
+    controller.dispose()
+  })
+
   it('resetNameMapDefaults clears rows and re-enables derivation', async () => {
     const controller = await x5Harness()
     controller.setNameRowName(0, 'proofreader')

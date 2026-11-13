@@ -466,7 +466,7 @@ function EditorRoutes(props: EditorProps) {
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
             <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
             <span style={{ flex: 1 }} />
-            {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
+            {!byNameLocked && !draft.nameMapDefaults
               ? (resetArmed
                   ? (
                     <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
