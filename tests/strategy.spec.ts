@@ -724,3 +724,59 @@ describe('nameMapDefaults validation (X3, ADR 0014 d2)', () => {
     expect(fresh.degraded.some(m => m.includes('nameMapDefaults'))).toBe(false)
   })
 })
+
+describe('slot tie chain fixes (Z7 review #1/#3)', () => {
+  const kb = {
+    'same-score-model': { aliases: [], dims: { overall: 0.5, coding: 0.5, webdev: 0.5, agentic: 0.5 } },
+  }
+  const twin = (model: string, efforts: string[]) => ({ provider: 'p', model, efforts: efforts.map(id => ({ id })) })
+
+  it('S keeps the structurally STRONGER candidate when family scores tie (one KB entry, two ladders)', () => {
+    // Both candidates resolve to the same KB entry → equal family scores; the
+    // richer ladder must win S, regardless of list order.
+    const richer = twin('same-score-model', ['off', 'low', 'medium', 'xhigh'])
+    const leaner = twin('same-score-model', ['off', 'low'])
+    expect(deriveStarterRows([leaner, richer], { kb }).find(r => r.name === 'review')?.reasoningEffort).toBe('xhigh')
+    expect(deriveStarterRows([richer, leaner], { kb }).find(r => r.name === 'review')?.reasoningEffort).toBe('xhigh')
+  })
+
+  it('F keeps the structurally WEAKER candidate when family scores tie', () => {
+    const richer = twin('same-score-model', ['off', 'low', 'medium', 'xhigh'])
+    const leaner = twin('same-score-model', ['off', 'low'])
+    expect(deriveStarterRows([richer, leaner], { kb }).find(r => r.name === 'test')?.reasoningEffort).toBe('low')
+    expect(deriveStarterRows([leaner, richer], { kb }).find(r => r.name === 'test')?.reasoningEffort).toBe('low')
+  })
+
+  it('F yields to a fast-named candidate before the list-order tie rule', () => {
+    const fast = { provider: 'p', model: 'same-score-model', efforts: [{ id: 'off' }, { id: 'low' }], description: 'Fast and cheap for routine tasks.' }
+    const plain = { provider: 'p', model: 'same-score-model', efforts: [{ id: 'off' }, { id: 'low' }] }
+    expect(deriveStarterRows([plain, fast], { kb }).find(r => r.name === 'test')?.provider).toBe('p')
+    expect(deriveStarterRows([fast, plain], { kb }).find(r => r.name === 'test')?.provider).toBe('p')
+  })
+})
+
+describe('override runtime tolerance (Z7 review #2)', () => {
+  it('duplicate model rows resolve last-wins and the validator warns', async () => {
+    const kb = { 'dup-model': { aliases: [], dims: { overall: 0.5, coding: 0.5, webdev: 0.5, agentic: 0.5 } } }
+    const { validateStrategyConfig } = await import('../src/strategy.js')
+    const report = validateStrategyConfig({
+      provider: '', model: '', strategy: 'round-robin', priority: [], respectExplicit: false, cooldownMs: 0,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [], nameMapDefaults: true,
+      capabilityOverrides: [
+        { model: 'dup-model', coding: 50, asOf: '2026-11-13' },
+        { model: 'dup-model', coding: 90, asOf: '2026-11-14' },
+        { model: '', coding: 50, asOf: '2026-11-14' },
+      ],
+    })
+    expect(report.degraded.some(message => message.includes('last row wins'))).toBe(true)
+    expect(report.degraded.some(message => message.includes('without a model id'))).toBe(true)
+    const { capabilityOf } = await import('../src/capability-scoring.js')
+    const view = capabilityOf('dup-model', [
+      { model: 'dup-model', overall: 20, coding: 20, webdev: 20, agentic: 20, asOf: '2026-11-13' },
+      { model: 'dup-model', overall: 90, coding: 90, webdev: 90, agentic: 90, asOf: '2026-11-14' },
+    ], kb)
+    expect(view.dims.coding).toBe(0.9) // the LAST row's word
+    expect(view.source).toBe('override')
+  })
+})

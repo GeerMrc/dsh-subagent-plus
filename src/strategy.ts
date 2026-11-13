@@ -163,9 +163,12 @@ const fastHintOf = (candidate: StarterCandidate): number => (FAST_HINT.test(cand
  * Ties fall through the 0015 structural chain, then the stored order (S/B
  * take the earlier candidate, F the later). Unknown models are the LAST
  * resort for every slot — including F, whose argmin would otherwise promote
- * them (A-1); estimated models never win S/F, they only ride the B ranking
- * (A-6). With no known candidate at all the slots fall back to list order
- * (first / upper-median / last).
+ * them (A-1); estimated models never win S/F while an anchored candidate
+ * exists, they only ride the B ranking (A-6) — when EVERY candidate is
+ * estimated the pool degrades to the known set so someone can win (the
+ * snapshot's text-source outage exercises exactly this). With no known
+ * candidate at all the slots fall back to list order (first / upper-median /
+ * last).
  * @param candidates - the candidate routes in stored priority order.
  * @param options - overrides and fixture KB.
  * @returns the candidate per slot, empty when no candidates exist.
@@ -194,8 +197,9 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
         const diff = familyScore(entry.view, 'S') - familyScore(best.view, 'S')
         if (diff > 0) return entry
         if (diff < 0) return best
-        const legacy = legacyDiff(entry, best)
-        if (legacy > 0) return entry
+        // legacyDiff(entry, best) > 0 means entry outranks best on the 0015
+        // structural chain — the STRONGER candidate keeps S on ties.
+        if (legacyDiff(best, entry) > 0) return entry
         return best
       })
     : views[0]!
@@ -208,8 +212,10 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
         const worstFast = fastHintOf(worst.candidate)
         if (entryFast > worstFast) return entry
         if (entryFast < worstFast) return worst
-        const legacy = legacyDiff(entry, worst)
-        if (legacy < 0) return entry
+        // legacyDiff(worst, entry) < 0 means entry is WEAKER on the structural
+        // chain — it replaces worst; a strictly stronger entry keeps worst.
+        if (legacyDiff(worst, entry) < 0) return entry
+        if (legacyDiff(worst, entry) > 0) return worst
         return entry // F ties keep the LATER candidate (list order)
       })
     : views[views.length - 1]!
@@ -402,19 +408,15 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
   // ADR 0016 d3 runtime tolerance: overrides are auxiliary scoring data, never
   // routing structure — a malformed or duplicated hand-edited row degrades
   // (dropped / last-wins) with a warning instead of refusing to load.
-  const overrideModels = new Set<string>()
   const seenOverrideModels = new Set<string>()
   for (const entry of config.capabilityOverrides ?? []) {
     if (entry.model === '') {
       degraded.push('dsh-subagent-plus: capabilityOverrides row without a model id is ignored')
       continue
     }
-    if (seenOverrideModels.has(entry.model)) continue
-    if (overrideModels.has(entry.model)) {
+    if (seenOverrideModels.has(entry.model)) {
       degraded.push(`dsh-subagent-plus: capabilityOverrides repeats "${entry.model}"; the last row wins`)
-      overrideModels.delete(entry.model)
     }
-    overrideModels.add(entry.model)
     seenOverrideModels.add(entry.model)
   }
   // ADR 0014 d2: with defaults on, derivation wins and stored rows sit

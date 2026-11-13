@@ -31,7 +31,7 @@
   - B 执行构建（research/dev/build/execute/write/design）：coding .40 / overall .30 / webdev .20 / agentic .10
   - F 不设权重
 - 槽位：**S=argmax(w_S·dims)**；**B=w_B 序上中位**；**F=argmin(w_S·dims)**——明示 F 选的是"S 权重下能力最弱者"，是成本/延迟的**间接代理**（宿主无价格信号），非延迟排序。
-- **A-1 裁定：unknown 哨兵对 S/B/F 一律最后备选**（缺收录的新旗舰不会被推去接 test/qa；F 槽命中 unknown 时"未收录"标注可见）。**A-6：estimated 不参与 argmax/argmin 胜出**，仅作 B 排序中位填充。
+- **A-1 裁定：unknown 哨兵对 S/B/F 一律最后备选**（缺收录的新旗舰不会被推去接 test/qa；F 槽命中 unknown 时"未收录"标注可见）。**A-6：estimated 不参与 argmax/argmin 胜出，仅作 B 排序中位填充；全池皆 estimated 时降级允许胜出**（无人可胜出时的必要兜底——首版快照 text 源宕机时 webdev/agentic 锚条目正走此路径；运行时 estimated 以"coding 维缺失"重算，不读构建期标志）。
 - 并列逐槽规则：**S/B 取清单前者、F 取清单后者**（与 0015 行为连续）；F 并列前置 FAST_HINT 破序。新不变量明示：**三族独立择优、同模型可现于多族、无跨族包含保证**（n=2 时 B 必与 S 或 F 撞槽——行为与 0015 同为撞槽但对象可随权重序翻转，defaults 头行提示）。
 - 复合键：族分 → topTierRank → activeTierCount → descHint → 清单序；效力意图（top/mid/lowest 于所选模型自身梯子物化）不变；**KB 强但梯子档低者拿 S＋其自身最高档**（effort 是模型内旋钮非跨模型标度）。
 

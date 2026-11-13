@@ -12,7 +12,7 @@
  *
  * @module dsh-subagent-plus/client/settings-controller
  */
-import { kbEntryFor } from '../capability-scoring.js'
+import { canonicalizeModelId, kbEntryFor } from '../capability-scoring.js'
 import {
   deriveStarterRows,
   MAX_CAPABILITY_OVERRIDES,
@@ -392,7 +392,8 @@ export class SettingsSectionController {
 
   /** Import-time feedback for one override row: where the model resolves. */
   #overrideMatch(model: string): 'candidate' | 'kb' | 'none' {
-    if (this.#state.draft?.priority.some(entry => entry.model === model) === true) return 'candidate'
+    const key = canonicalizeModelId(model)
+    if (this.#state.draft?.priority.some(entry => canonicalizeModelId(entry.model) === key) === true) return 'candidate'
     if (kbEntryFor(model) !== undefined) return 'kb'
     return 'none'
   }
@@ -411,10 +412,16 @@ export class SettingsSectionController {
     const seen = new Set<string>()
     rows.forEach((row, index) => {
       if (row.model === '') reasons.push(`#${index + 1}: missing model id`)
-      if (seen.has(row.model)) reasons.push(`#${index + 1}: duplicate model "${row.model}"`)
-      seen.add(row.model)
+      const key = canonicalizeModelId(row.model)
+      if (seen.has(key)) reasons.push(`#${index + 1}: duplicate model "${row.model}"`)
+      seen.add(key)
       if (row.overall === undefined && row.coding === undefined && row.webdev === undefined && row.agentic === undefined) {
         reasons.push(`#${index + 1}: "${row.model}" carries no dimension score`)
+      }
+      for (const [dimension, score] of Object.entries({ overall: row.overall, coding: row.coding, webdev: row.webdev, agentic: row.agentic })) {
+        if (score !== undefined && (!Number.isFinite(score) || score < 0 || score > 100)) {
+          reasons.push(`#${index + 1}: "${row.model}" ${dimension}=${String(score)} outside 0-100`)
+        }
       }
     })
     if (rows.length > MAX_CAPABILITY_OVERRIDES) reasons.push(`at most ${MAX_CAPABILITY_OVERRIDES} rows are allowed`)
@@ -429,7 +436,7 @@ export class SettingsSectionController {
 
   /** Remove one override row from the draft (unified save persists). */
   removeCapabilityOverride = (index: number): void => {
-    this.#edit(draft => { draft.capabilityOverrides.splice(index, 1) })
+    this.#edit(draft => { (draft.capabilityOverrides ?? []).splice(index, 1) })
   }
 
   /** Drop every override — scoring falls back to the bundled KB snapshot. */

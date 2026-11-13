@@ -44,7 +44,6 @@ export const FAMILY_WEIGHTS = {
 } as const
 
 const QUANT_SUFFIX = /[-_](fp8|fp8-?hf|fp4|nvfp4|int8|int4|awq|gptq(?:-int4)?|gguf|bnb-[48]bit)$/i
-const FRESH_SUFFIX = /[-_](next|preview|latest|exp|canary)$/i
 const DATE_SUFFIX = /[-_](\d{4}-\d{2}-\d{2}|\d{8}|0\d{2}|\d{4,6})$/
 
 /** Canonical KB key for a raw model identifier (ADR 0016 d1). Provider
@@ -143,7 +142,12 @@ const asOverrideDims = (entry: CapabilityOverride): Partial<Record<CapabilityDim
  *  Dimension-level precedence: an override dimension wins; dimensions the
  *  override omits fall back to the KB; what neither has stays missing. */
 export function capabilityOf(modelId: string, overrides: readonly CapabilityOverride[] = [], kb: KbTable = KB): CapabilityView {
-  const override = overrides.find(entry => canonicalizeModelId(entry.model) === canonicalizeModelId(modelId))
+  // Last-wins on duplicate models (ADR 0016 d3): a hand-edited list resolves
+  // to its final word; validateStrategyConfig warns about the repetition.
+  let override: CapabilityOverride | undefined
+  for (const entry of overrides) {
+    if (canonicalizeModelId(entry.model) === canonicalizeModelId(modelId)) override = entry
+  }
   const kbHit = kbEntryFor(modelId, kb)
   if (override === undefined && kbHit === undefined) {
     return { dims: {}, estimated: true, unknown: true, source: 'none' }

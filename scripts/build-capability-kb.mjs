@@ -188,11 +188,9 @@ async function main() {
     if (arena !== undefined && secondary !== undefined) entry.dims.coding = fixed(0.6 * arena + 0.4 * secondary)
     else if (arena !== undefined) entry.dims.coding = fixed(arena)
     else if (secondary !== undefined) entry.dims.coding = fixed(secondary)
+    // estimated = the coding anchor is absent (the runtime recomputes the flag
+    // from dims.coding; the serialised flag is a build-time convenience).
     if (entry.dims.coding === undefined) entry.estimated = true
-    else if (secondary !== undefined && arena === undefined) {
-      // coding anchored only by the secondary source — treat as estimated.
-      entry.estimated = true
-    }
   }
 
   const lines = []

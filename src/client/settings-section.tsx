@@ -19,7 +19,7 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
-import { kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
+import { canonicalizeModelId as _cm, kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -349,11 +349,15 @@ function EditorRoutes(props: EditorProps) {
     }))
     const pkg = buildResearchPackage(candidates, todayText())
     const text = JSON.stringify(pkg, null, 2)
-    void navigator.clipboard?.writeText(text).catch(() => undefined)
-    setImportFeedback(`${t('byname.research.export')}: ${(pkg.prompt_zh as string).length > 0 ? 'JSON' : ''} → clipboard`)
-    // Clipboard may be unavailable (remote web) — the import panel doubles as
-    // the fallback surface: open it prefilled with the package for copy.
-    setImportText(text)
+    void navigator.clipboard?.writeText(text)
+      .then(() => { setImportFeedback(`${t('byname.research.export')} → clipboard`) })
+      .catch(() => {
+        // Clipboard unavailable (remote web): open the import panel prefilled
+        // with the package so the user can copy it manually.
+        setImportText(text)
+        setImportOpen(true)
+        setImportFeedback(`${t('byname.research.export')} — ${t('byname.research.importTitle')}`)
+      })
   }
   const applyImport = (): void => {
     try {
@@ -539,7 +543,7 @@ function EditorRoutes(props: EditorProps) {
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
           {!byNameLocked && draft.nameMapDefaults
-            ? <p style={hintStyle}>{listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')}</p>
+            ? <p style={hintStyle}>{`${listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')} ${t('byname.research.sourceKb').replace('{date}', KB_AS_OF)}`}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>
@@ -564,6 +568,7 @@ function EditorRoutes(props: EditorProps) {
             )
             : null}
           {importFeedback !== undefined ? <p style={hintStyle}>{importFeedback}</p> : null}
+          {(draft.capabilityOverrides?.length ?? 0) > 0 ? <p style={hintStyle}>{t('byname.research.calibration')}</p> : null}
           {(draft.capabilityOverrides?.length ?? 0) > 0
             ? (
               <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
@@ -574,6 +579,7 @@ function EditorRoutes(props: EditorProps) {
                 {draft.capabilityOverrides.map((row, index) => (
                   <div key={`${row.model}\0${index}`} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                     <span style={hintStyle}>{row.model}</span>
+                    <span style={pendingBadgeStyle}>{kbEntryFor(row.model) === undefined && !listed.some(candidate => candidate.model === row.model) ? t('byname.research.matchNone') : kbEntryFor(row.model) !== undefined ? t('byname.research.matchKb') : t('byname.research.matchCandidate')}</span>
                     <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
                     <span style={{ flex: 1 }} />
                     <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} aria-label={t('byname.research.remove')} onClick={() => { controller.removeCapabilityOverride(index) }}>×</button>
