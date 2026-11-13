@@ -24,7 +24,8 @@
     "README.md",
     "README.en.md",
     "LICENSE",
-    "docs"
+    "docs",
+    "NOTICES"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

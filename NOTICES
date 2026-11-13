@@ -1,0 +1,21 @@
+# Notices
+
+This plugin embeds a generated capability knowledge-base snapshot
+(src/capability-kb.ts, GENERATED — see scripts/build-capability-kb.mjs)
+derived from the following sources:
+
+## LMArena leaderboard-dataset
+- Source: https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset
+- License: CC-BY-4.0 — https://creativecommons.org/licenses/by/4.0/
+- Used configs: text (overall/coding), webdev, agent (latest splits)
+- Attribution: LMArena (lmarena.ai). Snapshot date recorded as KB_AS_OF in the
+  generated file.
+
+## Aider LLM Leaderboards (polyglot)
+- Source: https://github.com/Aider-AI/aider (aider/website/_data/polyglot_leaderboard.yml)
+- License: Apache-2.0 — https://www.apache.org/licenses/LICENSE-2.0
+- Copyright Paul Gauthier and aider contributors.
+
+Dimension scores are rank fractions within each source's leaderboard
+population (best = 1.0); they are derived statistics, not the raw data.
+Refresh the snapshot by running the build script and committing the result.
