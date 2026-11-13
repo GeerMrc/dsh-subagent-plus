@@ -57,6 +57,14 @@
 - **publish 撞上在途事务报 E409 "Cannot publish over previously staged version"**：同版本有发布事务已上传未定稿（另一终端在跑/浏览器仪式刚完成在收尾）。勿盲目重试——等几秒用 `npm view <pkg> versions dist-tags --json` 查最终态（注意 **curl 裸查 packument 可能命中 CDN 陈旧缓存**，以带凭证的 npm view 为准），成功则收工，未成功再排查。
 - **发布验证三验以 npm view ＋ shasum 对物为准**：`dist.shasum` 与本地 tarball 的 shasum 逐字节一致才能确认"上的是这份产物"；tarball HTTP 200 与版本清单作旁证。
 
+## 能力评估（v0.0.4 KB 轮沉淀，2026-11-14）
+
+- **模型名猜能力被实证证伪**："有参数量≥16B 压过 flash 变体词"在 deepseek-v4.1-flash（激活 8-16B）显著强于 Qwen3.8-27B 的实证下方向全错；同族反例 Flash-Next(6B 激活)>27B 稠密连"同族同代参数可比"都不保——跨族能力比较唯一可靠锚点是外部基准，名称解析只配做 KB 匹配辅助。
+- **缺证据≠优势**：缺段重归一（按可得段重新归一权重）会把"缺席 coding 证据"放大成反超"已证实 coding 能力"——固定权重＋缺段按中位 0.5 填充才是保守收缩。
+- **量纲混合偏置**：用户导入的 0-100 绝对分与 KB 的 [0,1] rank-fraction 直接混合，会因 LLM 评分的 60-90 集中趋势系统性高估——导出 prompt 必须诱出分布位置判断（50≈中位/70≈前 1/4/90≈前 10%）＋/100 线性映射，并声明残余校准偏差。
+- **CSS 类打不过 inline 样式**：禁用态想用 `.cls:disabled{cursor:default}` 改变 inline `cursor:'pointer'` 永远失败（style attribute 特异性最高）——禁用态视觉一律内联展开（Switch 先例）。
+- **argmin 语境下"垫底哨兵"语义反转**：unknown 哨兵"排最后"在 argmax 下＝最后备选，在 argmin（选最弱）下＝首选！缺收录的新旗舰会被推去接 test/qa——哨兵语义必须对每个消费方向逐一裁定（三槽一律最后备选）。
+
 ## 模板与配置承诺（v0.0.4 模板重构轮沉淀，2026-11-13）
 
 - **行内弹层必须锚定在行首列或走 portal**：锚在末列的非 portal nowrap 弹层必然越过卡片右缘（×删除弹层溢出设置页，用户截图命中）——同构件换锚到首列（RowNameCell 先例）即消除。
