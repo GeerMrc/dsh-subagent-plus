@@ -59,7 +59,11 @@
 
 ## 模板与配置承诺（v0.0.4 模板重构轮沉淀，2026-11-13）
 
-- **跨 provider 硬编码字面档位 id**：模板写死 `'high'`，qwen 系档位是 Off/Low/Medium/Xhigh（无 high）→ `#resolveEffort` 精确匹配静默降"默认"，默认档可能是 low——"质量优先"模板实际跑最低档，UI 无任何提示（用户实测命中，ADR 0013 决策 1）。跨 provider 的档位引用必须用**语义意图**（top/default/lowest）按实际档位表解析；且宿主 efforts 顺序是 adapter 展示顺序**不是强度顺序**，"取末位=最高"只能在档位 id 全不在公认梯子时兜底。
+- **交付态默认优于向导按钮**："起步配置"单按钮＋确认三选＋容量预检＋未保存提醒，用户实测两连问"为什么要有这一步"——开箱即用的派生默认（derived defaults＋copy-on-write＋恢复默认入口）才是正解；预填式向导只该出现在默认值无法从环境推导时。
+- **受控 select 的领头显示 option 必须与选项列表去重**：`<option value="">{currentLabel}</option>` 领头项在当前值 ∈ 列表时与同名条目重复（用户截图命中两个同名模型）；领头项只在 dangling/incomplete 显示位有意义，且 dangling 行 value 须置 '' 才真正显示。
+- **删除门禁（如 starterGate）前先枚举它拦截的全部场景在新设计里的归宿**：0014 删 starterGate 时若不重新设计"pinned 下不派生"（R1），派生会凌驾钉定且编辑入口被 byNameLocked 锁死——门禁不是死代码清单，是场景清单。
+- **schemastery 字段级 transform 无 sibling 访问**：条件迁移默认（"字段缺失时按另一字段取值"）不能写在字段 schema 上，也不能给字段 `.default()`（host 解析层吃掉"缺失"使迁移永不触发）——放 materializeConfig 后处理。
+- **跨 provider 硬编码字面档位 id**：模板写死 `'high'`，qwen 系档位是 Off/Low/Medium/Xhigh（无 high）→ `#resolveEffort` 精确匹配静默降"默认"，默认档可能是 low——"质量优先"模板实际跑最低档，UI 无任何提示（用户实测命中，ADR 0013 决策 1）。跨 provider 的档位引用必须用**语义意图**（top/mid/lowest）按实际档位表解析；且宿主 efforts 顺序是 adapter 展示顺序**不是强度顺序**，"取末位=最高"只能在档位 id 全不在公认梯子时兜底。
 - **配置承诺必须随架构迁移审计运行时引用**：ADR 0010 把模型改写从 agent/request 迁到 agent/created 时，`respectExplicit` 的运行时消费被一并删掉，但 UI 开关/locale/config JSDoc/docs 全部存活——对外承诺的行为成了死开关（`src/index.ts` 引用数为 0，二审 P-18 揪出）。删改任一执行路径前，grep 该路径消费的每个配置字段的引用数；UI/locale 承诺与运行时行为发版前必须对账。
 
 ## 客户端/宿主边界（v0.0.4 轮沉淀，2026-11-11 桌面启动崩溃 P0）
