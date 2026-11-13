@@ -446,14 +446,16 @@ export class SettingsSectionController {
     { id: 'starter', rows: STARTER_TEMPLATE_ROWS },
   ]
 
-  /** Map a slot to a route from the listed candidates (ADR 0011 H2: from listed, never hardcoded). */
+  /** Map a slot to a route from the listed candidates (ADR 0011 H2: from
+   *  listed, never hardcoded). A sole candidate resolves every slot — the
+   *  single-route case differentiates rows by effort, not route (ADR 0013 d2). */
   #slotRoute(listed: readonly { provider: string; model: string; efforts?: readonly { id: string }[] }[], slot: Slot): { provider: string; model: string; efforts?: readonly { id: string }[] } | undefined {
     if (listed.length === 0) return undefined
     if (slot === 'S') return listed[0]
     if (slot === 'F') return listed[listed.length - 1]
     // B: middle; for 2 items, pick the second (different from S)
-    const mid = Math.floor((listed.length - 1) / 2)
-    return listed[Math.max(1, mid)]
+    const mid = Math.max(1, Math.floor((listed.length - 1) / 2))
+    return listed[Math.min(mid, listed.length - 1)]
   }
 
   /**

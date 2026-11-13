@@ -697,3 +697,71 @@ describe('nameMap dangling flow (ADR 0007, R7-R2 🟡-3)', () => {
     expect(form.mutateCalls).toHaveLength(1)
   })
 })
+
+describe('starter template slot & gate coverage (W8, review P-21)', () => {
+  /** Catalog of `count` single-model providers, each with qwen-like tiers. */
+  function multiRouteCatalog(count: number): CatalogPort {
+    return {
+      load: async () => ({
+        groups: Array.from({ length: count }, (_, index) => ({
+          id: `p${index}`, name: `P${index}`,
+          models: [{ id: `m${index}`, name: `M${index}`, reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'xhigh', name: 'Xhigh' }], defaultEffort: 'low' } }],
+        })),
+        failureCount: 0,
+      }),
+    }
+  }
+
+  async function applyWithRoutes(count: number) {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm({
+      ...baseConfig(),
+      strategy: 'round-robin' as never,
+      priority: Array.from({ length: count }, (_, index) => ({ provider: `p${index}`, model: `m${index}`, reasoningEffort: '' })),
+    })
+    const controller = new SettingsSectionController(form, multiRouteCatalog(count))
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== count) throw new Error('catalog') })
+    const result = controller.applyTemplate('starter')
+    const rows = controller.snapshot().draft?.nameMap ?? []
+    controller.dispose()
+    return { result, rows }
+  }
+
+  it('B slot resolves to the middle listed route at 2/3/5 candidates', async () => {
+    for (const [count, expectedB] of [[2, 1], [3, 1], [5, 2]] as const) {
+      const { result, rows } = await applyWithRoutes(count)
+      expect(result.kind).toBe('applied')
+      const research = rows.find(row => row.name === 'research')
+      expect(research?.provider, `B slot at ${count} routes`).toBe(`p${expectedB}`)
+      // S always the first listed route; F always the last.
+      expect(rows.find(row => row.name === 'review')?.provider).toBe('p0')
+      expect(rows.find(row => row.name === 'test')?.provider).toBe(`p${count - 1}`)
+    }
+  })
+
+  it('sole listed route: all 12 rows land on it, efforts still differentiate', async () => {
+    const { result, rows } = await applyWithRoutes(1)
+    expect(result).toEqual({ kind: 'applied', added: 12, unmaterialized: 0 })
+    expect(rows.every(row => row.provider === 'p0' && row.model === 'm0')).toBe(true)
+    expect(rows.find(row => row.name === 'review')?.reasoningEffort).toBe('xhigh')
+    expect(rows.find(row => row.name === 'dev')?.reasoningEffort).toBe('')
+    expect(rows.find(row => row.name === 'test')?.reasoningEffort).toBe('low')
+  })
+
+  it('gate reports no-efforts for a sole all-off route (deepseek thinking-disabled shape)', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const allOffCatalog: CatalogPort = {
+      load: async () => ({
+        groups: [{ id: 'ds', name: 'DS', models: [{ id: 'thinkless', name: 'Thinkless', reasoning: { efforts: [{ id: 'off', name: 'Off' }], defaultEffort: 'off' } }] }],
+        failureCount: 0,
+      }),
+    }
+    const form = new FakeForm({ ...baseConfig(), strategy: 'round-robin' as never, priority: [{ provider: 'ds', model: 'thinkless', reasoningEffort: '' }] })
+    const controller = new SettingsSectionController(form, allOffCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 1) throw new Error('catalog') })
+    expect(controller.starterGate()).toEqual({ enabled: false, reason: 'no-efforts' })
+    controller.dispose()
+  })
+})
