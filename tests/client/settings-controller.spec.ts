@@ -10,6 +10,7 @@ import {
   type SettingsFormPort,
 } from '../../src/client/settings-controller.js'
 import type { PinConfig } from '../../src/config.js'
+import { MAX_NAME_MAP_ENTRIES } from '../../src/strategy.js'
 
 /** In-memory form port recording every mutate with its revision fence. */
 class FakeForm implements SettingsFormPort {
@@ -414,19 +415,19 @@ describe('semantic effort resolution (W2, ADR 0013)', () => {
   })
 })
 
-describe('starter template (W3, ADR 0013 d2)', () => {
-  /** Two effort-bearing routes: sz (qwen Off/Low/Medium/Xhigh) and zai (Low/High/Max). */
-  const effortsCatalog: CatalogPort = {
-    load: async () => ({
-      groups: [
-        { id: 'sz', name: 'Qwen-SZ', models: [{ id: 'qwen', name: 'Qwen', reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }], defaultEffort: 'low' } }] },
-        { id: 'zai', name: '智谱', models: [{ id: 'glm', name: 'GLM', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }, { id: 'max', name: 'Max' }], defaultEffort: 'low' } }] },
-        { id: 'cm', name: 'cm', models: [{ id: 'kimi', name: 'Kimi' }] },
-      ],
-      failureCount: 0,
-    }),
-  }
+/** Catalog with two effort-bearing routes: sz (qwen Off/Low/Medium/Xhigh), zai (Low/High/Max), plus a tierless cm. */
+const effortsCatalog: CatalogPort = {
+  load: async () => ({
+    groups: [
+      { id: 'sz', name: 'Qwen-SZ', models: [{ id: 'qwen', name: 'Qwen', reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'xhigh', name: 'Xhigh' }], defaultEffort: 'low' } }] },
+      { id: 'zai', name: '智谱', models: [{ id: 'glm', name: 'GLM', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }, { id: 'max', name: 'Max' }], defaultEffort: 'low' } }] },
+      { id: 'cm', name: 'cm', models: [{ id: 'kimi', name: 'Kimi' }] },
+    ],
+    failureCount: 0,
+  }),
+}
 
+describe('starter template (W3, ADR 0013 d2)', () => {
   it('defines 12 valid unique stems with the quality family first (tie-break order)', async () => {
     const { STARTER_TEMPLATE_ROWS } = await import('../../src/client/settings-controller.js')
     const { isValidKeyword } = await import('../../src/strategy.js')
@@ -480,7 +481,7 @@ describe('starter template (W3, ADR 0013 d2)', () => {
     const controller = new SettingsSectionController(form, effortsCatalog)
     controller.init()
     await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
-    expect(controller.applyTemplate('starter')).toBe('applied')
+    expect(controller.applyTemplate('starter')).toEqual({ kind: 'applied', added: 12, unmaterialized: 0 })
     const rows = controller.snapshot().draft?.nameMap ?? []
     expect(rows).toHaveLength(12)
     const byName = (name: string) => rows.find(row => row.name === name)
@@ -492,6 +493,118 @@ describe('starter template (W3, ADR 0013 d2)', () => {
     // F family → last listed route (glm) + lowest tier = low.
     expect(byName('test')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
     expect(byName('qa')).toMatchObject({ provider: 'zai', model: 'glm', reasoningEffort: 'low' })
+    controller.dispose()
+  })
+})
+
+describe('template capacity & confirm replay (W4, ADR 0013 d3)', () => {
+  /** A config listing qwen+glm with a nameMap stuffed to near-capacity. */
+  function stuffedConfig(rows: number): PinConfig {
+    return {
+      ...baseConfig(),
+      strategy: 'round-robin' as never,
+      priority: [
+        { provider: 'sz', model: 'qwen', reasoningEffort: '' },
+        { provider: 'zai', model: 'glm', reasoningEffort: '' },
+      ],
+      nameMap: Array.from({ length: rows }, (_, index) => ({ name: `stock-${index}`, provider: 'sz', model: 'qwen', reasoningEffort: '' })),
+    }
+  }
+
+  it('reports confirm with mode-aware numbers on a partially-filled table', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const rows = MAX_NAME_MAP_ENTRIES - 2
+    const form = new FakeForm(stuffedConfig(rows))
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const result = controller.applyTemplate('starter')
+    expect(result).toEqual({ kind: 'confirm', mergeFeasible: 12 <= MAX_NAME_MAP_ENTRIES - rows, needed: 12, free: 2 })
+    controller.dispose()
+  })
+
+  it('confirm replay refuses a no-longer-fitting merge and leaves the draft untouched', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const rows = MAX_NAME_MAP_ENTRIES - 2
+    const form = new FakeForm(stuffedConfig(rows))
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const refused = controller.applyTemplateConfirm('starter', 'merge')
+    expect(refused).toEqual({ kind: 'insufficient-capacity', needed: 12, free: 2 })
+    expect(controller.snapshot().draft?.nameMap).toHaveLength(rows)
+    controller.dispose()
+  })
+
+  it('confirm replace clears and rewrites a near-full table', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const rows = MAX_NAME_MAP_ENTRIES - 2
+    const form = new FakeForm(stuffedConfig(rows))
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const result = controller.applyTemplateConfirm('starter', 'replace')
+    expect(result).toEqual({ kind: 'applied', added: 12, unmaterialized: 0 })
+    expect(controller.snapshot().draft?.nameMap).toHaveLength(12)
+    expect(controller.snapshot().draft?.nameMap[0]?.name).toBe('review')
+    controller.dispose()
+  })
+
+  it('replace replay refuses when routes vanished or the table locked while the confirm was open', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm(stuffedConfig(4))
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    expect(controller.applyTemplate('starter').kind).toBe('confirm')
+    // Candidate list emptied while the inline confirm was open.
+    controller.removeRoute(1)
+    controller.removeRoute(0)
+    const refused = controller.applyTemplateConfirm('starter', 'replace')
+    expect(refused).toEqual({ kind: 'rejected' })
+    expect(controller.snapshot().draft?.nameMap).toHaveLength(4)
+    // Locked (strategy switched to pinned) while the confirm was open.
+    controller.dispose()
+    const form2 = new FakeForm(stuffedConfig(4))
+    const controller2 = new SettingsSectionController(form2, effortsCatalog)
+    controller2.init()
+    await vi.waitFor(() => { if (controller2.snapshot().routes.length !== 3) throw new Error('catalog') })
+    expect(controller2.applyTemplate('starter').kind).toBe('confirm')
+    controller2.setStrategy('pinned')
+    expect(controller2.applyTemplateConfirm('starter', 'replace')).toEqual({ kind: 'rejected' })
+    expect(controller2.snapshot().draft?.nameMap).toHaveLength(4)
+    controller2.dispose()
+  })
+
+  it('unknown template ids report distinctly from capacity problems', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm(stuffedConfig(0))
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    expect(controller.applyTemplate('nope')).toEqual({ kind: 'unknown-template' })
+    expect(controller.applyTemplateConfirm('nope', 'replace')).toEqual({ kind: 'unknown-template' })
+    controller.dispose()
+  })
+
+  it('counts rows whose tiers cannot materialise (no silent degrade)', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    // Sole effortless route first (S family lands on it), effort-bearing second.
+    const form = new FakeForm({
+      ...baseConfig(),
+      strategy: 'round-robin' as never,
+      priority: [
+        { provider: 'cm', model: 'kimi', reasoningEffort: '' },
+        { provider: 'sz', model: 'qwen', reasoningEffort: '' },
+      ],
+    })
+    const controller = new SettingsSectionController(form, effortsCatalog)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().routes.length !== 3) throw new Error('catalog') })
+    const result = controller.applyTemplate('starter')
+    expect(result).toEqual({ kind: 'applied', added: 12, unmaterialized: 4 })
+    // The four quality-gate rows landed on kimi with '' — visibly counted, not silent.
+    expect(controller.snapshot().draft?.nameMap.filter(row => row.reasoningEffort === '').length).toBeGreaterThanOrEqual(4)
     controller.dispose()
   })
 })

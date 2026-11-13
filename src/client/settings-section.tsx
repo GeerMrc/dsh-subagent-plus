@@ -329,6 +329,7 @@ function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
   const [pendingTemplateId, setPendingTemplateId] = useState<string | undefined>(undefined)
   const [showTemplateConfirm, setShowTemplateConfirm] = useState(false)
+  const [templateWarning, setTemplateWarning] = useState<string | undefined>(undefined)
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
@@ -575,13 +576,16 @@ function EditorRoutes(props: EditorProps) {
               onChange={event => {
                 const templateId = event.target.value
                 if (templateId === '') return
+                setTemplateWarning(undefined)
                 const result = controller.applyTemplate(templateId)
-                if (result === 'confirm') {
+                if (result.kind === 'confirm') {
                   // Show inline confirm UI (replace/merge/cancel)
                   setPendingTemplateId(templateId)
                   setShowTemplateConfirm(true)
-                } else if (result === 'insufficient-capacity') {
-                  // The controller already logged; the UI shows the placeholder reset.
+                } else if (result.kind === 'insufficient-capacity') {
+                  setTemplateWarning(t('byname.templates.insufficient').replace('{n}', String(result.needed)).replace('{m}', String(result.free)))
+                } else if (result.kind === 'rejected' || result.kind === 'unknown-template') {
+                  setTemplateWarning(t('byname.templates.unavailable'))
                 }
                 // 'applied': rows are in the draft; the select resets to ''.
               }}
@@ -597,6 +601,9 @@ function EditorRoutes(props: EditorProps) {
               })}
             </select>
           </div>
+          {templateWarning !== undefined ? (
+            <div style={{ ...fieldRowStyle, flexWrap: 'wrap' }}>{templateWarning}</div>
+          ) : null}
           {showTemplateConfirm && pendingTemplateId !== undefined ? (
             <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={cardHeadingStyle}>{t('byname.templates.confirmTitle')}</span>
