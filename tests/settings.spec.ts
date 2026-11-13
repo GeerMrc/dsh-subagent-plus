@@ -126,13 +126,13 @@ describe('LivePinConfig nameMap (by-name mapping, ADR 0006)', () => {
 })
 
 describe('Config schema nameMap (by-name mapping, ADR 0006)', () => {
-  it('defaults nameMap to an empty list for legacy documents and caps it at 16 rows', () => {
+  it('defaults nameMap to an empty list for legacy documents and caps it at 32 rows (ADR 0013 d5)', () => {
     const parse = (doc: unknown): PinConfig => materializeConfig((Config as unknown as (d: unknown) => import('../src/config.js').PinConfigRuntime)(doc))
     expect(parse({ strategy: 'pinned' }).nameMap).toEqual([])
     const single = parse({ nameMap: [{ name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'xhigh' }] })
     expect(single.nameMap).toEqual([{ name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: 'xhigh' }])
     const row = { name: 'dev', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }
-    const seventeen = Array.from({ length: 17 }, () => ({ ...row }))
-    expect(() => parse({ nameMap: seventeen })).toThrow()
+    const over = Array.from({ length: 33 }, (_, index) => ({ ...row, name: `dev-${index}` }))
+    expect(() => parse({ nameMap: over })).toThrow()
   })
 })

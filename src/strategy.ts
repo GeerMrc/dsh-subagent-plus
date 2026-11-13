@@ -7,10 +7,12 @@
  */
 import { routeId, type PinRoute, type RouteFields } from './pin.js'
 
-/** Upper bound on `nameMap` rows (ADR 0006); aligned with the official
- * `DEFAULT_MAX_MEMBERS = 16`. Lives here — not config.js — so the client half
- * can import it without dragging schemastery into the client bundle. */
-export const MAX_NAME_MAP_ENTRIES = 16
+/** Upper bound on `nameMap` rows. Originally 16 to align with the official
+ * roster's `DEFAULT_MAX_MEMBERS`; that roster left the host in 0.2.2-rc.2, and
+ * the starter template's 12 rows plus existing manual rows no longer fit — 32
+ * since ADR 0013 d5. Lives here — not config.js — so the client half can
+ * import it without dragging schemastery into the client bundle. */
+export const MAX_NAME_MAP_ENTRIES = 32
 
 /** Closed set of selection strategies; `pinned` is the v0.1.x single-route behaviour. */
 export const STRATEGIES = ['pinned', 'round-robin', 'random', 'priority'] as const
@@ -139,8 +141,8 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
     degraded.push(`dsh-subagent-plus: fallback repeats the listed route "${config.fallbackProvider}/${config.fallbackModel}"; it stays unused`)
   }
   const nameMap = config.nameMap ?? []
-  if (nameMap.length > 16) {
-    structural.push(`dsh-subagent-plus: nameMap lists ${nameMap.length} entries; at most 16 are allowed`)
+  if (nameMap.length > MAX_NAME_MAP_ENTRIES) {
+    structural.push(`dsh-subagent-plus: nameMap lists ${nameMap.length} entries; at most ${MAX_NAME_MAP_ENTRIES} are allowed`)
   }
   const names = new Set<string>()
   nameMap.forEach((entry, index) => {

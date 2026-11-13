@@ -15,7 +15,7 @@ A standalone cordis plugin for [DeepSeek Harness](https://github.com/deepseek-ai
 | Fallback | The last-resort route when every candidate is unusable, the list is empty, or the pinned route fails (optional; empty list + fallback = the single-model entry) |
 | Reasoning effort | Per-model effort dropdowns load each model's own levels (qwen-style Off/Low/Medium/Xhigh, zai-style Low/High/Max; non-reasoning models show none) |
 | Health failover | Transient failures (rate limit / 5xx / timeout / network) switch the official retry to the next healthy route (recording precedes the official retry decider — the first failure already cools the route); credential/quota failures cool the whole provider and steer later assignments |
-| Team (role keyword → route) | A mapping table (≤16 rows, targets from the candidate list): a teammate whose name contains a row keyword runs that route (substring match, longest keyword wins, forced assignment); unmatched follow the strategy — v0.0.4, ADR 0006+0007+0008 |
+| Team (role keyword → route) | A mapping table (≤32 rows, targets from the candidate list): a teammate whose name contains a row keyword runs that route (substring match, longest keyword wins, forced assignment); unmatched follow the strategy — v0.0.4, ADR 0006+0007+0008 |
 | Read-only badge | Beside the child window's composer: `provider/model · effort` (two-segment coloring, full text on hover) |
 | Child-window identity | Inside the sibling-switcher popup, the row of the child you have open tints amber (layered on the official bold marker) |
 | Settings page | Settings → Subagent Boost: strategy / list (≤5) / fallback / advanced, fully graphical; saves hot-apply (no restart, no runtime-state reset) |

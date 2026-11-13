@@ -491,14 +491,14 @@ describe('role-keyword matching (S-09, ADR 0008)', () => {
     expect(report.structural).toEqual([])
   })
 
-  it('refuses maps longer than 16 entries', () => {
-    const long = Array.from({ length: 17 }, (_, i) => nm(`dev-${i + 1}`, sz))
+  it('refuses maps longer than 32 entries (ADR 0013 d5)', () => {
+    const long = Array.from({ length: 33 }, (_, i) => nm(`dev-${i + 1}`, sz))
     const report = validateStrategyConfig({
       ...base,
       priority: [{ provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }],
       nameMap: long,
     })
-    expect(report.structural.some(m => m.includes('at most 16'))).toBe(true)
+    expect(report.structural.some(m => m.includes('at most 32'))).toBe(true)
   })
 })
 

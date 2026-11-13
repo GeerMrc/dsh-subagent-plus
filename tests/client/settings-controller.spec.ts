@@ -676,11 +676,11 @@ describe('nameMap draft actions (by-name mapping, ADR 0006)', () => {
     expect(form.mutateCalls).toHaveLength(1)
   })
 
-  it('caps the mapping at 16 rows', async () => {
+  it('caps the mapping at 32 rows (ADR 0013 d5)', async () => {
     const { controller } = await harness()
     controller.addRoute(szRoute)
-    for (let index = 0; index < 20; index += 1) controller.addNameRow(szRoute)
-    expect(controller.snapshot().draft?.nameMap.length).toBe(16)
+    for (let index = 0; index < 40; index += 1) controller.addNameRow(szRoute)
+    expect(controller.snapshot().draft?.nameMap.length).toBe(MAX_NAME_MAP_ENTRIES)
   })
 })
 
