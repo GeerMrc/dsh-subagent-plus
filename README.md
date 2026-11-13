@@ -16,7 +16,7 @@
 | 推理强度 | 按所选模型自动加载其支持的思考档位（qwen 系 Off/Low/Medium/Xhigh、zai 系 Low/High/Max、无档位模型不显示） |
 | 健康降级 | 瞬态失败（限流/5xx/超时/断网）随官方重试换到下一健康路由（记账先于官方重试器，第一次失败即入冷却）；凭据/配额类失败冷却整个 provider，只影响后续指派 |
 | Team（角色关键词 → 路由） | 映射表（≤32 行，目标只能取自候选清单）：队友名包含关键词即命中（子串匹配，最长优先）；路由经 `agent.model.select()` 在创建期选定；健康降级步边界生效——v0.0.4 起，ADR 0006＋0007＋0008＋0010＋0012＋0013 |
-| 起步配置 | 一键填入 12 行跨领域映射（ADR 0013）：review/audit/verif/plan→首选路由·最高档，research/dev/build/execute/write/design→中位路由·默认档，test/qa→末位路由·最低档——档位按所选模型**实际档位表**物化（梯子 off<low<medium<high<xhigh<max 就近解析，不硬编码字面 id）；一张表服务所有会话场景，应用后每行可编辑 |
+| 默认映射（安装即生效） | 装上插件即有 12 行跨领域角色映射（ADR 0014）：review/audit/verif/plan→首选路由·最高档，research/dev/build/execute/write/design→中位路由·**中档**，test/qa→末位路由·最低档——由候选清单**自动派生**并随清单与模型档位**动态自适应**（增删改候选即重算；adapter 改档位集自愈）；档位按各家模型实际档位表物化（梯子 off<minimal<low<medium<high<xhigh<max，无字面 id 依赖）；编辑任一行即物化为自定义（copy-on-write），设置页可一键恢复默认 |
 | 只读徽章 | 子 Agent 窗口输入框右侧显示 `provider/model · 档位`（两段配色，悬停全文） |
 | 子窗口识别 | 子 Agent 列表弹窗中当前所在行的标题呈琥珀色（叠加官方加粗标记） |
 | 设置页 | 设置 → 子Agent增强：策略/清单（≤5）/兜底/高级全部图形化，保存即热生效（无需重启、不重置运行态） |
@@ -61,7 +61,8 @@ dsh --profile desktop --dump-config | grep dsh-subagent-plus
     respectExplicit: false   # true=尊重主 Agent 显式指派（也优先于角色关键词映射；仅轮询/随机/优先级，钉定不吃此开关）
     cooldownMs: 120000       # 故障冷却；0=关闭健康跟踪（UI 层上限 86400000）
     showNotice: true         # 子 Agent 转录内显示指派提示（中英双语单行）
-    nameMap:                 # Team 角色关键词映射（v0.0.4，ADR 0008；子串匹配；目标取自候选清单；空表=休眠）
+    nameMapDefaults: true    # 默认映射（v0.0.4，ADR 0014）：true=由候选清单自动派生 12 行（仅 spread 策略）；false=用下方自定义行；字段缺省时按存量迁移（空表→true、已有行→false）
+    nameMap:                 # Team 自定义角色关键词行（ADR 0008；子串匹配；目标取自候选清单；仅 nameMapDefaults=false 时生效）
       - { name: researcher, provider: sz, model: Qwen3.8-27B-FP8, reasoningEffort: "" }
 ```
 
@@ -92,7 +93,7 @@ dsh --profile desktop --dump-config | grep dsh-subagent-plus
 
 **Team（角色关键词 → 路由）映射（v0.0.4 起，ADR 0006＋0007＋0008＋0010＋0012＋0013）**：队友名包含关键词即命中（子串匹配，最长优先）；命中＝强制指派（`respectExplicit=true` 时显式指派优先，见配置速览）。**路由在子智能体创建时经官方 `agent.model.select()` API 选定**（0.2.2+ 宿主的正规通道；名字解析双源：0.2.0 宿主 roster/tryMembership → 0.2.2+ 宿主 `subagents.namesOf`，ADR 0012）。映射目标只能取自候选清单；冷却中的路由在**下一步边界**自动换到下一健康候选或兜底（宿主禁止步中换路）。fork 队友默认不被改写；钉定下只读。**继承的 maxTokens 跟随新路由**（不再丢弃）。
 
-**起步配置（v0.0.4/ADR 0013）**：设置页单按钮一键填入 12 行跨领域映射（见功能矩阵），档位为应用时按模型实际档位表物化的字面 id——日后 adapter 改档位集时存量 id 在设置页以 stale 选项可见（运行时校验兜底，已知行为）。无可用候选、或唯一候选路由无推理档位时按钮禁用并显示原因。
+**默认映射（v0.0.4/ADR 0014，安装即生效）**：映射表在 `nameMapDefaults`（缺省按存量迁移：空表→开、已有行→关）开启时由候选清单自动派生，运行时三时机（llm 就绪/设置提交/adapter 更新防抖）重算，effort 逐模型经官方 `resolveModelInfo` 解析（缓存＋失效自愈）。编辑任一行 → copy-on-write 物化为自定义普通行（不再自适应，悬空行照常显式防御）；「恢复默认」一键回到派生态（带确认）。**仅轮询/随机/优先级策略下派生生效**——钉定是强制指派（R1 门控）。自定义行的物化 id 在 adapter 改档位集时以 stale 选项可见（运行时校验兜底，已知行为）。
 
 **maxTokens 行为（v0.0.4/ADR 0010 起）**：继承自父 Agent 的 `maxTokens` **跟随新路由持续生效**（不再丢弃）——与官方委托语义一致（`resolveChildAgentOptions` 本来就让子级继承 maxTokens，`agent.model.select()` 也不影响它）。
 

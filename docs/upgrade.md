@@ -35,3 +35,9 @@
 | 已发布需改内容 | bump 版本重走全链；**禁止** force 覆写已发布版本 |
 
 **首批推送事故预防**：workflow 文件首次出现在远端时，同批推送的 tag 不触发 workflow——先推 main（workflow 落库），再单独推 tag；`npm pack --pack-destination` 要求目标目录存在（打包脚本已内置 mkdir）；`npm publish` 参数必须带 `./` 前缀（裸含斜杠名会被解析为 GitHub spec）。
+
+
+## §7 v0.0.4 默认映射激活注记（ADR 0014）
+
+- 从 v0.0.2/v0.0.3 升级：`nameMapDefaults` 字段缺失时按存量迁移——nameMap 为空（v0.0.2 根本没有该字段）→ **true**，即装即派生 12 行默认映射（仅 spread 策略生效）；已手编过 nameMap 行的文档 → **false**，行为与升级前一致。升级到 spread 策略＋非空候选清单的用户会看到关键词队友换到派生路由＋转录出现按角色指派 notice——这是 ADR 0014 的产品行为，不是回归。
+- 手编 yml 写 `nameMapDefaults: true` 且保留非空 `nameMap` 行：派生胜出、存量行被忽略（加载时 degraded 警告一次，页内 #revalidate 同步透出）。

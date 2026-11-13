@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.0.4 (2026-11-11) — Team（角色关键词 → 路由）· agent.model.select() 架构 · 通用起步配置（ADR 0006-0013，未发布）
+## v0.0.4 (2026-11-11) — Team（角色关键词 → 路由）· agent.model.select() 架构 · 默认映射安装即生效（ADR 0006-0014，未发布）
 
 - feat(team-map)!: **角色关键词子串匹配（ADR 0008）**：设置卡「Team（角色关键词 → 路由）」
   分区（≤32 行），队友名包含关键词即命中（最长优先）；未命中走策略链。
@@ -10,26 +10,28 @@
 - feat(team-map): **双源名字解析（ADR 0012）**：0.2.0 宿主 roster/tryMembership → 0.2.2+
   宿主 `subagents.namesOf`（含 UNAUTHORIZED 创建窗口吞错）；`agent/inbox/claimed`
   确定性挂钩补选（步准备捕获 selection 之前）。
-- feat(starter)!: **通用起步配置（ADR 0011→0013）**：单按钮一键填入 12 行跨领域映射
-  （review/audit/verif/plan→首选·最高档；research/dev/build/execute/write/design→中位·默认档；
-  test/qa→末位·最低档），一张表服务所有会话场景；替换旧版四个场景专用模板。
-- feat(effort): **语义档位意图（ADR 0013 d1）**：模板档位按模型实际档位表物化（公认梯子
-  off<low<medium<high<xhigh<max 就近解析，off/none 不自动选，全不在梯子按目录顺序取首末，
-  无非 off 档一律默认）；无法物化的行计数提示，不静默降级。修复 D1：qwen 系（无 high 档）
-  上"质量优先"模板全部静默降默认、实际效果与意图相反。
+- feat(defaults)!: **默认映射安装即生效（ADR 0011→0013→0014）**：12 行跨领域映射由候选清单
+  **自动派生**（review/audit/verif/plan→首选·最高档；research/dev/build/execute/write/design→中位·
+  **中档**；test/qa→末位·最低档），随清单与模型档位**动态自适应**（三时机重派生＋adapter 自愈），
+  仅 spread 策略生效（R1 门控）；编辑即 copy-on-write 物化为自定义＋「恢复默认」入口；
+  `nameMapDefaults` 缺省按存量迁移（空表→开、已有行→关）。取代起步按钮形态。
+- feat(effort): **语义档位意图（ADR 0013 d1＋0014 修订）**：档位按模型实际档位表物化（梯子
+  off<minimal<low<medium<high<xhigh<max，off/none 不自动选，全不在梯子按目录顺序，偶数上中位）；
+  B 族改 **mid**（qwen 三族 Xhigh/Medium/Low——"medium 呢"的答案；zai 系 B=High 为有意识升档），
+  各家供应商词表差异无字面 id 依赖。修复 D1：qwen 系上旧模板全部静默降默认、效果与意图相反。
 - fix(config): **respectExplicit 死开关复活（ADR 0013 d4，二审 P-18）**：0010 迁移漏接导致
   UI/locale 承诺的行为运行时零引用；现于 agent/created、步边界、inbox/claimed 三处接回
   `explicitRouteOf`——显式指派（创建路由≠父路由）优先于关键词映射与策略链（钉定除外）。
-- fix(ui): 容量分模式预检（replace 全表/merge 仅新增）；确认期前置条件完整重放（清单清空/
-  策略锁定/容量不足→拒绝且不动草稿，replace 不再可能清空后零写入）；容量不足渲染所需/剩余
-  行数（激活死 locale 键）；W8 覆盖面清扫抓出并修复单路由 B 槽越界丢行 bug。
+- fix(ui): 行内模型下拉去重（领头显示项与列表同名重复，用户截图命中）；悬空行显示位修复；
+  关键词框 140→96/模型框填满弹性轨（宽度比用户裁定）；随按钮形态删除确认/容量流
+  （W8 曾抓出并修复单路由 B 槽越界丢行 bug，机制保留在共享槽位函数中）。
 - feat(cap): nameMap 上限 16→32（ADR 0013 d5；原 16 对齐的官方 roster 已随 0.2.2-rc.2 删除，
   起步配置 12 行＋存量手工行需合并空间）。
 - feat(guard): 客户端/宿主边界守卫（任意 import 形态＋宿主包名集）。
 - docs: README 双语、settings/strategy 手册、ADR 0006-0013、dont-do 两条沉淀
   （跨 provider 硬编码字面档位 id／配置承诺须随迁移审计运行时引用）。
 - 留待：DOM 渲染级测试仍为既有技术债；命名预设集（多套映射＋切换）与 per-workspace
-  覆盖为后续方向（ADR 0013 不做面）。
+  覆盖为后续方向（ADR 0014 不做面）；auto-save 页级改造不做（全页统一保存为既有架构）。
 
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
