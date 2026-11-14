@@ -223,11 +223,25 @@ export interface ResearchCandidate {
  * @returns the JSON-serialisable package.
  */
 export function buildResearchPackage(candidates: readonly ResearchCandidate[], today: string): Record<string, unknown> {
+  // The full catalogue can serve the same model id through several providers —
+  // the research list dedupes by model id (one score per model), and the
+  // "current candidate" mark survives from whichever provider instance is
+  // listed. Otherwise an evaluation returning every row would trip the
+  // importer's duplicate-model rejection.
+  const seen = new Map<string, ResearchCandidate>()
+  for (const entry of candidates) {
+    const key = canonicalizeModelId(entry.model)
+    const existing = seen.get(key)
+    if (existing === undefined || (existing.match !== 'candidate' && entry.match === 'candidate')) {
+      seen.set(key, existing === undefined ? entry : { ...existing, match: 'candidate' })
+    }
+  }
+  const unique = [...seen.values()]
   return {
     schema: 1,
     exportedAt: today,
     dimensions: ['overall', 'coding', 'webdev', 'agentic'],
-    candidates: candidates.map(entry => ({ provider: entry.provider, model: entry.model, match: entry.match })),
+    candidates: unique.map(entry => ({ provider: entry.provider, model: entry.model, match: entry.match })),
     prompt_zh: [
       '你是模型能力评估员。请对下列模型在四个维度上给出 0-100 的能力评分。',
       '评分表达该模型相对当前主流模型总体的位置：50≈主流中位、70≈前四分之一、90≈前 10%。',
@@ -235,7 +249,7 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
       '清单为当前环境的完整模型目录（并非都在使用）；请依据公开基准与社区实测知识评分，标注了"当前候选"的模型正在使用中。',
       '输出一个 JSON 数组，每项 {"model": "<原样模型 id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "调研执行日期(YYYY-MM-DD)", "note": "简短依据"}。',
       '只输出 JSON，不要解释。模型列表：',
-      ...candidates.map(entry => `- ${entry.model}${entry.match === 'candidate' ? '（当前候选）' : entry.match === 'none' ? '（未知模型，请按同类定位估计）' : ''}`),
+      ...unique.map(entry => `- ${entry.model}${entry.match === 'candidate' ? '（当前候选）' : entry.match === 'none' ? '（未知模型，请按同类定位估计）' : ''}`),
     ].join('\n'),
     prompt_en: [
       'You are a model-capability evaluator. Score the models below 0-100 on four dimensions.',
@@ -244,7 +258,7 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
       'The list is the FULL model catalogue of this environment (not all are in use); ground your scores in public benchmarks and community testing. Models marked "current candidate" are actively listed.',
       'Output a JSON array, one object per model: {"model": "<exact id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "YYYY-MM-DD research date", "note": "brief basis"}.',
       'JSON only, no prose. Models:',
-      ...candidates.map(entry => `- ${entry.model}${entry.match === 'candidate' ? ' (current candidate)' : entry.match === 'none' ? ' (unknown model — estimate by comparable positioning)' : ''}`),
+      ...unique.map(entry => `- ${entry.model}${entry.match === 'candidate' ? ' (current candidate)' : entry.match === 'none' ? ' (unknown model — estimate by comparable positioning)' : ''}`),
     ].join('\n'),
   }
 }

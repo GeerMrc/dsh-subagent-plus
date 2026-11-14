@@ -684,3 +684,20 @@ describe('research package scope (Z8 — full catalogue, configuration-independe
     expect(() => JSON.stringify(pkg)).not.toThrow()
   })
 })
+
+describe('research package dedupes same model across providers (Z9)', () => {
+  it('lists each model id once; candidate mark survives from any provider instance', async () => {
+    const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
+    const pkg = buildResearchPackage([
+      { provider: 'deepseek-official', model: 'deepseek-flash', match: 'none' },
+      { provider: 'deepseek-account', model: 'deepseek-flash', match: 'none' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', match: 'none' },
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', match: 'candidate' },
+    ], '2026-11-14') as { candidates: { model: string; match: string }[]; prompt_zh: string }
+    const ids = pkg.candidates.map(entry => entry.model)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(pkg.candidates.find(entry => entry.model === 'Qwen3.8-27B-FP8')?.match).toBe('candidate')
+    expect(pkg.prompt_zh.match(/- deepseek-flash/g)).toHaveLength(1)
+    expect(pkg.prompt_zh).toContain('Qwen3.8-27B-FP8（当前候选）')
+  })
+})
