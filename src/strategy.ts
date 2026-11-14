@@ -161,6 +161,16 @@ export interface SlotAssignmentOptions {
 
 const fastHintOf = (candidate: StarterCandidate): number => (FAST_HINT.test(candidate.description ?? '') ? 1 : 0)
 
+/** S-slot noise band (ADR 0016 3c, G2 — user ruling): a NON-ZERO S-score
+ *  difference below this bound is rank-fraction noise between same-snapshot
+ *  entries (an all-estimated pool shifts pairwise winners by .006 without any
+ *  real capability signal), so the user's listing order decides S. Exact ties
+ *  are genuine ties and keep the Z7 structural chain; the band deliberately
+ *  does not extend to B/F (their collision logic consumes strict scores).
+ *  Non-transitive by design inside a 2×band spread — the first-listed model
+ *  accumulates and sub-band challengers never displace it. */
+const NOISE_BAND = 0.02
+
 /**
  * Assign the S/B/F slots by KB family scores (ADR 0016 d2). Each family ranks
  * the candidates by its own dimension weights — three independent orderings,
@@ -203,12 +213,16 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   const sPick = pool.length > 0
     ? pool.reduce((best, entry) => {
         const diff = familyScore(entry.view, 'S') - familyScore(best.view, 'S')
-        if (diff > 0) return entry
-        if (diff < 0) return best
-        // legacyDiff(entry, best) > 0 means entry outranks best on the 0015
-        // structural chain — the STRONGER candidate keeps S on ties.
-        if (legacyDiff(best, entry) > 0) return entry
-        return best
+        if (diff === 0) {
+          // legacyDiff(entry, best) > 0 means entry outranks best on the 0015
+          // structural chain — the STRONGER candidate keeps S on exact ties.
+          if (legacyDiff(best, entry) > 0) return entry
+          return best
+        }
+        // Noise band (G2): a sub-band nonzero difference is not evidence —
+        // the earlier listing wins, skipping the structural chain.
+        if (Math.abs(diff) < NOISE_BAND) return best
+        return diff > 0 ? entry : best
       })
     : views[0]!
   const bCompare = (a: typeof views[number], b: typeof views[number]): number => {

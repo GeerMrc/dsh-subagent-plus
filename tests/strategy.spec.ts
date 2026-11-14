@@ -803,18 +803,18 @@ describe('F-slot occupancy yield (G1, ADR 0016 3c)', () => {
     expect(rows.find(r => r.name === 'test')?.model).toBe('model-r') // was model-q — r held zero rows
   })
 
-  it("the user's scenario B: v4-pro in, flash-next keeps a family (end-to-end, shipped KB)", () => {
+  it("the user's scenario B: v4-pro in, all three models hold a family (end-to-end, shipped KB)", () => {
     const rows = deriveStarterRows([
       { provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
       { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
       { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
     ])
-    // S=v4-pro (.4965), B median=27b, strict F argmin=27b collides with B →
-    // F yields to the unoccupied flash-next. G2 will move S to flash-next;
-    // this pins the G1-only intermediate.
-    expect(rows.find(r => r.name === 'review')?.model).toBe('deepseek-v4-pro')
+    // G1: strict F argmin=27b collided with the B median → F yields to the
+    // unoccupied v4-pro. G2 then moved S to the first-listed flash-next (the
+    // .006 S-gap is noise) — the full state is pinned in the G2 describe.
+    expect(rows.find(r => r.name === 'review')?.model).toBe('Qwen3.8-Flash-Next-NVFP4')
     expect(rows.find(r => r.name === 'dev')?.model).toBe('Qwen3.8-27B-FP8')
-    expect(rows.find(r => r.name === 'test')?.model).toBe('Qwen3.8-Flash-Next-NVFP4')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('deepseek-v4-pro')
     expect(new Set(rows.map(row => row.provider)).size).toBe(3)
   })
 
@@ -842,6 +842,54 @@ describe('F-slot occupancy yield (G1, ADR 0016 3c)', () => {
     const rows = deriveStarterRows([at('model-p', 'p1'), at('model-q', 'p2')], { kb })
     expect(rows.find(r => r.name === 'review')?.model).toBe('model-p')
     expect(rows.find(r => r.name === 'test')?.model).toBe('model-q')
+  })
+})
+
+describe('S-slot noise band, list order first (G2, ADR 0016 3c — user ruling)', () => {
+  // Sub-band (non-zero) S-score differences are rank-fraction noise between
+  // same-snapshot entries; the user's listing order decides. EXACT ties keep
+  // the Z7 structural chain (a genuine tie is not noise).
+  const kb = (a: number, b: number, c: number): import('../src/capability-scoring.js').KbTable => ({
+    'model-low': { aliases: [], dims: { overall: a, coding: a, webdev: a, agentic: a } },
+    'model-mid': { aliases: [], dims: { overall: b, coding: b, webdev: b, agentic: b } },
+    'model-high': { aliases: [], dims: { overall: c, coding: c, webdev: c, agentic: c } },
+  })
+  const at = (model: string, provider = 'p'): Parameters<typeof deriveStarterRows>[0][number] =>
+    ({ provider, model, efforts: ['off', 'low', 'medium', 'xhigh'].map(id => ({ id })) })
+
+  it('a later-listed model beating the first by 0.006 does NOT steal S', () => {
+    // .4905 vs .4965 — the user's scenario-B margin: noise, list order wins.
+    const rows = deriveStarterRows([at('model-low', 'p1'), at('model-high', 'p2')], { kb: kb(0.4905, 0.5, 0.4965) })
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('p1')
+  })
+
+  it('outside the band strict scores decide regardless of order', () => {
+    const rows = deriveStarterRows([at('model-low', 'p1'), at('model-high', 'p2')], { kb: kb(0.48, 0.5, 0.53) })
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('p2')
+  })
+
+  it('non-transitivity is real and documented: the winner is order-dependent inside a 2×band spread', () => {
+    // .50 / .515 / .53 — pairwise gaps all sub-band except low↔high (.03).
+    // Whichever model is listed FIRST accumulates as `best` and later
+    // sub-band challengers never displace it; the strict winner (.53) only
+    // wins when it leads the list. Recorded as intended semantics.
+    const scores = { a: 0.50, b: 0.515, c: 0.53 }
+    const firstKeeps = deriveStarterRows([at('model-mid', 'p1'), at('model-high', 'p2'), at('model-low', 'p3')], { kb: kb(scores.a, scores.b, scores.c) })
+    expect(firstKeeps.find(r => r.name === 'review')?.provider).toBe('p1') // .515 listed first keeps S
+    const leaderKeeps = deriveStarterRows([at('model-high', 'p1'), at('model-mid', 'p2'), at('model-low', 'p3')], { kb: kb(scores.a, scores.b, scores.c) })
+    expect(leaderKeeps.find(r => r.name === 'review')?.provider).toBe('p1') // .53 listed first keeps S
+  })
+
+  it("the user's scenario B final state: S=flash-next (first-listed), B=27b, F=v4-pro", () => {
+    const rows = deriveStarterRows([
+      { provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
+      { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
+    ])
+    expect(rows.find(r => r.name === 'review')).toMatchObject({ provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', reasoningEffort: 'xhigh' })
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('sz')
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('deepseek-official')
+    expect(new Set(rows.map(row => row.provider)).size).toBe(3)
   })
 })
 
