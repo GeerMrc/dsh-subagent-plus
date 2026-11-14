@@ -5,7 +5,7 @@
  * explicit-route test. Clock and randomness are injected so every rule is
  * unit-testable without a live Host.
  */
-import { capabilityOf, familyScore, type CapabilityOverride, type KbTable } from './capability-scoring.js'
+import { canonicalizeModelId, capabilityOf, familyScore, type CapabilityOverride, type KbTable } from './capability-scoring.js'
 import { routeId, type PinRoute, type RouteFields } from './pin.js'
 
 /** One user-imported capability evaluation row as the config schema materializes it (ADR 0016 d3). */
@@ -183,7 +183,7 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   const overrides = options.overrides ?? []
   const views = candidates.map((candidate, index) => ({
     candidate,
-    view: options.kb === undefined ? capabilityOf(candidate.model, overrides, undefined, candidate.provider) : capabilityOf(candidate.model, overrides, options.kb, candidate.provider),
+    view: capabilityOf(candidate.model, overrides, options.kb, candidate.provider),
     index,
   }))
   const legacyDiff = (a: typeof views[number], b: typeof views[number]): number => {
@@ -419,7 +419,7 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
       degraded.push('dsh-subagent-plus: capabilityOverrides row without a model id is ignored')
       continue
     }
-    const pair = `${(entry.provider ?? '').trim()}\0${entry.model.toLowerCase().replace(/[\s_-]+/g, '-')}`
+    const pair = `${(entry.provider ?? '').trim()}\0${canonicalizeModelId(entry.model)}`
     if (seenOverridePairs.has(pair)) {
       degraded.push(`dsh-subagent-plus: capabilityOverrides repeats "${entry.model}"${(entry.provider ?? '').trim() !== '' ? ` (${(entry.provider ?? '').trim()})` : ''}; the last row wins`)
     }

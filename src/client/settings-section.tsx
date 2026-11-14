@@ -393,7 +393,9 @@ function EditorRoutes(props: EditorProps) {
         setImportError(result.reasons.join('；'))
         return
       }
-      importFlash.flash(t('byname.research.imported').replace('{n}', String(result.rows.length)))
+      importFlash.flash(result.mergedDuplicates.length > 0
+        ? t('byname.research.importedMerged').replace('{n}', String(result.rows.length)).replace('{m}', String(result.mergedDuplicates.length))
+        : t('byname.research.imported').replace('{n}', String(result.rows.length)))
       setImportOpen(false)
     } catch (error) {
       setImportError(String(error))

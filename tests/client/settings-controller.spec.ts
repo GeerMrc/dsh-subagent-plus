@@ -787,6 +787,27 @@ describe('override import tolerance (Zd — real-world evaluator output)', () =>
     controller.dispose()
   })
 
+  it('a new qualified row landing on an existing pair replaces it (draft-aware last-wins, no repeats state)', async () => {
+    const { SettingsSectionController, validateReport } = await import('../../src/client/settings-controller.js') as never as { SettingsSectionController: typeof import('../../src/client/settings-controller.js').SettingsSectionController, validateReport: never }
+    const { SettingsSectionController: SC } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm(baseConfig())
+    const controller = new SC(form, emptyCatalogPort)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('form') })
+    controller.importCapabilityOverrides([
+      { provider: 'backup', model: 'm1', coding: 40, asOf: '2026-11-13' },
+    ] as never)
+    const result = controller.importCapabilityOverrides([
+      { provider: 'backup', model: 'm1', coding: 65, asOf: '2026-11-14' },
+    ] as never)
+    if (result.kind !== 'imported') throw new Error('expected import')
+    expect(result.mergedDuplicates).toHaveLength(1)
+    const rows = controller.snapshot().draft?.capabilityOverrides ?? []
+    expect(rows.filter(row => row.model === 'm1')).toHaveLength(1)
+    expect(rows.find(row => row.model === 'm1')?.coding).toBe(65)
+    controller.dispose()
+  })
+
   it('re-import replaces generic rows but PRESERVES existing qualified rows', async () => {
     const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
     const form = new FakeForm(baseConfig())
@@ -803,5 +824,21 @@ describe('override import tolerance (Zd — real-world evaluator output)', () =>
     expect(rows.find(row => row.provider === '')?.coding).toBe(90) // replaced
     expect(rows.find(row => row.provider === 'deepseek-account')?.coding).toBe(40) // preserved
     controller.dispose()
+  })
+})
+
+describe('matchOverrideRoute branches (Zg review #4)', () => {
+  it('covers candidate / kb / none / route-miss', async () => {
+    const { matchOverrideRoute } = await import('../../src/client/settings-controller.js')
+    const catalogue = [
+      { provider: 'official', model: 'deepseek-flash' },
+      { provider: 'backup', model: 'deepseek-flash' },
+    ]
+    const candidates = [{ provider: 'official', model: 'deepseek-flash' }]
+    expect(matchOverrideRoute({ model: 'deepseek-flash' }, catalogue, candidates)).toBe('candidate') // generic hits any provider's candidate
+    expect(matchOverrideRoute({ provider: 'official', model: 'deepseek-flash' }, catalogue, candidates)).toBe('candidate') // exact route
+    expect(matchOverrideRoute({ provider: 'backup', model: 'deepseek-flash' }, catalogue, candidates)).toBe('none') // route exists in catalogue but not a candidate and not in KB
+    expect(matchOverrideRoute({ provider: 'typo', model: 'deepseek-flash' }, catalogue, candidates)).toBe('route-miss') // route resolves nowhere
+    expect(matchOverrideRoute({ model: 'Qwen3.8-27B' }, [], [])).toBe('kb') // KB-known, nowhere listed
   })
 })

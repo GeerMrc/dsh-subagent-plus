@@ -150,12 +150,11 @@ const asOverrideDims = (entry: CapabilityOverride): Partial<Record<CapabilityDim
 const normalizeProvider = (provider: string | undefined): string => (provider ?? '').trim()
 
 export function capabilityOf(modelId: string, overrides: readonly CapabilityOverride[] = [], kb: KbTable = KB, provider?: string): CapabilityView {
-  // Two-pass resolution (ADR 0016 d3, Z10): layer priority is absolute over
-  // array order — the qualified pass (exact provider + model pair) runs
-  // first, the generic pass (provider-less + model) only on miss; within a
-  // pass, last-wins (a hand-edited list resolves to its final word).
   const route = normalizeProvider(provider)
   const modelKey = canonicalizeModelId(modelId)
+  // Two-pass resolution (ADR 0016 d3, Z10): layer priority is absolute over
+  // array order — the qualified pass (exact provider + model pair) runs
+  // first, the generic pass only on miss; last-wins inside each pass.
   const pickPass = (wanted: string): CapabilityOverride | undefined => {
     let found: CapabilityOverride | undefined
     for (const entry of overrides) {
@@ -164,8 +163,6 @@ export function capabilityOf(modelId: string, overrides: readonly CapabilityOver
     }
     return found
   }
-  // Qualified pass first (exact route), then the generic pass — layer priority
-  // absolute over array order; last-wins inside each pass.
   const override = route !== ''
     ? pickPass(route) ?? pickPass('')
     : pickPass('')

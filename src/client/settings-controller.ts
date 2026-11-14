@@ -489,10 +489,14 @@ export class SettingsSectionController {
     // and route-qualified rows of one model coexist.
     const merged = new Map<string, CapabilityOverrideView>()
     const mergedDuplicates: { model: string; provider: string }[] = []
+    const existingQualified = new Map<string, CapabilityOverrideView>()
+    for (const row of this.#state.draft?.capabilityOverrides ?? []) {
+      if ((row.provider ?? '').trim() !== '') existingQualified.set(`${(row.provider ?? '').trim()}\0${canonicalizeModelId(row.model)}`, row)
+    }
     for (const row of rows) {
       const provider = (row.provider ?? '').trim()
       const key = `${provider}\0${canonicalizeModelId(row.model)}`
-      if (merged.has(key)) mergedDuplicates.push({ model: row.model, provider })
+      if (merged.has(key) || (provider !== '' && existingQualified.has(key))) mergedDuplicates.push({ model: row.model, provider })
       merged.set(key, { ...row, provider })
     }
     const uniqueRows = [...merged.values()]
@@ -500,8 +504,14 @@ export class SettingsSectionController {
       // Re-import replaces the GENERIC rows (the research package is one
       // coherent evaluation) but PRESERVES qualified rows — route-specific
       // scores are hand-maintained knowledge the model-level package never
-      // carries.
-      const qualified = (draft.capabilityOverrides ?? []).filter(row => (row.provider ?? '').trim() !== '')
+      // carries. A NEW qualified row landing on an existing pair replaces it
+      // (draft-aware last-wins) so the pair never duplicates into a
+      // save-blocking "repeats" state.
+      const qualified = (draft.capabilityOverrides ?? []).filter(row => {
+        const route = (row.provider ?? '').trim()
+        if (route === '') return false
+        return !merged.has(`${route}\0${canonicalizeModelId(row.model)}`)
+      })
       draft.capabilityOverrides = [...qualified, ...uniqueRows]
     })
     return { kind: 'imported', rows: uniqueRows.map(row => ({ model: row.model, match: this.#overrideMatch(row.model, row.provider) })), mergedDuplicates }
