@@ -701,3 +701,27 @@ describe('research package dedupes same model across providers (Z9)', () => {
     expect(pkg.prompt_zh).toContain('Qwen3.8-27B-FP8（当前候选）')
   })
 })
+
+describe('override removal persists (Za — review P-1: copyConfig aliasing bug)', () => {
+  it('removing a row on a freshly loaded config produces a save op (the committed value must not mutate)', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm({ ...baseConfig(), capabilityOverrides: [
+      { model: 'cand-a', coding: 80, asOf: '2026-11-14' },
+      { model: 'cand-b', coding: 60, asOf: '2026-11-14' },
+    ] })
+    const controller = new SettingsSectionController(form, emptyCatalogPort)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('form') })
+    controller.removeCapabilityOverride(0)
+    const state = controller.snapshot()
+    // draft lost the row…
+    expect(state.draft?.capabilityOverrides).toHaveLength(1)
+    expect(state.draft?.capabilityOverrides[0]?.model).toBe('cand-b')
+    // …the COMMITTED value kept both (no aliasing mutation)…
+    expect(state.value?.capabilityOverrides).toHaveLength(2)
+    // …so fieldOps emits a set op and the removal actually persists on save.
+    const { fieldOps } = await import('../../src/client/settings-controller.js')
+    expect(fieldOps(state.value!, state.draft!)).toHaveLength(1)
+    controller.dispose()
+  })
+})

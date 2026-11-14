@@ -134,6 +134,11 @@ function copyConfig(value: PinConfig): PinConfig {
     ...value,
     priority: value.priority.map(entry => ({ ...entry })),
     nameMap: value.nameMap.map(entry => ({ ...entry })),
+    // Row-level deep copy (Za, review P-1): the shallow spread left the draft
+    // sharing the committed overrides array, so removeCapabilityOverride's
+    // splice mutated the committed value too — fieldOps then saw no difference
+    // and the removal never persisted.
+    capabilityOverrides: value.capabilityOverrides.map(entry => ({ ...entry })),
   }
 }
 
