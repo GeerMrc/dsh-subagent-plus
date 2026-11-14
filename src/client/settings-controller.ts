@@ -142,6 +142,15 @@ function copyConfig(value: PinConfig): PinConfig {
   }
 }
 
+/** Whether any of `fields` differs between the committed value and the draft
+ *  (S5: the shared per-section dirty predicate — the same JSON comparison
+ *  fieldOps uses, so a badge never disagrees with the save op stream).
+ *  Pure function over the two snapshots; `undefined` drafts are never dirty. */
+export function anyFieldDirty(value: PinConfig | undefined, draft: PinConfig | undefined, fields: readonly (keyof PinConfig)[]): boolean {
+  if (value === undefined || draft === undefined) return false
+  return fields.some(field => JSON.stringify(value[field]) !== JSON.stringify(draft[field]))
+}
+
 /**
  * Field ops carrying every top-level difference between the committed value
  * and the draft — one atomic mutate on save.

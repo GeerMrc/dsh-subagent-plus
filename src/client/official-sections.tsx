@@ -16,6 +16,7 @@ import { Info } from './settings-section.tsx'
 import { NS } from './locales.ts'
 import type { NamespaceFormState, OfficialLimitsController, OfficialLimitsValue } from './official-surfaces.ts'
 import {
+  pendingBadgeStyle,
   cardHeaderRowStyle,
   cardHeadingStyle,
   hintStyle,
@@ -35,6 +36,8 @@ function NsStatusLine({ state, t }: { state: NamespaceFormState<unknown>; t: Pro
  *  takeover ⓘ), status branches, and the two parsed
  *  numeric inputs writing the official `subagent` keys verbatim. */
 export function LimitsBlock(props: {
+  /** Whether the limits namespace draft diverges (S5 badge; the unified footer computes it independently). */
+  dirty?: boolean
   state: NamespaceFormState<OfficialLimitsValue>
   controller: OfficialLimitsController
   t: PropsLocale<typeof NS>['t']
@@ -45,6 +48,7 @@ export function LimitsBlock(props: {
       <div style={cardHeaderRowStyle}>
         <h4 id="dsmp-limits" style={cardHeadingStyle}>{t('takeover.limitsTitle')}</h4>
         <Info label={t('takeover.limitsHelp')} text={t('takeover.limitsHelp')} delayMs={400} />
+        {props.dirty === true ? <span style={pendingBadgeStyle}>{t('common.pending')}</span> : null}
         <span style={{ flex: 1 }} />
       </div>
       <NsStatusLine state={state} t={t} />

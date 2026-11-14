@@ -23,7 +23,7 @@ import { kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
-import { buildResearchPackage, matchOverrideRoute, type RouteOption, type SettingsSectionController, type SettingsUiState } from './settings-controller.ts'
+import { anyFieldDirty, buildResearchPackage, matchOverrideRoute, type RouteOption, type SettingsSectionController, type SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
 import {
@@ -307,7 +307,7 @@ export function SettingsSection(props: PropsLocale<typeof NS> & { controller: Se
       </header>
       {state.catalogFailed ? <p style={invalidStyle}>{t('status.catalogFailed')}</p> : null}
       <section style={cardStyle} aria-labelledby="dsmp-limits">
-        <LimitsBlock state={limitsState} controller={props.limits} t={t} />
+        <LimitsBlock dirty={limitsDirty} state={limitsState} controller={props.limits} t={t} />
         <div style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {state.status === 'unavailable'
             ? <p style={invalidStyle}>{t('status.unavailable')}</p>
@@ -723,6 +723,9 @@ function EditorRoutes(props: EditorProps) {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
             <span style={cardHeadingStyle}>{t('fallback.title')}</span>
             <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />
+            {anyFieldDirty(state.value, state.draft, ['fallbackProvider', 'fallbackModel', 'fallbackReasoningEffort'])
+              ? <span style={pendingBadgeStyle}>{t('common.pending')}</span>
+              : null}
           </span>
           <span style={{ flex: 1 }} />
           <Tooltip label={fallbackRoute === null ? t('fallback.off') : routeFull(fallbackRoute)} side="bottom" delayMs={200} maxWidth={360} portal>
@@ -768,6 +771,9 @@ function EditorBelow({ state, controller, t }: EditorProps) {
           onClick={() => { setAdvancedOpen(!advancedOpen) }}
         >
           {t('advanced.title')}
+          {anyFieldDirty(state.value, state.draft, ['respectExplicit', 'showNotice', 'pinForkChildren', 'failOpen', 'cooldownMs'])
+            ? <span style={pendingBadgeStyle}>{t('common.pending')}</span>
+            : null}
           <span style={{ flex: 1 }} />
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ transform: advancedOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>
             <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
