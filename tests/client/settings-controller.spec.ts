@@ -605,7 +605,7 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
 describe('capability override import (Z4, ADR 0016 d3)', () => {
   const today = '2026-11-14'
 
-  it('rejects duplicate model rows and all-dimension-empty rows at import time', async () => {
+  it('merges duplicate model rows last-wins (Zd revision) and still rejects all-dimension-empty rows', async () => {
     const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
     const form = new FakeForm(baseConfig())
     const controller = new SettingsSectionController(form, emptyCatalogPort)
@@ -615,9 +615,11 @@ describe('capability override import (Z4, ADR 0016 d3)', () => {
       { model: 'alpha', coding: 80, asOf: today },
       { model: 'alpha', coding: 90, asOf: today },
     ])
-    expect(duplicated.kind).toBe('rejected')
-    if (duplicated.kind === 'rejected') expect(duplicated.reasons.some(text => text.includes('alpha'))).toBe(true)
-    expect(controller.snapshot().draft?.capabilityOverrides).toEqual([])
+    // Real-world evaluators re-emit listed models — duplicates merge with
+    // last-wins and surface in mergedDuplicates instead of bouncing the batch.
+    expect(duplicated.kind).toBe('imported')
+    if (duplicated.kind === 'imported') expect(duplicated.mergedDuplicates).toHaveLength(1)
+    expect(controller.snapshot().draft?.capabilityOverrides.map(row => row.coding)).toEqual([90])
     const empty = controller.importCapabilityOverrides([{ model: 'beta', asOf: today }])
     expect(empty.kind).toBe('rejected')
     controller.dispose()
@@ -729,6 +731,77 @@ describe('override removal persists (Za — review P-1: copyConfig aliasing bug)
     // …so fieldOps emits a set op and the removal actually persists on save.
     const { fieldOps } = await import('../../src/client/settings-controller.js')
     expect(fieldOps(state.value!, state.draft!)).toHaveLength(1)
+    controller.dispose()
+  })
+})
+
+describe('override import tolerance (Zd — real-world evaluator output)', () => {
+  // Verbatim shape of the user's actual DeepSeek research paste: duplicate
+  // model rows (evaluator ignored the one-row contract), 同上 notes,
+  // [reference:N] markers — none of it may block the import.
+  const realWorldPaste = [
+    { model: 'deepseek-flash', overall: 68, coding: 70, webdev: 65, agentic: 72, asOf: '2026-11-14', note: '轻量版；同上' },
+    { model: 'deepseek-v4-pro', overall: 78, coding: 76, webdev: 82, agentic: 85, asOf: '2026-11-14', note: '旗舰 [reference:2]' },
+    { model: 'deepseek-flash', overall: 68, coding: 70, webdev: 65, agentic: 72, asOf: '2026-11-14', note: '同上' },
+    { model: 'Qwen3.8-27B-FP8', overall: 73, coding: 78, webdev: 86, agentic: 74, asOf: '2026-11-14', note: '开源编码强' },
+    { model: 'Qwen3.8-27B-FP8', overall: 75, coding: 79, webdev: 86, agentic: 74, asOf: '2026-11-14', note: '当前候选；同尺寸最强 [reference:11]' },
+  ]
+
+  it('merges duplicate rows last-wins instead of rejecting the batch, and reports the merges', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm(baseConfig())
+    const controller = new SettingsSectionController(form, emptyCatalogPort)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('form') })
+    const result = controller.importCapabilityOverrides(realWorldPaste as never)
+    expect(result.kind).toBe('imported')
+    if (result.kind === 'imported') {
+      expect(result.mergedDuplicates).toEqual([
+        expect.objectContaining({ model: 'deepseek-flash' }),
+        expect.objectContaining({ model: 'Qwen3.8-27B-FP8' }),
+      ])
+    }
+    // Last row wins per model.
+    const rows = controller.snapshot().draft?.capabilityOverrides ?? []
+    expect(rows).toHaveLength(3)
+    expect(rows.find(row => row.model === 'Qwen3.8-27B-FP8')?.coding).toBe(79)
+    controller.dispose()
+  })
+
+  it('generic and qualified rows for the same model coexist; same-pair duplicates also merge', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm(baseConfig())
+    const controller = new SettingsSectionController(form, emptyCatalogPort)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('form') })
+    const result = controller.importCapabilityOverrides([
+      { model: 'deepseek-flash', coding: 70, asOf: '2026-11-14' },
+      { provider: 'deepseek-account', model: 'deepseek-flash', coding: 40, asOf: '2026-11-14' },
+      { provider: ' deepseek-account ', model: 'deepseek-flash', coding: 50, asOf: '2026-11-14' }, // trims to the same pair → merge
+    ] as never)
+    expect(result.kind).toBe('imported')
+    const rows = controller.snapshot().draft?.capabilityOverrides ?? []
+    expect(rows).toHaveLength(2)
+    expect(rows.find(row => row.provider === '')?.coding).toBe(70)
+    expect(rows.find(row => row.provider === 'deepseek-account')?.coding).toBe(50)
+    controller.dispose()
+  })
+
+  it('re-import replaces generic rows but PRESERVES existing qualified rows', async () => {
+    const { SettingsSectionController } = await import('../../src/client/settings-controller.js')
+    const form = new FakeForm(baseConfig())
+    const controller = new SettingsSectionController(form, emptyCatalogPort)
+    controller.init()
+    await vi.waitFor(() => { if (controller.snapshot().status !== 'ready') throw new Error('form') })
+    controller.importCapabilityOverrides([
+      { model: 'deepseek-flash', coding: 70, asOf: '2026-11-13' },
+      { provider: 'deepseek-account', model: 'deepseek-flash', coding: 40, asOf: '2026-11-13' },
+    ] as never)
+    controller.importCapabilityOverrides([{ model: 'deepseek-flash', coding: 90, asOf: '2026-11-14' }] as never)
+    const rows = controller.snapshot().draft?.capabilityOverrides ?? []
+    expect(rows).toHaveLength(2)
+    expect(rows.find(row => row.provider === '')?.coding).toBe(90) // replaced
+    expect(rows.find(row => row.provider === 'deepseek-account')?.coding).toBe(40) // preserved
     controller.dispose()
   })
 })

@@ -422,9 +422,13 @@ export class SettingsSectionController {
   }
 
   /** Import-time feedback for one override row: where the model resolves. */
-  #overrideMatch(model: string): 'candidate' | 'kb' | 'none' {
+  #overrideMatch(model: string, provider?: string): 'candidate' | 'kb' | 'none' {
     const key = canonicalizeModelId(model)
-    if (this.#state.draft?.priority.some(entry => canonicalizeModelId(entry.model) === key) === true) return 'candidate'
+    const route = (provider ?? '').trim()
+    if (route !== '') {
+      // A qualified row matches a candidate only on the exact route.
+      if (this.#state.draft?.priority.some(entry => entry.provider === route && canonicalizeModelId(entry.model) === key) === true) return 'candidate'
+    } else if (this.#state.draft?.priority.some(entry => canonicalizeModelId(entry.model) === key) === true) return 'candidate'
     if (kbEntryFor(model) !== undefined) return 'kb'
     return 'none'
   }
@@ -438,14 +442,10 @@ export class SettingsSectionController {
    * @param rows - evaluated rows as the research package produced them.
    * @returns 'imported' with per-row feedback, or 'rejected' with reasons.
    */
-  importCapabilityOverrides = (rows: readonly CapabilityOverrideView[]): { kind: 'imported'; rows: { model: string; match: 'candidate' | 'kb' | 'none' }[] } | { kind: 'rejected'; reasons: string[] } => {
+  importCapabilityOverrides = (rows: readonly CapabilityOverrideView[]): { kind: 'imported'; rows: { model: string; match: 'candidate' | 'kb' | 'none' }[]; mergedDuplicates: { model: string; provider: string }[] } | { kind: 'rejected'; reasons: string[] } => {
     const reasons: string[] = []
-    const seen = new Set<string>()
     rows.forEach((row, index) => {
       if (row.model === '') reasons.push(`#${index + 1}: missing model id`)
-      const key = canonicalizeModelId(row.model)
-      if (seen.has(key)) reasons.push(`#${index + 1}: duplicate model "${row.model}"`)
-      seen.add(key)
       if (row.overall === undefined && row.coding === undefined && row.webdev === undefined && row.agentic === undefined) {
         reasons.push(`#${index + 1}: "${row.model}" carries no dimension score`)
       }
@@ -457,12 +457,29 @@ export class SettingsSectionController {
     })
     if (rows.length > MAX_CAPABILITY_OVERRIDES) reasons.push(`at most ${MAX_CAPABILITY_OVERRIDES} rows are allowed`)
     if (reasons.length > 0) return { kind: 'rejected', reasons }
+    // Evaluator duplicates MERGE last-wins (Zd, revising the B-3 reject ruling
+    // with real-world evidence: research models re-emit listed models despite
+    // the one-row contract — a duplicate is not grounds to bounce the batch).
+    // The pair key is (normalised provider, canonicalised model) so generic
+    // and route-qualified rows of one model coexist.
+    const merged = new Map<string, CapabilityOverrideView>()
+    const mergedDuplicates: { model: string; provider: string }[] = []
+    for (const row of rows) {
+      const provider = (row.provider ?? '').trim()
+      const key = `${provider}\0${canonicalizeModelId(row.model)}`
+      if (merged.has(key)) mergedDuplicates.push({ model: row.model, provider })
+      merged.set(key, { ...row, provider })
+    }
+    const uniqueRows = [...merged.values()]
     this.#edit(draft => {
-      // Import replaces the previous import wholesale (the research package is
-      // one coherent evaluation); existing rows from an older import go.
-      draft.capabilityOverrides = rows.map(row => ({ ...row }))
+      // Re-import replaces the GENERIC rows (the research package is one
+      // coherent evaluation) but PRESERVES qualified rows — route-specific
+      // scores are hand-maintained knowledge the model-level package never
+      // carries.
+      const qualified = (draft.capabilityOverrides ?? []).filter(row => (row.provider ?? '').trim() !== '')
+      draft.capabilityOverrides = [...qualified, ...uniqueRows]
     })
-    return { kind: 'imported', rows: rows.map(row => ({ model: row.model, match: this.#overrideMatch(row.model) })) }
+    return { kind: 'imported', rows: uniqueRows.map(row => ({ model: row.model, match: this.#overrideMatch(row.model, row.provider) })), mergedDuplicates }
   }
 
   /** Remove one override row from the draft (unified save persists). */

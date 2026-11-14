@@ -413,16 +413,17 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
   // ADR 0016 d3 runtime tolerance: overrides are auxiliary scoring data, never
   // routing structure — a malformed or duplicated hand-edited row degrades
   // (dropped / last-wins) with a warning instead of refusing to load.
-  const seenOverrideModels = new Set<string>()
+  const seenOverridePairs = new Set<string>()
   for (const entry of config.capabilityOverrides ?? []) {
     if (entry.model === '') {
       degraded.push('dsh-subagent-plus: capabilityOverrides row without a model id is ignored')
       continue
     }
-    if (seenOverrideModels.has(entry.model)) {
-      degraded.push(`dsh-subagent-plus: capabilityOverrides repeats "${entry.model}"; the last row wins`)
+    const pair = `${(entry.provider ?? '').trim()}\0${entry.model.toLowerCase().replace(/[\s_-]+/g, '-')}`
+    if (seenOverridePairs.has(pair)) {
+      degraded.push(`dsh-subagent-plus: capabilityOverrides repeats "${entry.model}"${(entry.provider ?? '').trim() !== '' ? ` (${(entry.provider ?? '').trim()})` : ''}; the last row wins`)
     }
-    seenOverrideModels.add(entry.model)
+    seenOverridePairs.add(pair)
   }
   // ADR 0014 d2: with defaults on, derivation wins and stored rows sit
   // ignored — a hand-edited document in that state deserves a warning, not a
