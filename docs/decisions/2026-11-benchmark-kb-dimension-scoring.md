@@ -43,6 +43,16 @@
 - **优先级链（维度级）：L2 override > L0 KB > 0.5 填充 > 哨兵**（全缺触发）；换算＝**0-100 /100 线性映射、不重归一**（重归一会抹掉用户给的相对差）＋残余校准偏差声明（不同产出模型刻度漂移）＋UI 显示评分来源（内置快照日期/导入 asOf）。
 - overrides UI：列表常驻匹配状态徽标（随候选增删实时重算）＋逐条删除＋清空（＝回 L0）。
 
+### 3a. provider 路由感知与调研包硬化（Z10/Z11，2026-11-14 用户两轮裁定）
+
+**原则**：能力＝模型内在属性（同模型多路由默认共享 generic 评分——容灾对/配额分摊正确且零重复劳动）；**provider 限定行**（override 带 provider）为逃生门——中转/量化/配额差异可对单路由单独评分并压过 generic；多供应商路由始终是候选清单一等公民。Z9 的"导出按模型折叠"被撤销（目录保真优先）。
+
+- **两段式解析**：qualified 精确对趟 → generic 趟（层优先绝对压过数组顺序）；qualified 行整行替换（缺维度回落 KB，不回落 generic 行）；不外溢其他 provider 路由。
+- **导入合并语义（修订 B-3）**：真实调研回传实证评估器无视"一行一模型"契约仍重复输出——重复行按 (归一 provider, canonical model) 对**自动合并 last-wins**＋反馈明示，不再整包拒；generic 与 qualified 行并存；重导入替换 generic 行、**保留手编 qualified 行**。
+- **单一英文 prompt（语言决策证据）**：judge 语言偏置（arXiv:2505.12201, EMNLP 2025）＋指令遵循随远离英语衰减（M-IFEval/CIF-Bench/MaXIFE）＋Qwen3 英文提示下偶发中文泄漏；中文模型英文结构化提示无系统性降质——prompt_zh/prompt_en 折叠为单一 canonical 英文 prompt。输出契约硬化：恰好 N 对象（计数写死）＋清单顺序＋自包含（禁 same as above/同上/ditto）＋note ≤120 字符纯文本禁引用标记＋完成前自检（计数约束是文献公认最脆弱类，故导入合并为程序侧兜底）。schema bump 2。
+- **匹配收敛**：matchOverrideRoute 单一谓词（candidate > kb > none > route-miss）统一导入反馈/列表徽章/导出标注三处；qualified 行对完整目录精确对匹配，未命中＝route-miss 徽章（拼错 provider 可见）。
+- copyConfig 对 capabilityOverrides 行级深拷贝（Za：删除 splice 共享引用致永不落盘的既有 bug）。
+
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）
 
 恢复默认按钮禁用态＝**内联展开** opacity .45＋cursor default（CSS 类打不过 inline cursor——P1 教训）；五区"待保存"徽标全函数分派（清单区＝priority+strategy+钉定三件；Team＝nameMap+nameMapDefaults；兜底行＝fallback×3；高级折叠头＝5 开关；limits）且徽标判定与 fieldOps **共用 JSON 比较助手**；defaultsHint 追加"（预览随草稿实时变化，保存后生效）"；"未收录"标注＋KB 快照日期进 ⓘ help。
