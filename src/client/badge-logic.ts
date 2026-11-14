@@ -4,7 +4,8 @@
  * @module dsh-subagent-plus/client/badge-logic
  */
 
-import { capabilityOf, type CapabilityOverride } from '../capability-scoring.js'
+import { capabilityOf, familyScore, type CapabilityOverride } from '../capability-scoring.js'
+import { NOISE_BAND } from '../strategy.js'
 
 /** Structural view of the durable `modelSelection` projection. */
 export interface ModelSelectionLike {
@@ -105,4 +106,28 @@ export function benchRouteLabelsOf(
   return routes
     .filter(route => !holding.has(`${route.provider}/${route.model}`))
     .map(route => `${route.provider}/${route.model}`)
+}
+
+/** Noise-band visibility (H4, ADR 0016 3d): when the top two known
+ *  candidates' S-family scores sit inside NOISE_BAND, the user's LISTING
+ *  ORDER decides the review family — surfaced so the outcome never reads as
+ *  an unexplained (or buggy) pick.
+ *  @param routes - the candidate route list.
+ *  @param overrides - user-imported evaluation rows (L2).
+ *  @returns the top-two S-score gap when it falls inside the band and both
+ *  candidates are known; undefined otherwise (including single-known lists). */
+export function sBandGapOf(
+  routes: readonly VisibilityRoute[],
+  overrides: readonly CapabilityOverride[],
+): number | undefined {
+  const scores: number[] = []
+  for (const route of routes) {
+    const view = capabilityOf(route.model, overrides, undefined, route.provider)
+    if (view.unknown) continue
+    scores.push(familyScore(view, 'S'))
+  }
+  if (scores.length < 2) return undefined
+  scores.sort((left, right) => right - left)
+  const gap = scores[0]! - scores[1]!
+  return gap > 0 && gap < NOISE_BAND ? gap : undefined
 }

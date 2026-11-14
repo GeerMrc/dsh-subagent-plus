@@ -169,7 +169,7 @@ const fastHintOf = (candidate: StarterCandidate): number => (FAST_HINT.test(cand
  *  does not extend to B/F (their collision logic consumes strict scores).
  *  Non-transitive by design inside a 2×band spread — the first-listed model
  *  accumulates and sub-band challengers never displace it. */
-const NOISE_BAND = 0.02
+export const NOISE_BAND = 0.02
 
 /**
  * Assign the S/B/F slots by KB family scores (ADR 0016 d2). Each family ranks

@@ -20,7 +20,7 @@ import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
 import { kbStatusOf, KB_AS_OF } from '../capability-scoring.js'
-import { benchRouteLabelsOf, kbVisibilityOf } from './badge-logic.ts'
+import { benchRouteLabelsOf, kbVisibilityOf, sBandGapOf } from './badge-logic.ts'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -364,6 +364,9 @@ function EditorRoutes(props: EditorProps) {
   // Bench candidates (G3): listed routes no effective row references — the
   // middle failover tier, surfaced so an idle candidate never reads as a bug.
   const benchLabels = benchRouteLabelsOf(listed, state.effectiveNameMap)
+  // Noise-band visibility (H4): a sub-band top-two S gap means the listing
+  // order decided the review family — say so before it reads as a bug.
+  const bandGap = sBandGapOf(listed, draft.capabilityOverrides ?? [])
   // ADR 0007 decision 3: under the pinned strategy the candidate list is not
   // shown, so the mapping's route pickers lock instead of sourcing a list the
   // user cannot see or edit.
@@ -626,6 +629,9 @@ function EditorRoutes(props: EditorProps) {
             : null}
           {!byNameLocked && benchLabels.length > 0
             ? <p style={hintStyle}>{t('byname.benchHint').replace('{n}', String(benchLabels.length))}</p>
+            : null}
+          {!byNameLocked && draft.nameMapDefaults && bandGap !== undefined
+            ? <p style={hintStyle}>{t('byname.bandHint').replace('{gap}', bandGap.toFixed(4))}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>

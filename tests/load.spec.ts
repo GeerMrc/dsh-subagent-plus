@@ -811,6 +811,31 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(warns.mock.calls.some(args => String(args[0]).includes('unknown'))).toBe(false)
   })
 
+  it('one config, two consumers: keyword children follow Team rows, plain children the strategy chain — no divergence (H3 pin)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({}, { llm })
+    // Keyword child: the Team row routes it with the materialised intent.
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    expect(((reviewer as unknown as { model: MockModel }).model).select)
+      .toHaveBeenCalledWith({ provider: 'sz', model: 'model-x1', reasoningEffort: 'xhigh' })
+    // Plain child (name matches no keyword stem): the STRATEGY chain routes it
+    // — no row effort, rotation over the same candidate list.
+    const helper = memberAgent('helper-bot')
+    await fireCreated(ctx, helper)
+    const helperSelects = ((helper as unknown as { model: MockModel }).model).select.mock.calls
+    expect(helperSelects).toHaveLength(1)
+    expect(helperSelects[0]![0]).not.toHaveProperty('reasoningEffort')
+    expect(['sz/model-x1', 'hh/model-x2']).toContain(`${(helperSelects[0]![0] as { provider: string }).provider}/${(helperSelects[0]![0] as { model: string }).model}`)
+    // A takeover on the keyword child consumes one rotation slot (declared)
+    // but never disturbs plain children: the next plain child still gets a
+    // healthy candidate from the strategy chain.
+    await dispatchFailure(ctx, reviewer, 'sz', 'RATE_LIMIT', 429)
+    const second = memberAgent('courier-bot')
+    await fireCreated(ctx, second)
+    expect(((second as unknown as { model: MockModel }).model).select).toHaveBeenCalledTimes(1)
+  })
+
   it('a cooling Team row hands over to the next healthy CANDIDATE, not straight to the fallback (G3)', async () => {
     const { llm } = tieredLlm(qwenTiers)
     const { ctx } = await derivedContext({ cooldownMs: 60_000 }, { llm })

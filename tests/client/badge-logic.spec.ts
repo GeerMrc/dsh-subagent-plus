@@ -125,3 +125,26 @@ describe('benchRouteLabelsOf (G3)', () => {
     expect(benchRouteLabelsOf(routes, [{ provider: 'sz', model: 'model-a' }])).toEqual([])
   })
 })
+
+/** H4: the noise-band gap the settings hint surfaces. */
+describe('sBandGapOf (H4)', () => {
+  it('reports the top-two S gap when it falls inside the band (the user scenario-B shape)', async () => {
+    const { sBandGapOf } = await import('../../src/client/badge-logic.ts')
+    const routes = [
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8' },      // S .4800
+      { provider: 'deepseek-official', model: 'deepseek-v4-pro' }, // S .4965 — gap .0165
+    ]
+    const gap = sBandGapOf(routes, [])
+    expect(gap).not.toBeUndefined()
+    expect(gap!).toBeGreaterThan(0.01)
+    expect(gap!).toBeLessThan(0.02)
+  })
+
+  it('stays silent outside the band, for single-known lists, and for unknowns', async () => {
+    const { sBandGapOf } = await import('../../src/client/badge-logic.ts')
+    // v4.1-flash (.5582) vs 27b (.48): gap .078 — outside.
+    expect(sBandGapOf([{ provider: 'a', model: 'deepseek-flash' }, { provider: 'b', model: 'Qwen3.8-27B-FP8' }], [])).toBeUndefined()
+    expect(sBandGapOf([{ provider: 'a', model: 'Qwen3.8-27B-FP8' }], [])).toBeUndefined()
+    expect(sBandGapOf([{ provider: 'a', model: 'my-ft-v2' }, { provider: 'b', model: 'private-b' }], [])).toBeUndefined()
+  })
+})
