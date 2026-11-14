@@ -324,10 +324,40 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
 export function deriveStarterRows(candidates: readonly StarterCandidate[], options: SlotAssignmentOptions = {}): NameMapEntryView[] {
   if (candidates.length === 0) return []
   const slots = assignSlotsByCapability(candidates, options)
+  // Sibling route splitting (G4, ADR 0016 3c): interchangeable routes of the
+  // slot's model — same canonical + S-score + fast hint, the F3 dedup key —
+  // are deployments of one model and alternate over the family's rows
+  // (row-granularity equal-weight load spreading, LiteLLM's deployment
+  // round-robin shape). The SLOT WINNER leads the rotation and takes the odd
+  // extra row (Z7's structural chain outranks plain list order when it picks
+  // a later listing — the winner earned the family); remaining siblings
+  // follow in list order. A provider-qualified override breaks the key, so
+  // deliberately differentiated routes (Z10) never split.
+  const overrides = options.overrides ?? []
+  const siblingKeyOf = (candidate: StarterCandidate): string => {
+    const view = capabilityOf(candidate.model, overrides, options.kb, candidate.provider)
+    return `${canonicalizeModelId(candidate.model)}\0${familyScore(view, 'S')}\0${fastHintOf(candidate)}`
+  }
+  const siblingsOf = (pick: StarterCandidate | undefined): StarterCandidate[] => {
+    if (pick === undefined) return []
+    const key = siblingKeyOf(pick)
+    const siblings = candidates.filter(candidate => siblingKeyOf(candidate) === key)
+    if (siblings.length <= 1) return [pick]
+    return [pick, ...siblings.filter(candidate => candidate !== pick)]
+  }
+  const siblingsBySlot: Record<'S' | 'B' | 'F', StarterCandidate[]> = {
+    S: siblingsOf(slots.S),
+    B: siblingsOf(slots.B),
+    F: siblingsOf(slots.F),
+  }
+  const familyCount: Partial<Record<'S' | 'B' | 'F', number>> = {}
   const rows: NameMapEntryView[] = []
   for (const row of STARTER_TEMPLATE_ROWS) {
-    const route = slots[row.slot]
-    if (route === undefined) continue
+    const siblings = siblingsBySlot[row.slot]
+    if (siblings.length === 0) continue
+    const index = familyCount[row.slot] ?? 0
+    familyCount[row.slot] = index + 1
+    const route = siblings[index % siblings.length]!
     rows.push({
       name: row.keyword,
       provider: route.provider,

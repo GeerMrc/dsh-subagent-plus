@@ -893,6 +893,71 @@ describe('S-slot noise band, list order first (G2, ADR 0016 3c — user ruling)'
   })
 })
 
+describe('sibling route splitting — same model, several providers (G4, ADR 0016 3c)', () => {
+  const at = (provider: string, model: string, efforts: string[] = ['off', 'low', 'medium', 'xhigh']): Parameters<typeof deriveStarterRows>[0][number] =>
+    ({ provider, model, efforts: efforts.map(id => ({ id })) })
+  const providersOf = (rows: Parameters<typeof deriveStarterRows>[0], slotKeywords: string[], options?: Parameters<typeof deriveStarterRows>[1]): string[] =>
+    slotKeywords.map(keyword => deriveStarterRows(rows, options).find(r => r.name === keyword)!.provider)
+
+  it('one model through two providers alternates per row: 6+6 equal weight over 12 rows', () => {
+    const rows = deriveStarterRows([at('sz', 'model-x1'), at('hh', 'model-x1')])
+    expect(providersOf([at('sz', 'model-x1'), at('hh', 'model-x1')], ['review', 'audit', 'verif', 'plan'])).toEqual(['sz', 'hh', 'sz', 'hh'])
+    expect(rows.filter(r => r.provider === 'sz')).toHaveLength(6)
+    expect(rows.filter(r => r.provider === 'hh')).toHaveLength(6)
+    // F's winner is the LATER listing (the all-unknown fallback keeps last) —
+    // winner-leads rotation puts hh on the family's first row.
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('hh')
+    expect(rows.find(r => r.name === 'qa')?.provider).toBe('sz')
+  })
+
+  it('each row materialises effort on ITS OWN route ladder', () => {
+    const rows = deriveStarterRows([
+      at('sz', 'model-x1', ['off', 'low', 'medium', 'xhigh']),
+      at('hh', 'model-x1', ['low', 'high', 'max']),
+    ])
+    expect(rows.find(r => r.name === 'review')).toMatchObject({ provider: 'sz', reasoningEffort: 'xhigh' })
+    expect(rows.find(r => r.name === 'audit')).toMatchObject({ provider: 'hh', reasoningEffort: 'max' }) // top of hh's ladder
+  })
+
+  it('three entrances rotate round-robin; the odd extra row goes to the slot winner', () => {
+    const rows = deriveStarterRows([at('p1', 'model-x1'), at('p2', 'model-x1'), at('p3', 'model-x1')])
+    // S winner is the first listing; the rotation then follows list order.
+    expect(providersOf([at('p1', 'model-x1'), at('p2', 'model-x1'), at('p3', 'model-x1')], ['review', 'audit', 'verif', 'plan'])).toEqual(['p1', 'p2', 'p3', 'p1'])
+    // B's winner is the median (p2) — winner leads, then list order.
+    expect(rows.filter(r => r.name === 'research' || r.name === 'dev' || r.name === 'build' || r.name === 'execute' || r.name === 'write' || r.name === 'design').map(r => r.provider)).toEqual(['p2', 'p1', 'p3', 'p2', 'p1', 'p3'])
+  })
+
+  it("dual 27B entrances plus flash-next and v4-pro: the B family splits 3+3 (end-to-end, shipped KB)", () => {
+    const rows = deriveStarterRows([
+      { provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
+      { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
+    ])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('strata') // S (noise band: first-listed)
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('deepseek-official') // F (occupancy yield)
+    const bProviders = rows.filter(r => ['research', 'dev', 'build', 'execute', 'write', 'design'].includes(r.name)).map(r => r.provider)
+    // The B median winner is the hh entrance (its xhigh-topped ladder wins the
+    // structural tie) — winner leads, alternates with sz: 3+3 equal weight.
+    expect(bProviders).toEqual(['hh', 'sz', 'hh', 'sz', 'hh', 'sz'])
+  })
+
+  it('a provider-qualified override breaks interchangeability: deliberately differentiated routes never split (Z10)', () => {
+    const zkb: import('../src/capability-scoring.js').KbTable = {
+      'model-x': { aliases: [], dims: { overall: 0.50, coding: 0.80, webdev: 0.30, agentic: 0.30 } },
+      'model-y': { aliases: [], dims: { overall: 0.60, coding: 0.40, webdev: 0.60, agentic: 0.40 } },
+    }
+    const overrides = [{ provider: 'backup', model: 'model-x', overall: 20, coding: 20, webdev: 20, agentic: 20, asOf: '2026-11-15' }]
+    const rows = deriveStarterRows(
+      [at('official', 'model-x'), at('backup', 'model-x'), at('sz', 'model-y')],
+      { kb: zkb, overrides },
+    )
+    // S=official/x wins outright; the demoted backup is a DIFFERENT scoring
+    // unit (not a sibling) — the S family stays on official alone.
+    expect(providersOf([at('official', 'model-x'), at('backup', 'model-x'), at('sz', 'model-y')], ['review', 'audit', 'verif', 'plan'], { kb: zkb, overrides })).toEqual(['official', 'official', 'official', 'official'])
+  })
+})
+
 describe('resolveNameMapDefaults (X2, ADR 0014 d2 migration rule)', () => {
   it('absent field: empty stored map → defaults on; non-empty → custom', () => {
     expect(resolveNameMapDefaults(undefined, 0)).toBe(true)
