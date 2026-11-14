@@ -373,21 +373,39 @@ function EditorRoutes(props: EditorProps) {
     })
     const pkg = buildResearchPackage(candidates, todayText())
     const text = JSON.stringify(pkg, null, 2)
-    void navigator.clipboard?.writeText(text)
+    const fallbackToPanel = (): void => {
+      // Clipboard unavailable (http remote) or rejected: open the import panel
+      // prefilled with the package so the user can copy it manually.
+      setImportText(text)
+      setImportOpen(true)
+      setImportError(t('byname.research.clipboardFallback'))
+    }
+    if (navigator.clipboard?.writeText === undefined) {
+      fallbackToPanel()
+      return
+    }
+    void navigator.clipboard.writeText(text)
       .then(() => { exportFlash.flash(t('byname.research.copied')) })
-      .catch(() => {
-        // Clipboard unavailable (remote web): open the import panel prefilled
-        // with the package so the user can copy it manually.
-        setImportText(text)
-        setImportOpen(true)
-      })
+      .catch(fallbackToPanel)
   }
   const applyImport = (): void => {
     setImportError(undefined)
+    let parsed: unknown
     try {
-      const parsed: unknown = JSON.parse(importText)
+      parsed = JSON.parse(importText)
+    } catch {
+      setImportError(t('byname.research.notArray'))
+      return
+    }
+    try {
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && 'prompt' in (parsed as Record<string, unknown>)) {
+        // The user pasted the export package itself — a friendly pointer beats
+        // a raw "not an array" error.
+        setImportError(t('byname.research.packagePasted'))
+        return
+      }
       const rows = Array.isArray(parsed) ? parsed : undefined
-      if (rows === undefined) throw new Error('not an array')
+      if (rows === undefined) throw new Error(t('byname.research.notArray'))
       const result = controller.importCapabilityOverrides(rows as never)
       if (result.kind === 'rejected') {
         setImportError(result.reasons.join('；'))
