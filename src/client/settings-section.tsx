@@ -663,7 +663,11 @@ function EditorRoutes(props: EditorProps) {
               <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                   <span style={cardHeadingStyle}>{t('byname.research.source')}</span>
-                  <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
+                  {/* The rollback lever (K round): ONE click forgets every imported
+                      score and restores install-time default scoring — sized and
+                      labeled as the primary control it is (three user round-trips
+                      to find it at 20px/faded was the discoverability evidence). */}
+                  <button type="button" className="dsmp-hover" style={resetButtonStyle} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
                 </span>
                 {draft.capabilityOverrides.map((row, index) => (
                   <div key={`${(row.provider ?? '').trim()}\0${row.model}\0${index}`} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
