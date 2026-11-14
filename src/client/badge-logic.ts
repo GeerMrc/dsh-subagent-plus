@@ -81,3 +81,28 @@ export function kbVisibilityOf(
   }
   return { unknownModels, estimatedAll: unknownModels.length === 0 && routes.length > 0 && !anyAnchored }
 }
+
+/** One derived mapping row as the bench aggregate reads it. */
+export interface BenchRow {
+  /** Route qualifier of the row's route. */
+  provider: string
+  /** Model id of the row's route. */
+  model: string
+}
+
+/** Candidates holding no template row (G3, ADR 0016 3c): the middle failover
+ *  tier — idle until a row's model fails, then the first takeover before the
+ *  fallback is consulted. Surfaced as the bench hint so an idle candidate
+ *  never reads as a bug.
+ *  @param routes - the candidate route list.
+ *  @param rows - the effective (derived or stored) mapping rows.
+ *  @returns `provider/model` labels of candidates no row references. */
+export function benchRouteLabelsOf(
+  routes: readonly VisibilityRoute[],
+  rows: readonly BenchRow[],
+): string[] {
+  const holding = new Set(rows.map(row => `${row.provider}/${row.model}`))
+  return routes
+    .filter(route => !holding.has(`${route.provider}/${route.model}`))
+    .map(route => `${route.provider}/${route.model}`)
+}

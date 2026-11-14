@@ -811,6 +811,68 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(warns.mock.calls.some(args => String(args[0]).includes('unknown'))).toBe(false)
   })
 
+  it('a cooling Team row hands over to the next healthy CANDIDATE, not straight to the fallback (G3)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({ cooldownMs: 60_000 }, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    const model = (reviewer as unknown as { model: MockModel }).model
+    expect(model.select).toHaveBeenCalledWith({ provider: 'sz', model: 'model-x1', reasoningEffort: 'xhigh' })
+    // The row's provider fails → the middle tier takes the OTHER candidate.
+    await dispatchFailure(ctx, reviewer, 'sz', 'RATE_LIMIT', 429)
+    expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'hh', model: 'model-x2' }))
+    // Memoized: with the child now running the takeover (mock current()
+    // reflects the swap), a second failure during the same cooldown is a
+    // no-op boundary — exactly one takeover select, no cursor churn.
+    model.current.mockReturnValue({ provider: 'hh', model: 'model-x2' })
+    await dispatchFailure(ctx, reviewer, 'sz', 'RATE_LIMIT', 429)
+    expect(model.select.mock.calls.filter(call => (call[0] as { model: string }).model === 'model-x2')).toHaveLength(1)
+    // A failure ON the takeover route cools it too — the chain re-routes.
+    const { warns } = { warns: vi.spyOn(ctx.logger, 'warn') }
+    await dispatchFailure(ctx, reviewer, 'hh', 'RATE_LIMIT', 429)
+    expect(warns.mock.calls.some(args => String(args[0]).includes('model-x2') && String(args[0]).includes('cooling down'))).toBe(true)
+  })
+
+  it('a takeover candidate carries the takeover notice; the fallback hand-off carries the byName fallback notice (G3)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({
+      cooldownMs: 60_000,
+      fallbackProvider: 'zai', fallbackModel: 'glm-5.3', fallbackReasoningEffort: '',
+    }, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    await dispatchFailure(ctx, reviewer, 'sz', 'RATE_LIMIT', 429)
+    // Running on the takeover candidate: the takeover vocabulary names row → taker.
+    const onTakeover = await dispatchPreStep(ctx, reviewer, { provider: 'hh', model: 'model-x2' })
+    const takeoverText = JSON.stringify(onTakeover.kind === 'enter' ? onTakeover.messages : [])
+    expect(takeoverText).toContain('按角色接管')
+    expect(takeoverText).toContain('candidates outrank the fallback')
+    expect(takeoverText).toContain('sz/model-x1')
+    expect(takeoverText).toContain('hh/model-x2')
+    // All candidates cooling → the child lands on the fallback: the byName
+    // fallback notice (mapped → fallback), not the generic one.
+    await dispatchFailure(ctx, reviewer, 'hh', 'RATE_LIMIT', 429)
+    await new Promise(r => setTimeout(r, 5))
+    const onFallback = await dispatchPreStep(ctx, reviewer, { provider: 'zai', model: 'glm-5.3' })
+    const fallbackText = JSON.stringify(onFallback.kind === 'enter' ? onFallback.messages : [])
+    expect(fallbackText).toContain('按角色兜底')
+    expect(fallbackText).toContain('runs fallback zai/glm-5.3')
+  })
+
+  it('the chain ends at the fallback only when every candidate is cooling (G3, per-branch terminal semantics)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({
+      cooldownMs: 60_000,
+      fallbackProvider: 'zai', fallbackModel: 'glm-5.3', fallbackReasoningEffort: '',
+    }, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    await dispatchFailure(ctx, reviewer, 'sz', 'RATE_LIMIT', 429)
+    await dispatchFailure(ctx, reviewer, 'hh', 'RATE_LIMIT', 429)
+    const model = (reviewer as unknown as { model: MockModel }).model
+    expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'zai', model: 'glm-5.3' }))
+  })
+
   it('inbox/claimed before the first derivation stays dormant; agent/created awaits it', async () => {
     // No llm service at all: the inject-time first derivation never ran.
     const { ctx } = await derivedContext()

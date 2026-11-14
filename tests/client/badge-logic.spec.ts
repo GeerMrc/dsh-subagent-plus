@@ -101,3 +101,27 @@ describe('kbVisibilityOf (F2)', () => {
     expect(partial.unknownModels).toEqual(['my-ft-v2'])
   })
 })
+
+/** G3: the bench hint aggregate — candidates holding no template row are the
+ *  middle failover tier and must be visible as such. */
+describe('benchRouteLabelsOf (G3)', () => {
+  it('lists exactly the candidates no derived row references', async () => {
+    const { benchRouteLabelsOf } = await import('../../src/client/badge-logic.ts')
+    const routes = [
+      { provider: 'sz', model: 'model-a' },
+      { provider: 'hh', model: 'model-b' },
+      { provider: 'zai', model: 'model-c' },
+    ]
+    const rows = [
+      { provider: 'sz', model: 'model-a' },
+      { provider: 'hh', model: 'model-b' },
+    ]
+    expect(benchRouteLabelsOf(routes, rows)).toEqual(['zai/model-c'])
+  })
+
+  it('an empty bench reports nothing (hint stays hidden)', async () => {
+    const { benchRouteLabelsOf } = await import('../../src/client/badge-logic.ts')
+    const routes = [{ provider: 'sz', model: 'model-a' }]
+    expect(benchRouteLabelsOf(routes, [{ provider: 'sz', model: 'model-a' }])).toEqual([])
+  })
+})

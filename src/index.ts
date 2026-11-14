@@ -43,6 +43,7 @@ import {
   byNameFallbackNotice,
   byNameNotice,
   byNameSkippedNotice,
+  byNameTakeoverNotice,
   candidateRoutes,
   classifyFailure,
   createSelectionState,
@@ -96,6 +97,10 @@ interface ByNameDecision {
   kind: 'by-name'
   name: string
   route: PinRoute
+  /** Middle-tier takeover route (G3): memoized while the row route cools, so
+   *  step boundaries reuse one takeover instead of advancing the rotation
+   *  cursor per step. Cleared when the memo itself goes unhealthy. */
+  takeover?: PinRoute
 }
 
 /** Structural view of the optional `agentTeams` service. */
@@ -308,6 +313,24 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (config.failOpen && !await routeRegistered(ctx, fallback.provider, fallback.model)) return undefined
     return fallback
   }
+  /** Middle tier for a Team row whose route is cooling or unregistered (G3,
+   *  ADR 0016 3c): the next healthy CANDIDATE takes over before the fallback
+   *  is ever consulted — bench candidates stop being idle. Memoized per
+   *  decision for the cooldown episode (cursor stability). */
+  const byNameTakeoverOf = async (config: PinConfig, decision: ByNameDecision): Promise<PinRoute | undefined> => {
+    if (decision.takeover !== undefined) {
+      if (healthyNow(config)(decision.takeover)
+        && (!config.failOpen || await routeRegistered(ctx, decision.takeover.provider, decision.takeover.model))) {
+        return decision.takeover
+      }
+      decision.takeover = undefined
+    }
+    const plan = resolveStrategyPlan(config)
+    if (plan.kind !== 'spread') return undefined
+    const next = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
+    if (next !== undefined) decision.takeover = next
+    return next
+  }
 
   /**
    * Dual-source name resolution (ADR 0012): try the roster-based tryMembership
@@ -410,17 +433,19 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     }
     const byName = decideByName(config, agent)
     if (byName !== undefined) {
-      // Health/registration check at select-time (ADR 0010 step-boundary semantics)
+      // Health/registration check at select-time (ADR 0010 step-boundary
+      // semantics). Three-tier chain (G3): row route → next healthy candidate
+      // → fallback; each branch keeps its pre-G3 terminal semantics.
       if (config.failOpen && !await routeRegistered(ctx, byName.route.provider, byName.route.model)) {
         const key = routeKey(byName.route)
         if (!unregisteredNameRoutes.has(key)) {
           unregisteredNameRoutes.add(key)
           ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; falling back or keeping resolved route`)
         }
-        return await usableFallbackOf(config) ?? undefined
+        return await byNameTakeoverOf(config, byName) ?? await usableFallbackOf(config) ?? undefined
       }
       if (!healthyNow(config)(byName.route)) {
-        return await usableFallbackOf(config) ?? byName.route
+        return await byNameTakeoverOf(config, byName) ?? await usableFallbackOf(config) ?? byName.route
       }
       return byName.route
     }
@@ -529,6 +554,10 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     let model: string | undefined
     if (byName !== undefined && byName.route.provider === provider) {
       model = byName.route.model
+    } else if (byName !== undefined && byName.takeover !== undefined && byName.takeover.provider === provider) {
+      // G3: a failure on the takeover candidate cools that route too —
+      // without this the middle tier would keep serving a failing route.
+      model = byName.takeover.model
     } else if (decision !== undefined && decision.route.provider === provider) {
       model = decision.route.model
     } else {
@@ -645,6 +674,18 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     let text: string | undefined
     if (byName !== undefined && byName.route.provider === currentRoute.provider && byName.route.model === currentRoute.model) {
       text = byNameNotice(byName.name, routeId(currentRoute))
+    } else if (byName !== undefined) {
+      // Off its mapped route (G3): name the takeover candidate or the
+      // fallback hand-off — the byName chain's own vocabulary, not the
+      // generic fallback notice.
+      if (byName.takeover !== undefined && byName.takeover.provider === currentRoute.provider && byName.takeover.model === currentRoute.model) {
+        text = byNameTakeoverNotice(byName.name, routeId(byName.route), routeId(currentRoute))
+      } else {
+        const fallback = fallbackRouteOf(config)
+        if (fallback !== undefined && fallback.provider === currentRoute.provider && fallback.model === currentRoute.model) {
+          text = byNameFallbackNotice(routeId(byName.route), routeId(currentRoute))
+        }
+      }
     } else {
       const plan = resolveStrategyPlan(config)
       const pin = plan.kind === 'pinned' ? resolvePin(config) : undefined

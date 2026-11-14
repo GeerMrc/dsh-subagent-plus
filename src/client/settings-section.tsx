@@ -20,7 +20,7 @@ import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
 import { kbStatusOf, KB_AS_OF } from '../capability-scoring.js'
-import { kbVisibilityOf } from './badge-logic.ts'
+import { benchRouteLabelsOf, kbVisibilityOf } from './badge-logic.ts'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -361,6 +361,9 @@ function EditorRoutes(props: EditorProps) {
   // KB visibility of the candidate list (F2): unknown chips on the rows, the
   // summary line, and the estimatedAll mutual exclusion all read one aggregate.
   const kbVisibility = kbVisibilityOf(listed, draft.capabilityOverrides ?? [])
+  // Bench candidates (G3): listed routes no effective row references — the
+  // middle failover tier, surfaced so an idle candidate never reads as a bug.
+  const benchLabels = benchRouteLabelsOf(listed, state.effectiveNameMap)
   // ADR 0007 decision 3: under the pinned strategy the candidate list is not
   // shown, so the mapping's route pickers lock instead of sourcing a list the
   // user cannot see or edit.
@@ -620,6 +623,9 @@ function EditorRoutes(props: EditorProps) {
             : null}
           {!byNameLocked && draft.nameMapDefaults && kbVisibility.unknownModels.length > 0
             ? <p style={hintStyle}>{t('byname.kbUnknownSummary').replace('{n}', String(kbVisibility.unknownModels.length))}</p>
+            : null}
+          {!byNameLocked && benchLabels.length > 0
+            ? <p style={hintStyle}>{t('byname.benchHint').replace('{n}', String(benchLabels.length))}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>

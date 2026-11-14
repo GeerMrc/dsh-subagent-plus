@@ -938,6 +938,19 @@ export function byNameFallbackNotice(mappedLabel: string, fallbackLabel: string)
 }
 
 /**
+ * Transcript notice for a Team row running on a takeover CANDIDATE (G3, the
+ * middle tier): the mapped route went cooling/unregistered and the next
+ * healthy candidate from the list took over — the fallback was not needed.
+ * @param name - teammate name that matched the row.
+ * @param mappedLabel - `provider/model` of the unavailable mapped route.
+ * @param takeoverLabel - `provider/model` of the candidate now in use.
+ * @returns the bracketed one-line notice.
+ */
+export function byNameTakeoverNotice(name: string, mappedLabel: string, takeoverLabel: string): string {
+  return `[按角色接管 model keyword takeover: 匹配角色 "${name}" 的路由 ${mappedLabel} 当前不可用，由候选 ${takeoverLabel} 接管（候选清单优先于兜底）｜role route ${mappedLabel} for "${name}" unavailable; candidate ${takeoverLabel} takes over (candidates outrank the fallback) — dsh-subagent-plus]`
+}
+
+/**
  * Transcript notice for a mapped route that failOpen found unregistered with
  * no usable fallback: the child still runs the mapped route and fails loudly
  * (mirrors the pin semantics), so the notice names that.
