@@ -129,10 +129,21 @@ const toHit = (entry: KbEntry): KbHit => ({ dims: entry.dims, estimated: entry.e
  *  from every key (the OpenRouter cross-references, F4). Both sides run
  *  through the same canonicalizer, so the shipped file needs no migration —
  *  keys regenerate normalized at the next snapshot rebuild. WeakMap-cached:
- *  the shipped KB and test fixtures are stable objects. */
-const lookupCache = new WeakMap<KbTable, Map<string, KbEntry>>()
+ *  the shipped KB and test fixtures are stable objects — a table mutated
+ *  after a lookup stays stale by design, so tests rebuild fixture objects
+ *  (spread copies), never mutate a previously looked-up one. */
+interface KbLookup {
+  /** Canonical key/alias → merged entry (alias rows bridge EXACT lookups). */
+  readonly index: Map<string, KbEntry>
+  /** Canonical forms of the table's OWN keys — fan-out candidates only.
+   *  An alias row whose canonical form extends a stem (qwen-2.5-…) must not
+   *  let a different subfamily (qwen/qwen-2.5-72b) fan out onto it. */
+  readonly primaries: ReadonlySet<string>
+}
 
-function kbLookup(kb: KbTable): Map<string, KbEntry> {
+const lookupCache = new WeakMap<KbTable, KbLookup>()
+
+function kbLookup(kb: KbTable): KbLookup {
   const cached = lookupCache.get(kb)
   if (cached !== undefined) return cached
   const index = new Map<string, KbEntry>()
@@ -156,26 +167,34 @@ function kbLookup(kb: KbTable): Map<string, KbEntry> {
     if (existing.estimated === true || entry.estimated === true) merged.estimated = true
     index.set(canonical, merged)
   }
-  for (const [key, entry] of Object.entries(kb)) add(canonicalizeModelId(key), entry)
+  const primaries = new Set<string>()
+  for (const [key, entry] of Object.entries(kb)) {
+    const canonical = canonicalizeModelId(key)
+    primaries.add(canonical)
+    add(canonical, entry)
+  }
   for (const entry of Object.values(kb)) {
     for (const alias of entry.aliases) add(canonicalizeModelId(alias), entry)
   }
-  lookupCache.set(kb, index)
-  return index
+  const lookup: KbLookup = { index, primaries }
+  lookupCache.set(kb, lookup)
+  return lookup
 }
 
-/** Variant fan-out from one stem: match keys with the `stem-` prefix and keep
- *  the entry with more dimensions, then the higher mean — deterministic under
- *  snapshot refreshes. Callers guard single-token stems (never fan out). */
-function fanoutBest(stem: string, lookup: Map<string, KbEntry>): KbHit | undefined {
-  const fanouts = [...lookup.keys()].filter(key => key.startsWith(`${stem}-`))
+/** Variant fan-out from one stem: match PRIMARY keys with the `stem-` prefix
+ *  and keep the entry with more dimensions, then the higher mean —
+ *  deterministic under snapshot refreshes. Alias-derived index rows never fan
+ *  out (review 🟡#1: qwen/qwen-2.5-72b must not absorb the coder-32B alias).
+ *  Callers guard single-token stems (never fan out). */
+function fanoutBest(stem: string, lookup: KbLookup): KbHit | undefined {
+  const fanouts = [...lookup.primaries].filter(key => key.startsWith(`${stem}-`))
   if (fanouts.length === 0) return undefined
   const mean = (entry: KbEntry): number => {
     const values = Object.values(entry.dims)
     return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
   }
   const best = fanouts
-    .map(key => lookup.get(key)!)
+    .map(key => lookup.index.get(key)!)
     .sort((left, right) => Object.keys(right.dims).length - Object.keys(left.dims).length || mean(right) - mean(left))[0]!
   return toHit(best)
 }
@@ -190,14 +209,14 @@ export function kbEntryFor(modelId: string, kb: KbTable = KB): KbHit | undefined
   const stem = canonicalizeModelId(modelId)
   const curated = OFFICIAL_ID_STEMS[stem]
   if (curated !== undefined) {
-    const hit = lookup.get(curated)
+    const hit = lookup.index.get(curated)
     if (hit !== undefined) return toHit(hit)
     if (curated.includes('-')) {
       const fan = fanoutBest(curated, lookup)
       if (fan !== undefined) return fan
     }
   }
-  const direct = lookup.get(stem)
+  const direct = lookup.index.get(stem)
   if (direct !== undefined) return toHit(direct)
   // Strip-exact rounds: collect every intermediate stem, longest first.
   const stems = [stem]
@@ -207,7 +226,7 @@ export function kbEntryFor(modelId: string, kb: KbTable = KB): KbHit | undefined
     if (tail === null) break
     current = current.slice(0, current.length - tail[1].length - 1)
     stems.push(current)
-    const hit = lookup.get(current)
+    const hit = lookup.index.get(current)
     if (hit !== undefined) return toHit(hit)
   }
   // Fan-out retry, longest stem first — after every strip-exact round missed.

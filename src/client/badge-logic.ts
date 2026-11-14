@@ -51,9 +51,6 @@ export function badgeRoute(
   }
 }
 
-;
-
-
 /** One candidate route as the visibility aggregate reads it. */
 export interface VisibilityRoute {
   /** Route qualifier — a qualified override scores only its own route. */

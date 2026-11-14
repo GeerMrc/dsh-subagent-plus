@@ -134,6 +134,18 @@ function crossReference(entries, orModels) {
       if (!bySquish.has(squish(alias))) bySquish.set(squish(alias), key)
     }
   }
+  // Fail-loud collision check: two DISTINCT KB entries squishing identically
+  // (glm-4.5 vs glm-45) would first-win silently — warn so a future snapshot
+  // cannot misbridge (review F-round 🟡#5).
+  const squishCounts = new Map()
+  for (const [key, entry] of entries) {
+    for (const name of [key, ...entry.aliases]) {
+      const squished = squish(name)
+      const prior = squishCounts.get(squished)
+      if (prior !== undefined && prior !== key) console.warn(`  squish collision: "${prior}" ≡ "${key}" (${squished}) — first entry wins the bridge`)
+      squishCounts.set(squished, key)
+    }
+  }
   const added = []
   const curated = new Set()
   const considerCurated = id => {

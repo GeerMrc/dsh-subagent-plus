@@ -182,3 +182,15 @@ describe('committed OpenRouter aliases resolve end-to-end (F4)', () => {
     expect(kbEntryFor('openai/gpt-4o')?.dims.coding).toBe(KB['gpt-4o']?.dims.coding)
   })
 })
+
+describe('fan-out never absorbs an alias-derived subfamily (review 🟡#1)', () => {
+  it('qwen/qwen-2.5-72b-instruct stays unknown — the coder-32B alias bridges exact lookups only', () => {
+    // The F4 alias canonicalizes to qwen-2.5-coder-32b-instruct; the strip
+    // chain reaches stem qwen-2.5, whose only qwen-2.5-* neighbors in the
+    // index are ALIAS-derived. Fan-out considers primary keys only, so the
+    // 72B model must not inherit the coder-32B scores.
+    expect(kbEntryFor('qwen/qwen-2.5-72b-instruct')).toBeUndefined()
+    // The alias itself still bridges its exact form (F4 contract intact).
+    expect(kbEntryFor('qwen/qwen-2.5-coder-32b-instruct')?.dims.coding).toBe(KB['qwen2.5-coder-32b-instruct']?.dims.coding)
+  })
+})

@@ -694,7 +694,7 @@ describe('KB family-scored derivation (Z3, ADR 0016 d2/d3)', () => {
  *  pool, the ≥3-distinct-models commitment gate, and the A-6 boundary.
  *  Fixture weights are exact: S = .45c+.25o+.20a+.10w, B = .40c+.30o+.20w+.10a. */
 describe('slot diversity preference (F3)', () => {
-  // S-scores: a .575 > b .535 > d .4575 > c .325 > e .2475.
+  // S-scores: a .575 > b .565 > d .4775 > c .335 > e .2475.
   // B-scores: b .61 > a .56 > d .51 > c .35 > e .25.
   const kb: import('../src/capability-scoring.js').KbTable = {
     'model-a': { aliases: [], dims: { overall: 0.50, coding: 0.80, webdev: 0.30, agentic: 0.30 } },
@@ -718,7 +718,7 @@ describe('slot diversity preference (F3)', () => {
   })
 
   it('equal-distance neighbours resolve to the STRONGER side', () => {
-    // Five models with d re-weighted (S .53, B .58): B ranks b .61 > d .58 >
+    // Five models with d re-weighted (S .55, B .58): B ranks b .61 > d .58 >
     // a .56 > c .35 > e .25 → median a collides with S=a; d (idx1) and c
     // (idx3) sit equidistant — the stronger side wins.
     const walkKb: import('../src/capability-scoring.js').KbTable = {

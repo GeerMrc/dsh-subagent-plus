@@ -673,18 +673,21 @@ describe('capability override import (Z4, ADR 0016 d3)', () => {
 const emptyCatalogPort: CatalogPort = { load: async () => ({ groups: [], failureCount: 0 }) }
 
 describe('research package scope (Z8/Z10 — full catalogue, model-level scoring unit)', () => {
+  // deepseek-flash resolves to the KB since F1's curated stem — its match is
+  // 'kb' now, matching what a real export computes for the official route.
   const fullCatalogue = [
-    { provider: 'deepseek-official', model: 'deepseek-flash', match: 'none' as const },
-    { provider: 'deepseek-account', model: 'deepseek-flash', match: 'none' as const },
+    { provider: 'deepseek-official', model: 'deepseek-flash', match: 'kb' as const },
+    { provider: 'deepseek-account', model: 'deepseek-flash', match: 'kb' as const },
     { provider: 'sz', model: 'Qwen3.8-27B-FP8', match: 'none' as const },
     { provider: 'hh', model: 'Qwen3.8-27B-FP8', match: 'candidate' as const },
+    { provider: 'private', model: 'my-private-model', match: 'none' as const },
   ]
 
   it('keeps EVERY catalogue route in candidates (no collapsing) while the prompt scores one row per model', async () => {
     const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
     const pkg = buildResearchPackage(fullCatalogue, '2026-11-14') as { schema: number; candidates: unknown[]; prompt: string }
     expect(pkg.schema).toBe(2)
-    expect(pkg.candidates).toHaveLength(4) // both providers of deepseek-flash and both routes of the 27B stay visible
+    expect(pkg.candidates).toHaveLength(5) // both providers of deepseek-flash, both routes of the 27B, and the private row stay visible
     // Prompt lists each distinct model exactly once.
     expect(pkg.prompt.match(/- deepseek-flash/g)).toHaveLength(1)
     expect(pkg.prompt.match(/- Qwen3.8-27B-FP8/g)).toHaveLength(1)
@@ -693,8 +696,9 @@ describe('research package scope (Z8/Z10 — full catalogue, model-level scoring
   it('prompt carries the hardened output contract with live counts and route annotations', async () => {
     const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
     const pkg = buildResearchPackage(fullCatalogue, '2026-11-14') as { prompt: string }
-    expect(pkg.prompt).toContain('EXACTLY 2 objects')
-    expect(pkg.prompt).toContain('deepseek-flash (via deepseek-official / deepseek-account; unknown model — estimate by comparable positioning)')
+    expect(pkg.prompt).toContain('EXACTLY 3 objects') // deepseek-flash + Qwen3.8-27B-FP8 + the private model
+    expect(pkg.prompt).toContain('deepseek-flash (via deepseek-official / deepseek-account)') // KB-known since F1 — no unknown caveat
+    expect(pkg.prompt).toContain('my-private-model (unknown model — estimate by comparable positioning)')
     expect(pkg.prompt).toContain('Qwen3.8-27B-FP8 (via sz / hh; current candidate)')
     expect(pkg.prompt).toContain('same as above')
     expect(pkg.prompt).toContain('同上')
