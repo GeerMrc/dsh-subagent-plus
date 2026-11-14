@@ -780,3 +780,57 @@ describe('override runtime tolerance (Z7 review #2)', () => {
     expect(view.source).toBe('override')
   })
 })
+
+describe('provider-aware override resolution (Zb, ADR 0016 d3 Z10)', () => {
+  const kb = { 'route-model': { aliases: [], dims: { overall: 0.5, coding: 0.5, webdev: 0.5, agentic: 0.5 } } }
+  const at = (provider: string, model = 'route-model') =>
+    ({ provider, model, efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] })
+
+  it('a qualified row beats the generic row for its own route regardless of array order', async () => {
+    const { capabilityOf } = await import('../src/capability-scoring.js')
+    const generic = { model: 'route-model', overall: 80, coding: 80, webdev: 80, agentic: 80, asOf: '2026-11-14' }
+    const qualified = { provider: 'backup', model: 'route-model', overall: 20, coding: 20, webdev: 20, agentic: 20, asOf: '2026-11-14' }
+    // qualified FIRST — a single-pass last-wins loop would let the later generic row win.
+    const view = capabilityOf('route-model', [qualified, generic], kb, 'backup')
+    expect(view.dims.coding).toBe(0.2)
+    expect(view.source).toBe('override')
+  })
+
+  it('a qualified row does not spill onto other providers of the same model (they fall back to generic)', async () => {
+    const { capabilityOf } = await import('../src/capability-scoring.js')
+    const generic = { model: 'route-model', overall: 80, coding: 80, webdev: 80, agentic: 80, asOf: '2026-11-14' }
+    const qualified = { provider: 'backup', model: 'route-model', overall: 20, coding: 20, webdev: 20, agentic: 20, asOf: '2026-11-14' }
+    const official = capabilityOf('route-model', [generic, qualified], kb, 'official')
+    expect(official.dims.coding).toBe(0.8)
+    const backup = capabilityOf('route-model', [generic, qualified], kb, 'backup')
+    expect(backup.dims.coding).toBe(0.2)
+  })
+
+  it('a qualified row replaces the route wholesale: missing dimensions fill from the KB, not the generic row', async () => {
+    const { capabilityOf } = await import('../src/capability-scoring.js')
+    const generic = { model: 'route-model', overall: 90, coding: 90, webdev: 90, agentic: 90, asOf: '2026-11-14' }
+    const qualified = { provider: 'backup', model: 'route-model', coding: 30, asOf: '2026-11-14' } // partial dims
+    const view = capabilityOf('route-model', [generic, qualified], kb, 'backup')
+    expect(view.dims.coding).toBe(0.3)
+    expect(view.dims.overall).toBe(0.5) // KB median fill — NOT the generic row's 0.9
+  })
+
+  it('integration dividend: two routes of one model diverge in the derived table (one keeps S, the other drops)', async () => {
+    const generic = { model: 'route-model', overall: 80, coding: 80, webdev: 80, agentic: 80, asOf: '2026-11-14' }
+    const demoted = { provider: 'backup', model: 'route-model', overall: 20, coding: 20, webdev: 20, agentic: 20, asOf: '2026-11-14' }
+    const rows = deriveStarterRows(
+      [at('official'), at('backup'), at('other', 'other-model')],
+      { kb, overrides: [generic, demoted] },
+    )
+    // The official route stays the S winner; the demoted backup route falls to F.
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('official')
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('backup')
+  })
+
+  it('whitespace and empty provider strings normalise to generic', async () => {
+    const { capabilityOf } = await import('../src/capability-scoring.js')
+    const row = { model: 'route-model', provider: '  ', coding: 70, asOf: '2026-11-14' }
+    const view = capabilityOf('route-model', [row], kb, 'official')
+    expect(view.dims.coding).toBe(0.7)
+  })
+})

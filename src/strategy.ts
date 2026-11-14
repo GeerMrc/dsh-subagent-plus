@@ -10,6 +10,9 @@ import { routeId, type PinRoute, type RouteFields } from './pin.js'
 
 /** One user-imported capability evaluation row as the config schema materializes it (ADR 0016 d3). */
 export interface CapabilityOverrideView {
+  /** Route qualifier (Z10): non-empty = the row scores only that provider's
+   *  route of the model; empty = generic (every route). */
+  provider?: string
   /** Raw model identifier as researched — matched progressively at read time. */
   model: string
   /** Percentile-position scores 0-100 (50≈median, 70≈top quartile, 90≈top decile). */
@@ -180,7 +183,7 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   const overrides = options.overrides ?? []
   const views = candidates.map((candidate, index) => ({
     candidate,
-    view: options.kb === undefined ? capabilityOf(candidate.model, overrides) : capabilityOf(candidate.model, overrides, options.kb),
+    view: options.kb === undefined ? capabilityOf(candidate.model, overrides, undefined, candidate.provider) : capabilityOf(candidate.model, overrides, options.kb, candidate.provider),
     index,
   }))
   const legacyDiff = (a: typeof views[number], b: typeof views[number]): number => {

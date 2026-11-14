@@ -20,6 +20,11 @@ export type CapabilityDimension = 'overall' | 'coding' | 'webdev' | 'agentic'
 
 /** One user-imported evaluation row (config.capabilityOverrides entry). */
 export interface CapabilityOverride {
+  /** Route qualifier (Z10): when set, the row scores only the candidate with
+   *  this provider id — the escape hatch for same-model-different-provider
+   *  serving (relays, quantisation, quota). Empty/whitespace/absent = generic
+   *  (the row applies to every route of the model). */
+  provider?: string
   /** Raw model identifier as researched — matched progressively at read time. */
   model: string
   /** Percentile-position scores 0-100 (50≈median, 70≈top quartile, 90≈top decile). */
@@ -141,21 +146,42 @@ const asOverrideDims = (entry: CapabilityOverride): Partial<Record<CapabilityDim
 /** Resolve one model id through the L2 > L0 > missing chain (ADR 0016 d3).
  *  Dimension-level precedence: an override dimension wins; dimensions the
  *  override omits fall back to the KB; what neither has stays missing. */
-export function capabilityOf(modelId: string, overrides: readonly CapabilityOverride[] = [], kb: KbTable = KB): CapabilityView {
-  // Last-wins on duplicate models (ADR 0016 d3): a hand-edited list resolves
-  // to its final word; validateStrategyConfig warns about the repetition.
-  let override: CapabilityOverride | undefined
-  for (const entry of overrides) {
-    if (canonicalizeModelId(entry.model) === canonicalizeModelId(modelId)) override = entry
+/** Normalised route qualifier: whitespace trims to '' (= generic). */
+const normalizeProvider = (provider: string | undefined): string => (provider ?? '').trim()
+
+export function capabilityOf(modelId: string, overrides: readonly CapabilityOverride[] = [], kb: KbTable = KB, provider?: string): CapabilityView {
+  // Two-pass resolution (ADR 0016 d3, Z10): layer priority is absolute over
+  // array order — the qualified pass (exact provider + model pair) runs
+  // first, the generic pass (provider-less + model) only on miss; within a
+  // pass, last-wins (a hand-edited list resolves to its final word).
+  const route = normalizeProvider(provider)
+  const modelKey = canonicalizeModelId(modelId)
+  const pickPass = (wanted: string): CapabilityOverride | undefined => {
+    let found: CapabilityOverride | undefined
+    for (const entry of overrides) {
+      if (canonicalizeModelId(entry.model) !== modelKey) continue
+      if (normalizeProvider(entry.provider) === wanted) found = entry
+    }
+    return found
   }
+  // Qualified pass first (exact route), then the generic pass — layer priority
+  // absolute over array order; last-wins inside each pass.
+  const override = route !== ''
+    ? pickPass(route) ?? pickPass('')
+    : pickPass('')
   const kbHit = kbEntryFor(modelId, kb)
   if (override === undefined && kbHit === undefined) {
     return { dims: {}, estimated: true, unknown: true, source: 'none' }
   }
   const dims: Partial<Record<CapabilityDimension, number>> = { ...(kbHit?.dims ?? {}) }
   if (override !== undefined) {
-    for (const [dimension, value] of Object.entries(asOverrideDims(override))) {
-      dims[dimension as CapabilityDimension] = value as number
+    // A winning override replaces the route wholesale (Z10): its missing
+    // dimensions keep the KB fill — a generic row never contributes to a
+    // route a qualified row won.
+    const overrideDims = asOverrideDims(override)
+    for (const dimension of ['overall', 'coding', 'webdev', 'agentic'] as CapabilityDimension[]) {
+      const value = overrideDims[dimension]
+      if (value !== undefined) dims[dimension] = value
     }
   }
   const estimated = dims.coding === undefined

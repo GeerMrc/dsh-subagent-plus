@@ -129,6 +129,7 @@ export const Config: z = z.object({
   // materializeConfig can apply the stored-rows migration rule (ADR 0014 d2).
   nameMapDefaults: z.boolean().volatile(),
   capabilityOverrides: z.array(z.object({
+    provider: z.string().default(''),
     model: z.string().default(''),
     overall: z.union([z.number().min(0).max(100), z.const(undefined)]),
     coding: z.union([z.number().min(0).max(100), z.const(undefined)]),
