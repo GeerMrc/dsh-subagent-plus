@@ -19,7 +19,7 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
-import { kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
+import { capabilityOf, kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -587,6 +587,10 @@ function EditorRoutes(props: EditorProps) {
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
           {!byNameLocked && draft.nameMapDefaults
             ? <p style={hintStyle}>{`${listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')} ${t('byname.research.sourceKb').replace('{date}', KB_AS_OF)}`}</p>
+            : null}
+          {!byNameLocked && draft.nameMapDefaults && listed.length > 0
+            && listed.every(route => capabilityOf(route.model, draft.capabilityOverrides ?? []).estimated)
+            ? <p style={hintStyle}>{t('byname.estimatedAll')}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>
