@@ -4,6 +4,8 @@
  * @module dsh-subagent-plus/client/badge-logic
  */
 
+import { capabilityOf, type CapabilityOverride } from '../capability-scoring.js'
+
 /** Structural view of the durable `modelSelection` projection. */
 export interface ModelSelectionLike {
   /** Route of the most recent real request, folded from `request/header`. */
@@ -47,4 +49,38 @@ export function badgeRoute(
       ? { effort: route.reasoningEffort }
       : {}),
   }
+}
+
+;
+
+
+/** One candidate route as the visibility aggregate reads it. */
+export interface VisibilityRoute {
+  /** Route qualifier — a qualified override scores only its own route. */
+  provider: string
+  /** Raw model id as listed in the candidate routes. */
+  model: string
+}
+
+/** KB-visibility aggregate of a candidate list (ADR 0016 3a F2): which
+ *  candidates no layer knows (they hold zero rows whenever a known candidate
+ *  exists — A-1), and whether every candidate is known-but-estimated (the
+ *  ranking-basis hint). Mutually exclusive by construction: a list with
+ *  unknowns never claims estimatedAll, because the hint would then describe
+ *  rows those unknowns never receive.
+ *  @param routes - the candidate route list.
+ *  @param overrides - user-imported evaluation rows (L2), rescue path included.
+ *  @returns the unknown model ids in list order plus the estimatedAll flag. */
+export function kbVisibilityOf(
+  routes: readonly VisibilityRoute[],
+  overrides: readonly CapabilityOverride[],
+): { unknownModels: string[]; estimatedAll: boolean } {
+  const unknownModels: string[] = []
+  let anyAnchored = false
+  for (const route of routes) {
+    const view = capabilityOf(route.model, overrides, undefined, route.provider)
+    if (view.unknown) unknownModels.push(route.model)
+    else if (!view.estimated) anyAnchored = true
+  }
+  return { unknownModels, estimatedAll: unknownModels.length === 0 && routes.length > 0 && !anyAnchored }
 }

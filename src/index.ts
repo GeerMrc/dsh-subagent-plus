@@ -68,6 +68,7 @@ import {
 import { materializeConfig, type PinConfig, type PinConfigRuntime } from './config.js'
 export { Config } from './config.js'
 export type { PinConfig } from './config.js'
+import { capabilityOf } from './capability-scoring.js'
 import { attachSettingsSection, LivePinConfig } from './settings.js'
 
 export type { PinConfigRuntime } from './config.js'
@@ -236,6 +237,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   /** Re-derive the default rows from the live candidates (generation-guarded:
    *  in-flight requests dedupe, a request landing mid-flight re-runs once so
    *  the cache never settles on stale input). */
+  let unknownExcludedSignature = ''
   const rederive = (): Promise<void> => {
     deriveGeneration += 1
     if (deriveInFlight !== undefined) return deriveInFlight
@@ -249,9 +251,24 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
             model: route.model,
             ...await catalogueExtrasOf(route),
           })))
-          derivedRows = config.nameMapDefaults && resolveStrategyPlan(config).kind === 'spread'
+          const deriving = config.nameMapDefaults && resolveStrategyPlan(config).kind === 'spread'
+          derivedRows = deriving
             ? deriveStarterRows(withExtras, { overrides: config.capabilityOverrides ?? [] })
             : []
+          if (deriving) {
+            // Silent-exclusion witness (ADR 0016 3a F2): in a mixed list the
+            // unknown candidates hold zero rows (A-1) — say so once per
+            // distinct unknown-set, so re-derives stay quiet and a rescue
+            // override's silence is meaningful.
+            const overrides = config.capabilityOverrides ?? []
+            const unknownIds = withExtras
+              .filter(route => capabilityOf(route.model, overrides, undefined, route.provider).unknown)
+              .map(route => routeId(route))
+            if (unknownIds.length > 0 && unknownIds.length < withExtras.length && unknownIds.join(',') !== unknownExcludedSignature) {
+              unknownExcludedSignature = unknownIds.join(',')
+              ctx.logger.warn(`dsh-subagent-plus: ${unknownIds.length} candidate(s) unknown to the capability KB hold no rows while a known candidate fills every slot (${unknownIds.join(' · ')}); import an evaluation override in the settings page to include them`)
+            }
+          }
           settled = deriveGeneration === startedAt
         }
       } finally {

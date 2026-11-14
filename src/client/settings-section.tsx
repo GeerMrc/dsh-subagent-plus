@@ -19,7 +19,8 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
-import { capabilityOf, kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
+import { kbStatusOf, KB_AS_OF } from '../capability-scoring.js'
+import { kbVisibilityOf } from './badge-logic.ts'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -357,6 +358,9 @@ function EditorRoutes(props: EditorProps) {
   const draft = state.draft
   if (draft === undefined) return null
   const listed = listedRoutesOf(state)
+  // KB visibility of the candidate list (F2): unknown chips on the rows, the
+  // summary line, and the estimatedAll mutual exclusion all read one aggregate.
+  const kbVisibility = kbVisibilityOf(listed, draft.capabilityOverrides ?? [])
   // ADR 0007 decision 3: under the pinned strategy the candidate list is not
   // shown, so the mapping's route pickers lock instead of sourcing a list the
   // user cannot see or edit.
@@ -488,14 +492,27 @@ function EditorRoutes(props: EditorProps) {
                 {listed.map((route, index) => (
                   <div key={routeValue(route)} className="dsmp-hover" style={listRowStyle}>
                     <span style={indexChipStyle}>{index + 1}</span>
-                    <RowNameCell
-                      label={`${route.providerName} · ${route.modelName}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
-                      popupLabel={`${t('list.rowActions')} ${routeId(route)}`}
-                      index={index} count={listed.length}
-                      moveUp={t('list.moveUp')} moveDown={t('list.moveDown')} remove={t('list.remove')}
-                      onMove={delta => { controller.moveRoute(index, delta) }}
-                      onRemove={() => { controller.removeRoute(index) }}
-                    />
+                    {/* F2: an unknown candidate carries a visible chip — the
+                        excluded side of a mixed list is otherwise invisible
+                        (the audit's silent-zero-rows failure). */}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                      <RowNameCell
+                        label={`${route.providerName} · ${route.modelName}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
+                        popupLabel={`${t('list.rowActions')} ${routeId(route)}`}
+                        index={index} count={listed.length}
+                        moveUp={t('list.moveUp')} moveDown={t('list.moveDown')} remove={t('list.remove')}
+                        onMove={delta => { controller.moveRoute(index, delta) }}
+                        onRemove={() => { controller.removeRoute(index) }}
+                      />
+                      {kbStatusOf(route.model, draft.capabilityOverrides ?? [], undefined, route.provider) === 'unknown'
+                        ? (
+                          <span
+                            style={pendingBadgeStyle}
+                            title={t('byname.kbUnknownChipTitle').replace('{date}', KB_AS_OF)}
+                          >{t('byname.kbUnknownChip')}</span>
+                        )
+                        : null}
+                    </span>
                     {route.available && route.efforts !== undefined && route.efforts.length > 0
                       ? (
                         <EffortSelect
@@ -598,9 +615,11 @@ function EditorRoutes(props: EditorProps) {
           {!byNameLocked && draft.nameMapDefaults
             ? <p style={hintStyle}>{`${listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')} ${t('byname.research.sourceKb').replace('{date}', KB_AS_OF)}`}</p>
             : null}
-          {!byNameLocked && draft.nameMapDefaults && listed.length > 0
-            && listed.every(route => capabilityOf(route.model, draft.capabilityOverrides ?? [], undefined, route.provider).estimated)
+          {!byNameLocked && draft.nameMapDefaults && kbVisibility.estimatedAll
             ? <p style={hintStyle}>{t('byname.estimatedAll')}</p>
+            : null}
+          {!byNameLocked && draft.nameMapDefaults && kbVisibility.unknownModels.length > 0
+            ? <p style={hintStyle}>{t('byname.kbUnknownSummary').replace('{n}', String(kbVisibility.unknownModels.length))}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>
@@ -673,7 +692,7 @@ function EditorRoutes(props: EditorProps) {
                     ? routeShort(listedHit)
                     : routeIncomplete ? t('byname.routeInvalid') : `${row.provider} · ${row.model}`
                   const routeTitle = listedHit !== null
-                    ? routeFull(listedHit) + (kbEntryFor(listedHit.model) === undefined ? ` · ${t('byname.kbUnknown').replace('{date}', KB_AS_OF)}` : '')
+                    ? routeFull(listedHit) + (kbStatusOf(listedHit.model, draft.capabilityOverrides ?? [], undefined, listedHit.provider) === 'unknown' ? ` · ${t('byname.kbUnknown').replace('{date}', KB_AS_OF)}` : '')
                     : routeIncomplete ? t('byname.routeInvalid')
                       : catalogHit === null ? t('list.unavailable') : t('byname.routeNotListed')
                   return (
@@ -709,7 +728,7 @@ function EditorRoutes(props: EditorProps) {
                             same-named entries (the Q4 report). */}
                         {listedHit === null ? <option value="">{currentLabel}</option> : null}
                         {listed.map(candidate => (
-                          <option key={routeValue(candidate)} value={routeValue(candidate)} title={routeFull(candidate)}>{routeShort(candidate)}</option>
+                          <option key={routeValue(candidate)} value={routeValue(candidate)} title={routeFull(candidate) + (kbStatusOf(candidate.model, draft.capabilityOverrides ?? [], undefined, candidate.provider) === 'unknown' ? ` · ${t('byname.kbUnknownChip')}` : '')}>{routeShort(candidate)}</option>
                         ))}
                       </select>
                       {/* Always rendered: an unusable route renders the select's
@@ -748,7 +767,7 @@ function EditorRoutes(props: EditorProps) {
                     : listed.length === 0 ? t('byname.emptyList')
                       : t('byname.addPlaceholder')
               }</option>
-              {listed.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route)}>{routeShort(route)}</option>)}
+              {listed.map(route => <option key={routeValue(route)} value={routeValue(route)} title={routeFull(route) + (kbStatusOf(route.model, draft.capabilityOverrides ?? [], undefined, route.provider) === 'unknown' ? ` · ${t('byname.kbUnknownChip')}` : '')}>{routeShort(route)}</option>)}
             </select>
           </div>
         </div>

@@ -782,6 +782,35 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1', reasoningEffort: 'high' }))
   })
 
+  it('mixed known/unknown candidates warn once per unknown-set — the E2 silent-exclusion case (F2)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx, warns } = await derivedContext({
+      priority: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'hh', model: 'my-ft-v2', reasoningEffort: '' },
+      ],
+    }, { llm })
+    await new Promise(r => setTimeout(r, 10))
+    const unknownWarns = () => warns.mock.calls.filter(args => String(args[0]).includes('my-ft-v2'))
+    expect(unknownWarns()).toHaveLength(1) // known candidate holds every row; the unknown one is excluded — said once
+    // A settings commit re-derives from the SAME unknown-set: no duplicate warn.
+    void (ctx as unknown as { emit: (name: string, ...args: unknown[]) => void }).emit('settings/document-updated', 'dsh-subagent-plus')
+    await new Promise(r => setTimeout(r, 30))
+    expect(unknownWarns()).toHaveLength(1)
+  })
+
+  it('an all-unknown list never warns (list-order fallback is contract behavior, not a defect)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { warns } = await derivedContext({
+      priority: [
+        { provider: 'sz', model: 'model-x1', reasoningEffort: '' },
+        { provider: 'hh', model: 'model-x2', reasoningEffort: '' },
+      ],
+    }, { llm })
+    await new Promise(r => setTimeout(r, 10))
+    expect(warns.mock.calls.some(args => String(args[0]).includes('unknown'))).toBe(false)
+  })
+
   it('inbox/claimed before the first derivation stays dormant; agent/created awaits it', async () => {
     // No llm service at all: the inject-time first derivation never ran.
     const { ctx } = await derivedContext()

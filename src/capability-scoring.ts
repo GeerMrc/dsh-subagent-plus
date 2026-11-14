@@ -278,4 +278,23 @@ export function familyScore(view: CapabilityView, family: keyof typeof FAMILY_WE
   return score
 }
 
+/** The three-state KB visibility of one model id (ADR 0016 3a F2): the single
+ *  predicate the client badge, the summary line, and the runtime warn all
+ *  read, so an override rescue is visible everywhere at once.
+ *  - `anchored`: some layer knows the model AND carries the coding anchor.
+ *  - `known`: some layer knows the model, coding anchor missing (estimated).
+ *  - `unknown`: no layer knows it — last resort for every slot (A-1). */
+export type KbStatus = 'anchored' | 'known' | 'unknown'
+
+/** @param modelId - raw model identifier as listed in the candidate routes.
+ *  @param overrides - user-imported evaluation rows (L2), rescue path included.
+ *  @param kb - KB table override for tests.
+ *  @param provider - route qualifier; a qualified override scores only its route.
+ *  @returns the three-state visibility of the model. */
+export function kbStatusOf(modelId: string, overrides: readonly CapabilityOverride[] = [], kb: KbTable = KB, provider?: string): KbStatus {
+  const view = capabilityOf(modelId, overrides, kb, provider)
+  if (view.unknown) return 'unknown'
+  return view.estimated ? 'known' : 'anchored'
+}
+
 export { KB, KB_AS_OF }

@@ -3,6 +3,7 @@ import { KB } from '../src/capability-kb.js'
 import {
   canonicalizeModelId,
   kbEntryFor,
+  kbStatusOf,
   OFFICIAL_ID_STEMS,
   type KbTable,
 } from '../src/capability-scoring.js'
@@ -128,6 +129,25 @@ describe('curated stems table invariants (F1)', () => {
   it('shipped KB keys stay unique under the hardened canonicalizer', () => {
     const keys = Object.keys(KB).map(canonicalizeModelId)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+})
+
+describe('kbStatusOf three-state visibility (F2)', () => {
+  it('anchors: coding-backed entry / known: estimated entry / unknown: no layer', () => {
+    expect(kbStatusOf('gpt-5 (high)')).toBe('anchored') // coding-backed in the shipped snapshot
+    expect(kbStatusOf('deepseek-flash')).toBe('known') // resolves via curated stem, estimated
+    expect(kbStatusOf('Qwen3.8-27B')).toBe('known') // snapshot-wide text-source outage: estimated
+    expect(kbStatusOf('my-ft-v2')).toBe('unknown')
+  })
+
+  it('an override rescues an unknown id; a qualified override only rescues its own route', () => {
+    const overrides = [
+      { provider: 'official', model: 'my-ft-v2', coding: 80, asOf: '2026-11-14' },
+      { provider: 'other', model: 'my-ft-v3', coding: 80, asOf: '2026-11-14' },
+    ]
+    expect(kbStatusOf('my-ft-v2', overrides, undefined, 'official')).toBe('anchored')
+    expect(kbStatusOf('my-ft-v2', overrides, undefined, 'backup')).toBe('unknown')
+    expect(kbStatusOf('my-ft-v3', overrides)).toBe('unknown') // generic read: qualified row never applies
   })
 })
 

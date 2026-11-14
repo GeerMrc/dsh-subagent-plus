@@ -50,3 +50,54 @@ describe('settings locale dictionaries (key parity)', () => {
     expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
   })
 })
+
+/** F2 (ADR 0016 3a): the KB-visibility aggregate behind the candidate badge,
+ *  the summary line, and the estimatedAll mutual exclusion. */
+describe('kbVisibilityOf (F2)', () => {
+  const rows = [
+    { provider: 'sz', model: 'Qwen3.8-27B-FP8' },
+    { provider: 'hh', model: 'my-ft-v2' },
+    { provider: 'zai', model: 'deepseek-flash' },
+  ]
+
+  it('a mixed list reports exactly its unknown candidates and never claims estimatedAll', async () => {
+    const { kbVisibilityOf } = await import('../../src/client/badge-logic.ts')
+    expect(kbVisibilityOf(rows, [])).toEqual({ unknownModels: ['my-ft-v2'], estimatedAll: false })
+  })
+
+  it('all-unknown lists report every candidate and suppress estimatedAll (mutual exclusion)', async () => {
+    const { kbVisibilityOf } = await import('../../src/client/badge-logic.ts')
+    const all = [
+      { provider: 'sz', model: 'my-ft-v2' },
+      { provider: 'hh', model: 'private-b' },
+    ]
+    expect(kbVisibilityOf(all, [])).toEqual({ unknownModels: ['my-ft-v2', 'private-b'], estimatedAll: false })
+  })
+
+  it('all-estimated known candidates with no unknown claim estimatedAll', async () => {
+    const { kbVisibilityOf } = await import('../../src/client/badge-logic.ts')
+    const estimated = [
+      { provider: 'hh', model: 'deepseek-flash' },
+      { provider: 'zai', model: 'glm-5' },
+    ]
+    expect(kbVisibilityOf(estimated, [])).toEqual({ unknownModels: [], estimatedAll: true })
+  })
+
+  it('an imported override rescues its candidate out of the unknown report', async () => {
+    const { kbVisibilityOf } = await import('../../src/client/badge-logic.ts')
+    const rescued = kbVisibilityOf(rows, [{ model: 'my-ft-v2', coding: 70, asOf: '2026-11-14' }])
+    expect(rescued.unknownModels).toEqual([])
+    expect(rescued.estimatedAll).toBe(false) // Qwen3.8-27B carries the coding anchor
+  })
+
+  it('a qualified override rescues only its own provider route', async () => {
+    const { kbVisibilityOf } = await import('../../src/client/badge-logic.ts')
+    const rescued = kbVisibilityOf(rows, [{ provider: 'hh', model: 'my-ft-v2', coding: 70, asOf: '2026-11-14' }])
+    expect(rescued.unknownModels).toEqual([])
+    const partial = kbVisibilityOf([
+      { provider: 'sz', model: 'my-ft-v2' },
+      { provider: 'hh', model: 'Qwen3.8-27B-FP8' },
+    ], [{ provider: 'hh', model: 'my-ft-v2', coding: 70, asOf: '2026-11-14' }])
+    expect(partial.unknownModels).toEqual(['my-ft-v2'])
+  })
+})
