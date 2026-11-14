@@ -139,6 +139,7 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | D13 | **G 轮判别①（场景 B 确定性）**：候选 [Qwen3.8-Flash-Next-NVFP4 / Qwen3.8-27B-FP8 / DeepSeek-V4-Pro] →保存→重启→打开设置页 | 三模型各占至少一族且确定性：S 族（review/audit/verif/plan）＝**Flash-Next（首列，噪声带清单序）**＋xhigh；B 族 6 行＝27B＋中档；test/qa＝V4-Pro；无模型 0 行 |
 | D14 | **G 轮判别②（三层接管链）**：使 S 族行模型供应商连续失败（如错 key）→观察下一步边界与转录→再使全部候选失败 | 第一步：转录出现"按角色接管"通知、该族子智能体改由**其余健康候选**（非兜底）服务；全部候选失败后转录出现"按角色兜底"、落到兜底模型；设置页出现"N 个候选不占模板行"提示行 |
 | D15 | **G 轮判别③（双入口等权）**：候选含同一模型两个供应商入口（如 27B@SZ＋27B@HH）→保存→重启 | 该模型族内行**交替两供应商**（4 行族 2+2、6 行族 3+3），各行档位按各自入口物化；使一入口故障→其行由另一入口接管（同模兄弟第一优先） |
+| D16 | **H 轮判别（2 候选覆盖＋先序＋可见性）**：候选 [1.HH·Qwen3.8-27B-FP8, 2.ST·Qwen3.8-Flash-Next-NVFP4] →保存→重启；再换序 [1.ST, 2.HH] 重复 | **两种排序都两模型各占至少一族**（27B 首列时 review/test=27B、B 族=Flash-Next）；换 [1.HH·27B, 2.DeepSeek-V4-Pro] 出现"评分接近（分差 .01xx<0.02）"提示行；同一会话派关键词子（如 reviewer）与无关键词子——前者走 Team 行（带档位）、后者走轮询（无行档位） |
 ## 10. 版本回退/降级安装注意
 
 从更高版本（如 0.2.5）降到低版本（如 v0.0.1）时，pnpm 视为版本回退——删 `node_modules/dsh-subagent-plus` 后 `pnpm install --force`（必要时先 `pnpm store prune`），并用 grep 安装产物内容确认版本（不要只看 MD5 对比本地 lib）。
