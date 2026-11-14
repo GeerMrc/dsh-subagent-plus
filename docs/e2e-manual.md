@@ -136,6 +136,9 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | D10 | 子窗口模型徽章 | 子 Agent 输入框右侧徽章完整显示如 `strata/Qwen3.8-Flash-Next-NVFP4 · Xhigh`（不截断；title 有全文） |
 | D11 | **F 轮判别①（别名＋多样性）：候选含官方裸 id**——`Qwen3.8-Flash-Next-NVFP4`＋`Qwen3.8-27B-FP8`＋官方路由 `deepseek-flash` 三条 →保存→重启 | 审阅族 4 行翻到 **deepseek-official · deepseek-flash（max 档）**（官方别名表命中 V4.1-Flash 族）；三模型各占至少一族（多样性生效）；无"未收录"徽章 |
 | D12 | **F 轮判别②（可见性契约）**：候选换成 1 条已收录（如 Qwen3.8-27B-FP8）＋1 条私有名（如 `my-ft-v2`）→保存→重启→看设置页与日志 | `my-ft-v2` 行出现**"未收录"徽章**（悬停三态说明）；defaultsHint 下出现"N 个候选未收录，暂不参与槽位分配"汇总行；日志出现一次性 warn（含该 id）；给 `my-ft-v2` 导一条 override →徽章消失、参与分配（翻盘路径）；换两条全私有名→12 行照常分配且**无**告警（回退契约） |
+| D13 | **G 轮判别①（场景 B 确定性）**：候选 [Qwen3.8-Flash-Next-NVFP4 / Qwen3.8-27B-FP8 / DeepSeek-V4-Pro] →保存→重启→打开设置页 | 三模型各占至少一族且确定性：S 族（review/audit/verif/plan）＝**Flash-Next（首列，噪声带清单序）**＋xhigh；B 族 6 行＝27B＋中档；test/qa＝V4-Pro；无模型 0 行 |
+| D14 | **G 轮判别②（三层接管链）**：使 S 族行模型供应商连续失败（如错 key）→观察下一步边界与转录→再使全部候选失败 | 第一步：转录出现"按角色接管"通知、该族子智能体改由**其余健康候选**（非兜底）服务；全部候选失败后转录出现"按角色兜底"、落到兜底模型；设置页出现"N 个候选不占模板行"提示行 |
+| D15 | **G 轮判别③（双入口等权）**：候选含同一模型两个供应商入口（如 27B@SZ＋27B@HH）→保存→重启 | 该模型族内行**交替两供应商**（4 行族 2+2、6 行族 3+3），各行档位按各自入口物化；使一入口故障→其行由另一入口接管（同模兄弟第一优先） |
 ## 10. 版本回退/降级安装注意
 
 从更高版本（如 0.2.5）降到低版本（如 v0.0.1）时，pnpm 视为版本回退——删 `node_modules/dsh-subagent-plus` 后 `pnpm install --force`（必要时先 `pnpm store prune`），并用 grep 安装产物内容确认版本（不要只看 MD5 对比本地 lib）。
