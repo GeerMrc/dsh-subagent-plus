@@ -434,6 +434,9 @@ function EditorRoutes(props: EditorProps) {
       importFlash.flash(result.mergedDuplicates.length > 0
         ? t('byname.research.importedMerged').replace('{n}', String(result.rows.length)).replace('{m}', String(result.mergedDuplicates.length))
         : t('byname.research.imported').replace('{n}', String(result.rows.length)))
+      // The paste box is a conveyance, not storage — a stale payload lingering
+      // on reopen reads as "the imported content lives here" (user confusion
+      setImportText('')
       setImportOpen(false)
     } catch (error) {
       setImportError(String(error))
