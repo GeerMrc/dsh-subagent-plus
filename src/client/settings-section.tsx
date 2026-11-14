@@ -31,7 +31,6 @@ import { NS } from './locales.ts'
 import {
   nameMapRowStyle,
   nameInputStyle,
-  nameTriggerStyle,
   chipTriggerStyle,
   pendingBadgeStyle,
   resetButtonStyle,
@@ -99,7 +98,7 @@ export function Info({ label, text, delayMs }: { label: string; text: string; de
 }
 
 /** Hover/click "×" anchor of a by-name mapping row revealing its single
- *  remove action — the RowNameCell popover pattern minus the moves a mapping
+ *  remove action — the IndexActionsCell popover pattern minus the moves a mapping
  *  row never has (mapping order carries no meaning). */
 /** One-shot button feedback (V2, ADR 0016 UX note): the button itself swaps
  *  its label and pulses (`.dsmp-flash`) for a short window, then reverts —
@@ -148,12 +147,11 @@ function RemoveMenu(props: { label: string; trigger: React.ReactNode; onRemove: 
   )
 }
 
-/** Per-row actions anchored on the model name: hovering (or clicking) the
- *  name reveals a compact horizontal popover carrying only the moves the row
- *  position allows (first row: 下移+删除, last: 上移+删除, middle: both) —
- *  boundary rows never render a dead action. */
-function RowNameCell(props: {
-  label: string
+/** Per-row actions for a CANDIDATE row, anchored on the leading index chip
+ *  (I2, matching the by-name rows' chip-anchor convention — ADR 0015 d3):
+ *  hovering (or clicking) the number reveals 上移/下移/删除, boundary rows
+ *  never rendering a dead action; the model name stays a plain single line. */
+function IndexActionsCell(props: {
   popupLabel: string
   index: number
   count: number
@@ -167,8 +165,8 @@ function RowNameCell(props: {
   const anchor = useRef<HTMLSpanElement | null>(null)
   const canUp = props.index > 0
   const canDown = props.index < props.count - 1
-  // A click PINS the popup open (hover alone already opens it; toggling here
-  // would close what hovering just opened); pointer-down anywhere else closes.
+  // A click PINS the popup open (hover alone already opens it); pointer-down
+  // anywhere else closes it.
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: PointerEvent): void => {
@@ -180,7 +178,7 @@ function RowNameCell(props: {
   return (
     <span
       ref={anchor}
-      style={{ position: 'relative', display: 'inline-flex', minWidth: 0 }}
+      style={{ position: 'relative', display: 'inline-flex' }}
       onMouseEnter={() => { setOpen(true) }}
       onMouseLeave={() => { setOpen(false) }}
       onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}
@@ -188,18 +186,13 @@ function RowNameCell(props: {
       <button
         type="button"
         className="dsmp-hover"
-        style={nameTriggerStyle}
+        style={chipTriggerStyle}
         title={props.popupLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={props.popupLabel}
         onClick={() => { setOpen(true) }}
-      >
-        {/* Single line (ADR 0015 d4, superseding the two-line label+sub): the
-            full provider/model id lives in the title/popup; row height now
-            matches the by-name rows. */}
-        <span style={routeNameStyle}>{props.label}</span>
-      </button>
+      ><span style={indexChipStyle}>{props.index + 1}</span></button>
       {open
         ? (
           <span role="menu" aria-label={props.popupLabel} style={rowPopupStyle}>
@@ -211,7 +204,7 @@ function RowNameCell(props: {
               : null}
             <button type="button" role="menuitem" className="dsmp-pop-btn" style={{ ...rowPopupButtonStyle, color: 'var(--dsw-alias-state-error-primary)' }} onClick={() => { setOpen(false); props.onRemove() }}>{props.remove}</button>
           </span>
-          )
+        )
         : null}
     </span>
   )
@@ -368,6 +361,14 @@ function EditorRoutes(props: EditorProps) {
   // Noise-band visibility (H4): a sub-band top-two S gap means the listing
   // order decided the review family — say so before it reads as a bug.
   const bandGap = sBandGapOf(listed, draft.capabilityOverrides ?? [])
+  // Team ⓘ composition (I1): the base help plus the two model-state
+  // advisories (formerly inline paragraphs) — joined with '；' because the
+  // host tooltip's whitespace handling is not guaranteed to break lines.
+  const bynameInfoText = [
+    t('byname.help'),
+    ...(kbVisibility.estimatedAll ? [t('byname.estimatedAll')] : []),
+    ...(bandGap !== undefined ? [t('byname.bandHint').replace('{gap}', bandGap.toFixed(4)).replace('{band}', String(NOISE_BAND))] : []),
+  ].join('；')
   // ADR 0007 decision 3: under the pinned strategy the candidate list is not
   // shown, so the mapping's route pickers lock instead of sourcing a list the
   // user cannot see or edit.
@@ -498,19 +499,20 @@ function EditorRoutes(props: EditorProps) {
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {listed.map((route, index) => (
                   <div key={routeValue(route)} className="dsmp-hover" style={listRowStyle}>
-                    <span style={indexChipStyle}>{index + 1}</span>
+                    {/* I2: the actions ride the index chip (the by-name rows'
+                        convention) — hover the number for 上移/下移/删除. */}
+                    <IndexActionsCell
+                      popupLabel={`${t('list.rowActions')} ${routeId(route)}`}
+                      index={index} count={listed.length}
+                      moveUp={t('list.moveUp')} moveDown={t('list.moveDown')} remove={t('list.remove')}
+                      onMove={delta => { controller.moveRoute(index, delta) }}
+                      onRemove={() => { controller.removeRoute(index) }}
+                    />
                     {/* F2: an unknown candidate carries a visible chip — the
                         excluded side of a mixed list is otherwise invisible
                         (the audit's silent-zero-rows failure). */}
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                      <RowNameCell
-                        label={`${route.providerName} · ${route.modelName}${route.available ? '' : ` · ${t('list.unavailable')}`}`}
-                        popupLabel={`${t('list.rowActions')} ${routeId(route)}`}
-                        index={index} count={listed.length}
-                        moveUp={t('list.moveUp')} moveDown={t('list.moveDown')} remove={t('list.remove')}
-                        onMove={delta => { controller.moveRoute(index, delta) }}
-                        onRemove={() => { controller.removeRoute(index) }}
-                      />
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }} title={routeId(route)}>
+                      <span style={routeNameStyle}>{`${route.providerName} · ${route.modelName}${route.available ? '' : ` · ${t('list.unavailable')}`}`}</span>
                       {kbStatusOf(route.model, draft.capabilityOverrides ?? [], undefined, route.provider) === 'unknown'
                         ? (
                           <span
@@ -580,7 +582,7 @@ function EditorRoutes(props: EditorProps) {
         <div style={fieldRowStyle}>
           <div style={cardHeaderRowStyle}>
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
-            <Info label={t('byname.help')} text={t('byname.help')} delayMs={400} />
+            <Info label={t('byname.help')} text={bynameInfoText} delayMs={400} />
             {state.value !== undefined && state.draft !== undefined && (JSON.stringify(state.value.nameMap) !== JSON.stringify(state.draft.nameMap) || state.value.nameMapDefaults !== state.draft.nameMapDefaults || JSON.stringify(state.value.capabilityOverrides) !== JSON.stringify(state.draft.capabilityOverrides))
               ? <span style={pendingBadgeStyle}>{t('common.pending')}</span>
               : null}
@@ -622,17 +624,11 @@ function EditorRoutes(props: EditorProps) {
           {!byNameLocked && draft.nameMapDefaults
             ? <p style={hintStyle}>{`${listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')} ${t('byname.research.sourceKb').replace('{date}', KB_AS_OF)}`}</p>
             : null}
-          {!byNameLocked && draft.nameMapDefaults && kbVisibility.estimatedAll
-            ? <p style={hintStyle}>{t('byname.estimatedAll')}</p>
-            : null}
           {!byNameLocked && draft.nameMapDefaults && kbVisibility.unknownModels.length > 0
             ? <p style={hintStyle}>{t('byname.kbUnknownSummary').replace('{n}', String(kbVisibility.unknownModels.length))}</p>
             : null}
           {!byNameLocked && benchLabels.length > 0
             ? <p style={hintStyle}>{t('byname.benchHint').replace('{n}', String(benchLabels.length))}</p>
-            : null}
-          {!byNameLocked && draft.nameMapDefaults && bandGap !== undefined
-            ? <p style={hintStyle}>{t('byname.bandHint').replace('{gap}', bandGap.toFixed(4)).replace('{band}', String(NOISE_BAND))}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>

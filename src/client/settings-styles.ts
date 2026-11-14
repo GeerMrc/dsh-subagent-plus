@@ -264,20 +264,6 @@ export const advancedTitleStyle = {
   color: 'var(--dsw-alias-label-primary)',
 } as const
 
-/** The model-name trigger: transparent text button carrying the row's two-line
- *  label — hovering or clicking it reveals the action popover. */
-export const nameTriggerStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  minWidth: 0,
-  padding: 0,
-  border: 'none',
-  background: 'transparent',
-  textAlign: 'left' as const,
-  cursor: 'pointer',
-  borderRadius: 8,
-} as const
-
 /** Compact horizontal action popover: one line of short text buttons, flush
  *  against the name (any margin is a dead zone that closes the popup before
  *  the pointer crosses it) with generous button hit areas. */
