@@ -658,6 +658,9 @@ function EditorRoutes(props: EditorProps) {
             )
             : null}
           {(draft.capabilityOverrides?.length ?? 0) > 0 ? <p style={hintStyle}>{t('byname.research.calibration')}</p> : null}
+          {!byNameLocked && (draft.capabilityOverrides?.length ?? 0) === 0
+            ? <p style={hintStyle}>{t('byname.research.sourceEmpty')}</p>
+            : null}
           {(draft.capabilityOverrides?.length ?? 0) > 0
             ? (
               <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
