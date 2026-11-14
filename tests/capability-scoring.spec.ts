@@ -166,3 +166,19 @@ describe('build/runtime canonicalizer parity (F1)', () => {
     }
   })
 })
+
+describe('committed OpenRouter aliases resolve end-to-end (F4)', () => {
+  it('the qwen/qwen-2.5-coder-32b-instruct slug bridges onto its contracted official key', () => {
+    // Loud precondition: the alias must exist in the committed snapshot —
+    // a rebuild that drops it fails here instead of silently losing coverage.
+    expect(KB['qwen2.5-coder-32b-instruct']?.aliases).toContain('qwen/qwen-2.5-coder-32b-instruct')
+    const hit = kbEntryFor('qwen/qwen-2.5-coder-32b-instruct')
+    expect(hit?.dims.coding).toBe(KB['qwen2.5-coder-32b-instruct']?.dims.coding)
+  })
+
+  it('slugs the runtime canonicalizer already folds stay out of the alias payload (budget discipline)', () => {
+    // openai/gpt-4o → gpt-4o by the namespace strip alone: no alias row needed.
+    expect(KB['gpt-4o']?.aliases.some(alias => alias.includes('/'))).toBe(false)
+    expect(kbEntryFor('openai/gpt-4o')?.dims.coding).toBe(KB['gpt-4o']?.dims.coding)
+  })
+})

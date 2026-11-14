@@ -11,6 +11,13 @@ derived from the following sources:
 - Attribution: LMArena (lmarena.ai). Snapshot date recorded as KB_AS_OF in the
   generated file.
 
+## OpenRouter model catalogue
+- Source: https://openrouter.ai/api/v1/models (queried at KB build time)
+- License: CC-BY-4.0 — https://creativecommons.org/licenses/by/4.0/
+- Used for: alias cross-reference only — an OpenRouter slug whose name matches
+  a KB entry is recorded as that entry's alias (scripts/build-capability-kb.mjs
+  --aliases-only); no scores are derived from this source.
+
 ## Aider LLM Leaderboards (polyglot)
 - Source: https://github.com/Aider-AI/aider (aider/website/_data/polyglot_leaderboard.yml)
 - License: Apache-2.0 — https://www.apache.org/licenses/LICENSE-2.0
