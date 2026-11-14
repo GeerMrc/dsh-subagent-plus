@@ -880,6 +880,69 @@ describe('parseResearchPaste (J1 — fence-tolerant one-paste import)', () => {
   it('prose garbage stays invalid', async () => {
     const { parseResearchPaste } = await import('../../src/client/settings-controller.js')
     expect(parseResearchPaste('评估结果很好，谢谢').kind).toBe('invalid')
-    expect(parseResearchPaste('[{"model":"x"}').kind).toBe('invalid') // truncated JSON
+    expect(parseResearchPaste('[{"model":"x"}').kind).toBe('truncated') // unclosed array — J2 refined from invalid
+  })
+})
+
+/** J2: web-chat evaluator tolerance — prose-wrapped replies, trailing
+ *  commas, string numbers, wrapper objects, truncated pastes. Every class
+ *  observed or high-probability when the prompt runs in DeepSeek's web UI
+ *  instead of DSH (which produced clean fenced output). */
+describe('parseResearchPaste web-chat tolerance (J2)', () => {
+  const rows = [{ model: 'glm-5.3', overall: 84, coding: 86, webdev: 72, agentic: 85, asOf: '2026-11-15', note: 'bench' }]
+  const json = JSON.stringify(rows, null, 2)
+  const load = async () => (await import('../../src/client/settings-controller.js')).parseResearchPaste
+
+  it('prose before/after a fenced block still imports', async () => {
+    const parse = await load()
+    const chatty = '好的，以下是评估结果：\n```json\n' + json + '\n```\n希望对你有帮助！'
+    expect(parse(chatty).kind).toBe('rows')
+  })
+
+  it('prose around a BARE array (no fence) still imports', async () => {
+    const parse = await load()
+    expect(parse('以下是结果：\n' + json + '\n以上。').kind).toBe('rows')
+  })
+
+  it('trailing commas are tolerated', async () => {
+    const parse = await load()
+    const sloppy = '[{"model": "glm-5.3", "overall": 84, "coding": 86, "webdev": 72, "agentic": 85, "asOf": "2026-11-15", "note": "x",},]'
+    const result = parse(sloppy)
+    expect(result.kind).toBe('rows')
+    if (result.kind === 'rows') expect(result.rows[0]).toMatchObject({ model: 'glm-5.3', overall: 84 })
+  })
+
+  it('numeric strings coerce to numbers ("84" → 84)', async () => {
+    const parse = await load()
+    const quoted = '[{"model": "glm-5.3", "overall": "84", "coding": "86", "webdev": "72", "agentic": "85", "asOf": "2026-11-15", "note": "x"}]'
+    const result = parse(quoted)
+    expect(result.kind).toBe('rows')
+    if (result.kind === 'rows') expect(result.rows[0]).toMatchObject({ overall: 84, coding: 86 })
+  })
+
+  it('a wrapper object with one whitelisted array key unwraps ({"results": [...]})', async () => {
+    const parse = await load()
+    const wrapped = JSON.stringify({ results: rows })
+    expect(parse(wrapped).kind).toBe('rows')
+  })
+
+  it('multiple fenced blocks: the LAST parseable array wins (final answer after thinking)', async () => {
+    const parse = await load()
+    const two = '```json\n[{"model": "draft"}]\n```\n修正后：\n```json\n' + json + '\n```'
+    const result = parse(two)
+    expect(result.kind).toBe('rows')
+    if (result.kind === 'rows') expect(result.rows[0]).toMatchObject({ model: 'glm-5.3' })
+  })
+
+  it('truncated JSON reports the TRUNCATED kind (not generic invalid)', async () => {
+    const parse = await load()
+    const cut = json.slice(0, 40)
+    expect(parse(cut).kind).toBe('truncated')
+  })
+
+  it('unrelated prose with no array stays invalid; export package still detected last', async () => {
+    const parse = await load()
+    expect(parse('这个模型很强，推荐使用。').kind).toBe('invalid')
+    expect(parse(JSON.stringify({ schema: 2, prompt: 'x', candidates: [] })).kind).toBe('package')
   })
 })

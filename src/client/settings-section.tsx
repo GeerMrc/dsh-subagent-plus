@@ -418,6 +418,10 @@ function EditorRoutes(props: EditorProps) {
         setImportError(t('byname.research.packagePasted'))
         return
       }
+      if (parsed.kind === 'truncated') {
+        setImportError(t('byname.research.truncated'))
+        return
+      }
       if (parsed.kind === 'invalid') {
         setImportError(t('byname.research.notArray'))
         return

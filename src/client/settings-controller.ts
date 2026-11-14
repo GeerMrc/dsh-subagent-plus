@@ -322,27 +322,60 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
  * Draft-editing controller for the plugin's settings section.
  */
 /**
- * Parse a pasted research payload (J1): real evaluator output arrives as a
- * markdown-fenced block (```json … ``` plus blank lines — verified from a
- * live DSH session), so a bare JSON.parse bounces one-click copies with a
- * misleading "not an array" error. The fence strips first; the export
- * PACKAGE itself (an object carrying `prompt`) reports its own kind so the
- * caller shows the friendly pointer instead of a parse error.
+ * Parse a pasted research payload (J1 fence tolerance; J2 web-chat tolerance):
+ * real replies arrive in more shapes than DSH's clean fenced block — prose
+ * around the JSON, trailing commas, numeric strings, wrapper objects, a
+ * draft block followed by the corrected final answer, or token-limit
+ * truncation. Candidate strings are tried in order (whole text → fenced
+ * blocks last-first, a corrected final answer follows a draft → the first
+ * `[`…last `]` span for prose-wrapped arrays); each candidate gets trailing
+ * commas stripped before parsing, parsed wrapper objects unwrap ONE
+ * whitelisted array key (results/models/rows/data/evaluations — bounded,
+ * never fuzzy), and numeric-string scores coerce to numbers. The export
+ * PACKAGE itself reports its own kind for the friendly pointer; an
+ * unclosed array reports TRUNCATED so the user re-copies instead of
+ * guessing at a generic failure.
  * @param text - the raw clipboard paste.
- * @returns the parsed rows, the package marker, or invalid.
+ * @returns the parsed rows, the package marker, the truncation marker, or invalid.
  */
-export function parseResearchPaste(text: string): { kind: 'rows'; rows: unknown[] } | { kind: 'package' } | { kind: 'invalid' } {
-  let cleaned = text.trim()
-  const fence = /^```[^\n]*\n([\s\S]*?)\n?```$/.exec(cleaned)
-  if (fence !== null) cleaned = fence[1]!.trim()
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
-    return { kind: 'invalid' }
+const WRAPPER_KEYS = ['results', 'models', 'rows', 'data', 'evaluations'] as const
+
+const coerceNumericStrings = (row: unknown): unknown => {
+  if (row === null || typeof row !== 'object' || Array.isArray(row)) return row
+  const out: Record<string, unknown> = { ...(row as Record<string, unknown>) }
+  for (const key of ['overall', 'coding', 'webdev', 'agentic'] as const) {
+    const value = out[key]
+    if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value.trim())) out[key] = Number(value.trim())
   }
-  if (Array.isArray(parsed)) return { kind: 'rows', rows: parsed }
-  if (parsed !== null && typeof parsed === 'object' && 'prompt' in (parsed as Record<string, unknown>)) return { kind: 'package' }
+  return out
+}
+
+export function parseResearchPaste(text: string): { kind: 'rows'; rows: unknown[] } | { kind: 'package' } | { kind: 'truncated' } | { kind: 'invalid' } {
+  const trimmed = text.trim()
+  const candidates: string[] = [trimmed]
+  const blocks = [...trimmed.matchAll(/```[^\n]*\n([\s\S]*?)\n?```/g)].map(match => match[1]!.trim())
+  for (let index = blocks.length - 1; index >= 0; index -= 1) candidates.push(blocks[index]!)
+  const firstBracket = trimmed.indexOf('[')
+  const lastBracket = trimmed.lastIndexOf(']')
+  if (firstBracket !== -1 && lastBracket > firstBracket) candidates.push(trimmed.slice(firstBracket, lastBracket + 1))
+  for (const candidate of candidates) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1'))
+    } catch {
+      continue
+    }
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>
+      if ('prompt' in record) return { kind: 'package' }
+      const wrapper = WRAPPER_KEYS.find(key => Array.isArray(record[key]))
+      if (wrapper === undefined) continue
+      parsed = record[wrapper]
+    }
+    if (Array.isArray(parsed)) return { kind: 'rows', rows: parsed.map(coerceNumericStrings) }
+  }
+  // An unclosed array reads as truncation (re-copy advice), not garbage.
+  if (firstBracket !== -1 && lastBracket <= firstBracket) return { kind: 'truncated' }
   return { kind: 'invalid' }
 }
 
