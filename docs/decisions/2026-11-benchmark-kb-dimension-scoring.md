@@ -73,7 +73,7 @@
 - **占用链完备性原则**：槽位按选取顺序（S→B→F）必须感知全部前序占用者。F3 只修了 B 撞 S，F 撞 B 无人管即出货——用户"撞运气"体感属实。
 - **G1 F 占用让位**：严格 argmin 的 canonical 撞 S/B 且去重池 ≥3 distinct → F 取未占用条目中最弱 S（同比较链）；门内未占用集恒非空。边界：Z10 降级重复红利仅存 2 canonical；≥3 时占用多样性胜出（降级副本 0 行）。
 - **G2 S 噪声带（用户裁定）**：`NOISE_BAND=0.02`（同快照 estimated 条目间 rank-fraction 噪声量级）——S argmax 内非零亚带分差→清单顺序优先（带内跳过 legacyDiff）；**精确平局保留 Z7 结构链**（真平局非噪声）；带外严格。**不扩展到 B/F**（其碰撞逻辑消费严格分——独立审核 R-1 裁定）。非传递性（2×带内分布）为有意语义，钉子测试披露。客户端预览与宿主目录偏差由此更敏感（efforts/description 影响结构链），声明。
-- **G3 三层接管链**：行路由不健康/未注册 → 下一健康候选（selectChildRoute over usableCandidates，仅 spread plan，镜像策略链分支）→ 兜底 → 各分支终末语义逐字保留。接管路由 memoize（冷却期单值，防轮询游标漂移；自身不健康即清）；**接管路由失败计入冷却**（recordFailure 原只解析行/策略/pin/兜底 provider 的 model——中间层会持续服务于已死路由的缺口，测试现场抓出）；接管转录通知（byNameTakeoverNotice）＋兜底交接通知激活（byNameFallbackNotice 原为死导入）。兜底模型保留：终末级、可在清单外——与候选清单是互补三层而非重叠。设置页候选行下方 bench 提示行（badge-logic benchRouteLabelsOf）。
+- **G3 三层接管链**：行路由不健康/未注册 → 下一健康候选（selectChildRoute over usableCandidates，仅 spread plan，镜像策略链分支）→ 兜底 → 各分支终末语义逐字保留。接管路由 memoize（冷却期单值，防轮询游标漂移；自身不健康即清；**每次新接管事件消耗一次共享轮询游标**——与真实 spread 指派共用选择池，接管本身即一次指派，声明为有意）；**接管路由失败计入冷却**（recordFailure 原只解析行/策略/pin/兜底 provider 的 model——中间层会持续服务于已死路由的缺口，测试现场抓出）；接管转录通知（byNameTakeoverNotice）＋兜底交接通知激活（byNameFallbackNotice 原为死导入）。兜底模型保留：终末级、可在清单外——与候选清单是互补三层而非重叠。设置页候选行下方 bench 提示行（badge-logic benchRouteLabelsOf）。
 - **G4 同模型多入口行级分摊（用户补充范围）**：可互换兄弟（F3 去重键复用：canonical＋S 分＋fast hint）＝同一模型的部署副本（LiteLLM deployment 模式）——族内行轮转分摊（双入口 6+6/12、三入口 4/4/4；每行按各自路由档位表物化）；**槽位胜者领头并取奇数行**（Z7 结构链优先于清单序——list-order 轮转破坏 Z7 测试现场裁出）；余兄弟按清单序。qualified 分化路由不拆分（Z10 逃生门）。创建期 per-request 轮转否决（破坏 byName 确定性承诺）。HA 闭环：入口冷却 → 其行经 G3 中间层 → **健康同模兄弟为第一接管者** → 其余候选 → 兜底。
 - **验证**：D13（场景 B 确定性三模型各占）/D14（链式接管分支持久化）/D15（双入口等权＋冷却兄弟接管）。
 

@@ -833,6 +833,45 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(warns.mock.calls.some(args => String(args[0]).includes('model-x2') && String(args[0]).includes('cooling down'))).toBe(true)
   })
 
+  it('a cooling row is taken over by the healthy SIBLING entrance first, not the generic rotation (G3 sibling preference, review R-1)', async () => {
+    const tiers: Record<string, string[]> = {
+      'p1/model-a': ['off', 'low', 'medium', 'xhigh'],
+      'p3/model-b': ['off', 'low', 'high'],
+      'p2/model-a': ['off', 'low', 'medium', 'xhigh'],
+    }
+    const llm = {
+      listProviders: () => [{ id: 'p1' }, { id: 'p3' }, { id: 'p2' }],
+      listModels: async () => ['model-a', 'model-b'].map(id => ({ id })),
+      resolveModelInfo: (provider: string, model: string) => ({ reasoning: { efforts: tiers[`${provider}/${model}`]?.map(id2 => ({ id: id2 })) } }),
+    }
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llm)
+    ctx.provide('agentTeams', { tryMembership: (a: object) => ({ name: teamNameOf.get(a) }) })
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'round-robin',
+      priority: [
+        { provider: 'p1', model: 'model-a', reasoningEffort: '' },
+        { provider: 'p3', model: 'model-b', reasoningEffort: '' },
+        { provider: 'p2', model: 'model-a', reasoningEffort: '' },
+      ],
+      respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [], nameMapDefaults: true,
+    })
+    await new Promise(r => setTimeout(r, 10))
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    const model = (reviewer as unknown as { model: MockModel }).model
+    expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'p1', model: 'model-a' }))
+    // The row entrance cools; generic rotation from a fresh cursor would hand
+    // the child to model-b@p3 (listed second) — the sibling entrance p2 must
+    // take over first (same model, minimal semantic drift).
+    await dispatchFailure(ctx, reviewer, 'p1', 'RATE_LIMIT', 429)
+    expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'p2', model: 'model-a' }))
+  })
+
   it('a takeover candidate carries the takeover notice; the fallback hand-off carries the byName fallback notice (G3)', async () => {
     const { llm } = tieredLlm(qwenTiers)
     const { ctx } = await derivedContext({

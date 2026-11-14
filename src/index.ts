@@ -42,7 +42,6 @@ import {
   assignedNotice,
   byNameFallbackNotice,
   byNameNotice,
-  byNameSkippedNotice,
   byNameTakeoverNotice,
   candidateRoutes,
   classifyFailure,
@@ -54,8 +53,6 @@ import {
   isValidKeyword,
   matchByKeyword,
   pinnedNotice,
-  pinFallbackNotice,
-  pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
   routeKey,
@@ -69,7 +66,7 @@ import {
 import { materializeConfig, type PinConfig, type PinConfigRuntime } from './config.js'
 export { Config } from './config.js'
 export type { PinConfig } from './config.js'
-import { capabilityOf } from './capability-scoring.js'
+import { canonicalizeModelId, capabilityOf } from './capability-scoring.js'
 import { attachSettingsSection, LivePinConfig } from './settings.js'
 
 export type { PinConfigRuntime } from './config.js'
@@ -327,7 +324,21 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     }
     const plan = resolveStrategyPlan(config)
     if (plan.kind !== 'spread') return undefined
-    const next = selectChildRoute(plan.strategy, await usableCandidates(config), healthyNow(config), selection, Math.random, decision.route)
+    const usable = await usableCandidates(config)
+    const healthy = healthyNow(config)
+    // Sibling preference (review R-1): a healthy entrance of the SAME model
+    // takes over first — same capability, same scores, minimal semantic drift
+    // (the G4 deployment-replica view: failover inside the model before any
+    // other candidate).
+    const rowCanonical = canonicalizeModelId(decision.route.model)
+    const sibling = usable.find(route => healthy(route)
+      && !(route.provider === decision.route.provider && route.model === decision.route.model)
+      && canonicalizeModelId(route.model) === rowCanonical)
+    if (sibling !== undefined) {
+      decision.takeover = sibling
+      return sibling
+    }
+    const next = selectChildRoute(plan.strategy, usable, healthy, selection, Math.random, decision.route)
     if (next !== undefined) decision.takeover = next
     return next
   }
@@ -440,7 +451,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
         const key = routeKey(byName.route)
         if (!unregisteredNameRoutes.has(key)) {
           unregisteredNameRoutes.add(key)
-          ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; falling back or keeping resolved route`)
+          ctx.logger.warn(`dsh-subagent-plus: mapped route "${routeId(byName.route)}" is not registered; a candidate takes over, else the fallback, else the child keeps its resolved route`)
         }
         return await byNameTakeoverOf(config, byName) ?? await usableFallbackOf(config) ?? undefined
       }
