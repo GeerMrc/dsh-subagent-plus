@@ -757,7 +757,7 @@ describe('slot diversity preference (F3)', () => {
     expect(testRow.provider).toBe('p1')
   })
 
-  it('B may yield to an estimated model — B walks inside ITS OWN pool (A-6 governs S/F only)', () => {
+  it('estimated models ride B and (since H7) F coverage placement — S stays anchored-strict (A-6 governs victories)', () => {
     const estKb: import('../src/capability-scoring.js').KbTable = {
       'model-a': { aliases: [], dims: { overall: 0.50, coding: 0.80, webdev: 0.30, agentic: 0.30 } },
       'model-e1': { aliases: [], dims: { overall: 0.90, webdev: 0.95 }, estimated: true },
@@ -765,10 +765,13 @@ describe('slot diversity preference (F3)', () => {
     }
     // B ranks e1 .71 > a .56 > e2 .53 → median a collides with S=a → walk to e1.
     const rows = deriveStarterRows([at('model-a'), at('model-e1'), at('model-e2')], { kb: estKb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('model-a') // A-6: S never leaves the anchored model
     expect(rows.find(r => r.name === 'dev')?.model).toBe('model-e1')
-    // A-6 boundary pinned: F stays on the sole anchored candidate, colliding
-    // with S — estimated never enters the S/F pool while an anchored exists.
-    expect(rows.find(r => r.name === 'test')?.model).toBe('model-a')
+    // H7 review ruling: the anchored-only pool cannot cover three models, so
+    // F's occupancy yield crosses into the known set — the second estimated
+    // model takes the weakest slot instead of stranding (this pin previously
+    // asserted the collision; the reviewer's counterexample superseded it).
+    expect(rows.find(r => r.name === 'test')?.model).toBe('model-e2')
   })
 
   it("the user's three-candidate scenario: every model holds a family (end-to-end, shipped KB)", () => {
@@ -994,6 +997,34 @@ describe('coverage contract at two candidates (H1, ADR 0016 3d — the user repo
   it('same model through two providers keeps splitting (not a coverage case)', () => {
     const rows = deriveStarterRows([q27('hh'), mk('sz', 'Qwen3.8-27B-FP8', ['off', 'medium', 'xhigh'])])
     expect(new Set(rows.map(r => r.provider))).toEqual(new Set(['hh', 'sz'])) // G4 sibling split, 6+6
+  })
+})
+
+describe('coverage across the A-6 pool boundary (H7 review, ADR 0016 3d)', () => {
+  const mk = (provider: string, model: string): Parameters<typeof deriveStarterRows>[0][number] =>
+    ({ provider, model, efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] })
+
+  it('one anchored + two estimated covers ALL THREE (the reviewer counterexample, every ordering)', () => {
+    // gpt-5 (high) carries the coding anchor (anchored); 27b/v4-pro are
+    // estimated. A-6 keeps S on the anchored model; F's coverage yield may
+    // cross the anchored-only pool so no estimated model strands.
+    for (const list of [
+      [mk('p1', 'gpt-5 (high)'), mk('hh', 'Qwen3.8-27B-FP8'), mk('ds', 'deepseek-v4-pro')],
+      [mk('hh', 'Qwen3.8-27B-FP8'), mk('p1', 'gpt-5 (high)'), mk('ds', 'deepseek-v4-pro')],
+      [mk('ds', 'deepseek-v4-pro'), mk('hh', 'Qwen3.8-27B-FP8'), mk('p1', 'gpt-5 (high)')],
+    ]) {
+      const rows = deriveStarterRows(list)
+      const holders = new Set(rows.map(row => `${row.provider}/${row.model}`))
+      expect(holders.size, `${[...holders].join(',')}`).toBe(3)
+      expect(rows.find(r => r.name === 'review')?.model).toBe('gpt-5 (high)') // A-6: S stays anchored-strict
+    }
+  })
+
+  it('two anchored + one estimated: F stays anchored when the pool covers, estimated never steals S', () => {
+    const rows = deriveStarterRows([mk('p1', 'gpt-5 (high)'), mk('p2', 'gpt-5-medium'), mk('ds', 'deepseek-v4-pro')])
+    expect(rows.find(r => r.name === 'review')?.model).toBe('gpt-5 (high)')
+    const holders = new Set(rows.map(row => row.model))
+    expect(holders.size).toBe(3)
   })
 })
 

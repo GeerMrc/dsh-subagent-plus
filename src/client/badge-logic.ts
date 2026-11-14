@@ -120,12 +120,21 @@ export function sBandGapOf(
   routes: readonly VisibilityRoute[],
   overrides: readonly CapabilityOverride[],
 ): number | undefined {
-  const scores: number[] = []
+  // Mirror the S pool's composition (A-6): when any anchored candidate
+  // exists, only ANCHORED S-scores compete for the review family — a
+  // sub-band gap against an estimated runner-up cannot be reordered away
+  // (A-6 bars the estimated model from winning S), so the hint stays silent
+  // instead of promising a switch.
+  let anchored: number[] = []
+  let known: number[] = []
   for (const route of routes) {
     const view = capabilityOf(route.model, overrides, undefined, route.provider)
     if (view.unknown) continue
-    scores.push(familyScore(view, 'S'))
+    const score = familyScore(view, 'S')
+    known.push(score)
+    if (!view.estimated) anchored.push(score)
   }
+  const scores = anchored.length > 0 ? anchored : known
   if (scores.length < 2) return undefined
   scores.sort((left, right) => right - left)
   const gap = scores[0]! - scores[1]!

@@ -293,19 +293,38 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   if (dedupedPool.length === 0) {
     fPick = views[views.length - 1]!
   } else {
-    // Occupancy yield (G1, completing the F3 chain; gate ≥2 since H1): when
-    // the strict argmin's model is already held by S or B and the
-    // deduplicated pool offers ≥2 distinct models, F takes the weakest
-    // S-score among the UNOCCUPIED entries — as weak as possible while
-    // distinct; at exactly two distinct models the unoccupied set is empty
+    // Occupancy yield (G1, completing the F3 chain; gate ≥2 since H1; crosses
+    // the A-6 pool since the H7 review): when the strict argmin's model is
+    // already held by S or B and the KNOWN set offers ≥2 distinct models, F
+    // takes the weakest S-score among the UNOCCUPIED entries — as weak as
+    // possible while distinct. The search spans the deduplicated pool first
+    // and only then the wider known set: an anchored+estimated mix can leave
+    // the anchored-only pool unable to cover (one anchored + two estimated
+    // stranded a model in every ordering — the review's counterexample), and
+    // placing an ESTIMATED model on F is a fallback placement, not a quality
+    // win (A-6 governs S/F POOL VICTORIES; S stays anchored-strict always).
+    // At exactly two distinct known models the unoccupied set is empty
     // (pigeonhole) and the collision stands. A demoted Z10 duplicate holds
-    // zero rows whenever a second distinct model exists (occupancy beats the
-    // dividend at every cardinality).
+    // zero rows whenever a second distinct known model exists (occupancy
+    // beats the dividend at every cardinality).
+    const dedupe = (entries: typeof views): typeof views => {
+      const seen = new Set<string>()
+      const out: typeof views = []
+      for (const entry of entries) {
+        const key = `${canonOf(entry)}\0${familyScore(entry.view, 'S')}\0${fastHintOf(entry.candidate)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push(entry)
+      }
+      return out
+    }
+    const dedupedKnown = dedupe(known)
     const strict = fReduce(dedupedPool)
     const occupied = new Set([sCanonical, canonOf(bPick)])
-    if (occupied.has(canonOf(strict)) && new Set(dedupedPool.map(canonOf)).size >= 2) {
-      const unoccupied = dedupedPool.filter(entry => !occupied.has(canonOf(entry)))
-      fPick = unoccupied.length > 0 ? fReduce(unoccupied) : strict
+    if (occupied.has(canonOf(strict)) && new Set(dedupedKnown.map(canonOf)).size >= 2) {
+      const unoccupiedPool = dedupedPool.filter(entry => !occupied.has(canonOf(entry)))
+      const search = unoccupiedPool.length > 0 ? unoccupiedPool : dedupedKnown.filter(entry => !occupied.has(canonOf(entry)))
+      fPick = search.length > 0 ? fReduce(search) : strict
     } else {
       fPick = strict
     }

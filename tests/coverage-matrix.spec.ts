@@ -94,6 +94,23 @@ describe('coverage matrix — duplicate entrance in the list (H2, G4 interaction
   }
 })
 
+describe('coverage matrix — anchored + estimated mix (H7 review counterexample pool)', () => {
+  const pool: Cand[] = [
+    mk('p1', 'gpt-5 (high)'),            // anchored (coding 1.000)
+    mk('hh', 'Qwen3.8-27B-FP8'),          // estimated
+    mk('ds', 'deepseek-v4-pro'),          // estimated
+    mk('p2', 'gpt-5-medium'),             // anchored (coding .985)
+  ]
+
+  for (const size of [2, 3, 4]) {
+    it(`every ${size}-candidate permutation covers min(3, distinct) models across the A-6 boundary`, () => {
+      for (const list of permutations(pool, size)) {
+        checkInvariants(`mixed size${size} ${list.map(c => c.model).join(',')}`, list)
+      }
+    })
+  }
+})
+
 describe('coverage matrix — all-unknown list, list-order fallback (H2)', () => {
   const pool: Cand[] = [
     mk('p1', 'model-u1'),

@@ -21,6 +21,7 @@ import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
 import { kbStatusOf, KB_AS_OF } from '../capability-scoring.js'
 import { benchRouteLabelsOf, kbVisibilityOf, sBandGapOf } from './badge-logic.ts'
+import { NOISE_BAND } from '../strategy.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -631,7 +632,7 @@ function EditorRoutes(props: EditorProps) {
             ? <p style={hintStyle}>{t('byname.benchHint').replace('{n}', String(benchLabels.length))}</p>
             : null}
           {!byNameLocked && draft.nameMapDefaults && bandGap !== undefined
-            ? <p style={hintStyle}>{t('byname.bandHint').replace('{gap}', bandGap.toFixed(4))}</p>
+            ? <p style={hintStyle}>{t('byname.bandHint').replace('{gap}', bandGap.toFixed(4)).replace('{band}', String(NOISE_BAND))}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>
