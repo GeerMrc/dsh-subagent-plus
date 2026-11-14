@@ -620,7 +620,9 @@ function EditorRoutes(props: EditorProps) {
             )
             : null}
           {state.effectiveNameMap.length === 0
-            ? (!byNameLocked && draft.nameMapDefaults ? null : <p style={hintStyle}>{t('byname.empty')}</p>)
+            ? (byNameLocked && draft.nameMapDefaults
+                ? <p style={hintStyle}>{t('byname.defaultsDormant')}</p>
+                : !byNameLocked && draft.nameMapDefaults ? null : <p style={hintStyle}>{t('byname.empty')}</p>)
             : (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {state.effectiveNameMap.map((row, index) => {
