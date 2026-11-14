@@ -344,6 +344,10 @@ type EditorProps = {
 function EditorRoutes(props: EditorProps) {
   const { state, controller, t } = props
   const [importOpen, setImportOpen] = useState(false)
+  // 评分来源 fold (L2): collapsed by default; a successful import expands it
+  // so the landed rows are immediately visible (the export fallback path
+  // does not — nothing landed).
+  const [sourceOpen, setSourceOpen] = useState(false)
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState<string | undefined>(undefined)
   const exportFlash = useActionFlash()
@@ -438,6 +442,7 @@ function EditorRoutes(props: EditorProps) {
       // on reopen reads as "the imported content lives here" (user confusion
       setImportText('')
       setImportOpen(false)
+      setSourceOpen(true)
     } catch (error) {
       setImportError(String(error))
     }
@@ -657,36 +662,61 @@ function EditorRoutes(props: EditorProps) {
               </div>
             )
             : null}
-          {(draft.capabilityOverrides?.length ?? 0) > 0 ? <p style={hintStyle}>{t('byname.research.calibration')}</p> : null}
-          {!byNameLocked && (draft.capabilityOverrides?.length ?? 0) === 0
-            ? <p style={hintStyle}>{t('byname.research.sourceEmpty')}</p>
-            : null}
-          {(draft.capabilityOverrides?.length ?? 0) > 0
+          {/* 评分来源 fold (L2, the advanced-fold convention): always rendered —
+              including under pinned (clear/remove are draft-layer ops; hiding
+              the fold would strand the Team pending badge, whose dirty check
+              includes capabilityOverrides). The status chip answers "where am
+              I" without expanding: 内置快照 vs N 条评估. */}
+          <button
+            type="button"
+            style={{ ...foldButtonStyle, width: '100%', padding: '12px 0', borderTop: '0.5px solid var(--dsw-alias-border-l2)' }}
+            aria-expanded={sourceOpen}
+            onClick={() => { setSourceOpen(!sourceOpen) }}
+          >
+            {t('byname.research.source')}
+            <span style={pendingBadgeStyle}>
+              {(draft.capabilityOverrides?.length ?? 0) > 0
+                ? t('byname.research.sourceCount').replace('{n}', String(draft.capabilityOverrides.length))
+                : t('byname.research.sourceBundled')}
+            </span>
+            <span style={{ flex: 1 }} />
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ transform: sourceOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>
+              <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {sourceOpen
             ? (
-              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
-                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                  <span style={cardHeadingStyle}>{t('byname.research.source')}</span>
-                  {/* The rollback lever (K round): ONE click forgets every imported
-                      score and restores install-time default scoring — sized and
-                      labeled as the primary control it is (three user round-trips
-                      to find it at 20px/faded was the discoverability evidence). */}
-                  <button type="button" className="dsmp-hover" style={resetButtonStyle} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
-                </span>
-                {draft.capabilityOverrides.map((row, index) => (
-                  <div key={`${(row.provider ?? '').trim()}\0${row.model}\0${index}`} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                    <span style={hintStyle}>{(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ${row.model}` : row.model}</span>
-                    <span style={pendingBadgeStyle}>{(() => {
-                      const match = matchOverrideRoute(row, state.routes, draft.priority)
-                      if (match === 'route-miss') return t('byname.research.routeMiss')
-                      if (match === 'candidate') return t('byname.research.matchCandidate')
-                      if (match === 'kb') return t('byname.research.matchKb')
-                      return t('byname.research.matchNone')
-                    })()}</span>
-                    <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
-                    <span style={{ flex: 1 }} />
-                    <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} aria-label={t('byname.research.remove')} onClick={() => { controller.removeCapabilityOverride(index) }}>×</button>
-                  </div>
-                ))}
+              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 8, borderTop: 'none' }}>
+                {(draft.capabilityOverrides?.length ?? 0) === 0
+                  ? <p style={hintStyle}>{t('byname.research.sourceEmpty')}</p>
+                  : (
+                    <>
+                      <p style={hintStyle}>{t('byname.research.calibration')}</p>
+                      {draft.capabilityOverrides.map((row, index) => (
+                        <div key={`${(row.provider ?? '').trim()}\0${row.model}\0${index}`} className="dsmp-hover" style={{ ...listRowStyle, gridTemplateColumns: 'auto minmax(0,1fr) auto auto auto' }}>
+                          <span style={indexChipStyle}>{index + 1}</span>
+                          <span style={routeNameStyle} title={`${(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ` : ''}${row.model}`}>
+                            {(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ${row.model}` : row.model}
+                          </span>
+                          <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
+                          <span style={pendingBadgeStyle}>{(() => {
+                            const match = matchOverrideRoute(row, state.routes, draft.priority)
+                            if (match === 'route-miss') return t('byname.research.routeMiss')
+                            if (match === 'candidate') return t('byname.research.matchCandidate')
+                            if (match === 'kb') return t('byname.research.matchKb')
+                            return t('byname.research.matchNone')
+                          })()}</span>
+                          <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} aria-label={t('byname.research.remove')} title={t('byname.research.remove')} onClick={() => { controller.removeCapabilityOverride(index) }}>×</button>
+                        </div>
+                      ))}
+                      {/* The rollback lever (K round): ONE click forgets every imported
+                          score and restores install-time default scoring — full-size,
+                          bottom-right of the expanded fold. */}
+                      <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button type="button" className="dsmp-hover" style={resetButtonStyle} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
+                      </span>
+                    </>
+                  )}
               </div>
             )
             : null}
