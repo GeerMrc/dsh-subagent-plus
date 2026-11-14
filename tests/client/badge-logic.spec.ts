@@ -44,10 +44,27 @@ describe('badgeRoute', () => {
   })
 })
 
-describe('settings locale dictionaries (key parity)', () => {
+describe('settings locale dictionaries (key parity + language guard)', () => {
   it('zh and en cover exactly the same keys', async () => {
     const { en, zh } = await import('../../src/client/locales.js')
     expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
+  })
+
+  /** L1: a bare-key regex edit once wrote en values into the zh dictionary —
+   *  key parity cannot see language displacement. Whole-dict guard: every zh
+   *  value carries Han characters (allowlist: the bilingual JSON example);
+   *  no en value does. */
+  it('zh values carry Han, en values carry none (language-displacement guard)', async () => {
+    const { en, zh } = await import('../../src/client/locales.js')
+    const han = /[\u4e00-\u9fff]/
+    const allowNoHan = new Set(['byname.research.placeholder'])
+    for (const [key, value] of Object.entries(zh)) {
+      if (allowNoHan.has(key)) continue
+      expect(han.test(value), `zh[${key}] = ${String(value).slice(0, 40)}`).toBe(true)
+    }
+    for (const [key, value] of Object.entries(en)) {
+      expect(han.test(value), `en[${key}] = ${String(value).slice(0, 40)}`).toBe(false)
+    }
   })
 })
 
