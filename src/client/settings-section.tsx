@@ -19,7 +19,7 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
-import { canonicalizeModelId as _cm, kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
+import { kbEntryFor, KB_AS_OF } from '../capability-scoring.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
@@ -640,7 +640,7 @@ function EditorRoutes(props: EditorProps) {
                     ? routeShort(listedHit)
                     : routeIncomplete ? t('byname.routeInvalid') : `${row.provider} · ${row.model}`
                   const routeTitle = listedHit !== null
-                    ? routeFull(listedHit)
+                    ? routeFull(listedHit) + (kbEntryFor(listedHit.model) === undefined ? ` · ${t('byname.kbUnknown').replace('{date}', KB_AS_OF)}` : '')
                     : routeIncomplete ? t('byname.routeInvalid')
                       : catalogHit === null ? t('list.unavailable') : t('byname.routeNotListed')
                   return (
