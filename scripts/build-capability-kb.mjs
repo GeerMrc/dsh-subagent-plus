@@ -64,6 +64,25 @@ async function fetchArena(config) {
   return rows
 }
 
+/** Root-cause diagnosis for an empty text fetch (ADR 0016 3d, 2026-11-16):
+ *  the rows API's "temporary spike" wording hid a persistent upstream failure
+ *  for four days — the /parquet endpoint names the real state (the text
+ *  config's config-parquet conversion FAILED upstream, no client-side path). */
+async function diagnoseTextSource() {
+  try {
+    const text = await fetchWithRetry('https://datasets-server.huggingface.co/parquet?dataset=lmarena-ai/leaderboard-dataset', 2)
+    const page = JSON.parse(text)
+    const failed = (page.failed ?? []).some(entry => entry.config === 'text')
+    if (failed) {
+      console.warn('  diagnosis: config-parquet conversion for "text" FAILED upstream — the rows-API spike wording is a symptom; recovery needs the upstream pipeline (no client-side path)')
+    } else {
+      console.warn('  diagnosis: parquet conversion for "text" looks healthy — the rows spike may be transient; retrying the build later may succeed')
+    }
+  } catch (error) {
+    console.warn(`  diagnosis unavailable (${String(error)})`)
+  }
+}
+
 async function fetchArenaOptional(config) {
   try {
     return await fetchArena(config)
@@ -228,6 +247,7 @@ async function main() {
   console.log('fetching arena text/webdev/agent (latest)…')
   const [textRows, webdevRows, agentRows] = await Promise.all([fetchArenaOptional('text'), fetchArenaOptional('webdev'), fetchArenaOptional('agent')])
   console.log(`  text=${textRows.length} webdev=${webdevRows.length} agent=${agentRows.length}`)
+  if (textRows.length === 0) await diagnoseTextSource()
   console.log('fetching aider polyglot…')
   const aider = await fetchAider()
   console.log(`  aider=${aider.length}`)
