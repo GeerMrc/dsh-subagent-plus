@@ -39,6 +39,7 @@ import {
   type RouteFields,
 } from './pin.js'
 import {
+  assignedNotice,
   byNameFallbackNotice,
   byNameNotice,
   byNameSkippedNotice,
@@ -54,6 +55,7 @@ import {
   pinnedNotice,
   pinFallbackNotice,
   pinSkippedNotice,
+  reassignedNotice,
   resolveStrategyPlan,
   routeKey,
   RouteHealth,
@@ -490,6 +492,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   const recordFailure = (config: PinConfig, agent: Agent, provider: string, failure: LlmFailure): void => {
     const failureClass = classifyFailure(failure.code, failure.status)
     if (failureClass === 'ignore') return
+    lastFailureCodes.set(agent, failure.code)
     const fallback = fallbackRouteOf(config)
     const failurePlan = resolveStrategyPlan(config)
     const failurePin = failurePlan.kind === 'pinned' ? resolvePin(config) : undefined
@@ -505,6 +508,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     }
     const decision = decisions.get(agent)
     const byName = byNameDecisions.get(agent)
+    const lastFailureCode = lastFailureCodes.get(agent)
     let model: string | undefined
     if (byName !== undefined && byName.route.provider === provider) {
       model = byName.route.model
@@ -611,8 +615,12 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       model: modelSelection.model,
       ...(modelSelection.reasoningEffort === undefined ? {} : { reasoningEffort: modelSelection.reasoningEffort }),
     }
-    // Determine what notice to show based on the current route vs intent.
+    // Determine what notice to show based on the current route vs intent
+    // (ADR 0010 M6 in full — R-1: the spread assignment and step-boundary
+    // reassignment notices were lost in the migration, leaving e2e Flow A/B
+    // standards and the locale promises unbacked).
     const byName = byNameDecisions.get(agent)
+    const spread = decisions.get(agent)
     let text: string | undefined
     if (byName !== undefined && byName.route.provider === currentRoute.provider && byName.route.model === currentRoute.model) {
       text = byNameNotice(byName.name, routeId(currentRoute))
@@ -621,6 +629,14 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       const pin = plan.kind === 'pinned' ? resolvePin(config) : undefined
       if (pin !== undefined && pin.provider === currentRoute.provider && pin.model === currentRoute.model) {
         text = pinnedNotice(routeId(currentRoute))
+      } else if (spread !== undefined && spread.kind === 'assigned' && spread.via === 'strategy'
+        && spread.route.provider === currentRoute.provider && spread.route.model === currentRoute.model) {
+        // The strategy-assigned route is running as assigned — say so once.
+        text = assignedNotice(routeId(currentRoute), spread.strategy)
+      } else if (spread !== undefined && spread.kind === 'assigned' && spread.via === 'strategy'
+        && (spread.route.provider !== currentRoute.provider || spread.route.model !== currentRoute.model)) {
+        // Health failover moved the child off its assigned route — name the swap.
+        text = reassignedNotice(routeId(spread.route), routeId(currentRoute), lastFailureCodes.get(agent) ?? 'unhealthy')
       } else {
         const fallback = fallbackRouteOf(config)
         if (fallback !== undefined && fallback.provider === currentRoute.provider && fallback.model === currentRoute.model) {
@@ -660,6 +676,9 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   // Dispose hygiene: a scheduled debounce must not fire past fiber teardown.
   ctx.effect(() => () => { if (adaptersTimer !== undefined) clearTimeout(adaptersTimer) })
 }
+
+/** Last recorded failure code per agent (feeds the reassignment notice). */
+const lastFailureCodes = new WeakMap<object, string>()
 
 /** One notice per agent per distinct route target. */
 const noticedLabel = new WeakMap<object, string>()

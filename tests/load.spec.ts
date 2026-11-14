@@ -805,3 +805,70 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(warns.mock.calls.some(args => String(args[0]).includes('cooling down'))).toBe(true)
   })
 })
+
+describe('spread transcript notices (S1, ADR 0010 M6 restored)', () => {
+  const two = [
+    { provider: 'sz', model: 'model-x1', reasoningEffort: '' },
+    { provider: 'hh', model: 'model-x2', reasoningEffort: '' },
+  ]
+  const tiers: Record<string, string[]> = {
+    'sz/model-x1': ['off', 'low', 'medium', 'xhigh'],
+    'hh/model-x2': ['low', 'high', 'max'],
+  }
+  const llm = {
+    listProviders: () => [{ id: 'sz' }, { id: 'hh' }, { id: 'zai' }],
+    listModels: async () => ['model-x1', 'model-x2'].map(id => ({ id })),
+    resolveModelInfo: (provider: string, model: string) => ({ reasoning: { efforts: tiers[`${provider}/${model}`]?.map(id => ({ id })) } }),
+  }
+  const setup = async (overrides: Record<string, unknown> = {}): Promise<Context> => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', llm)
+    ctx.provide('agentTeams', { tryMembership: (a: object) => ({ name: teamNameOf.get(a) }) })
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'round-robin',
+      priority: two.map(entry => ({ ...entry })),
+      respectExplicit: false, cooldownMs: 120_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [], nameMapDefaults: true, ...overrides,
+    })
+    return ctx
+  }
+
+  it('a round-robin child gets the bilingual strategy-assignment notice (e2e Flow A standard)', async () => {
+    const ctx = await setup()
+    const agent = plainChild()
+    await fireCreated(ctx, agent)
+    const decision = await dispatchPreStep(ctx, agent, { provider: 'sz', model: 'model-x1' })
+    const messages = decision.kind === 'enter' ? decision.messages : []
+    const notice = messages.find(message => JSON.stringify(message).includes('model assigned'))
+    expect(notice).toBeTruthy()
+    expect(JSON.stringify(notice)).toContain('策略：轮询')
+    expect(JSON.stringify(notice)).toContain('strategy: round-robin')
+    expect(JSON.stringify(notice)).toContain('sz/model-x1')
+  })
+
+  it('a step-boundary failover emits the reassignment notice naming the swap', async () => {
+    const ctx = await setup({ cooldownMs: 60_000 })
+    const agent = plainChild()
+    await fireCreated(ctx, agent) // assigned sz
+    await dispatchFailure(ctx, agent, 'sz', 'RATE_LIMIT') // sz cools; step-boundary select moves to hh
+    await new Promise(r => setTimeout(r, 10))
+    const decision = await dispatchPreStep(ctx, agent, { provider: 'hh', model: 'model-x2' })
+    const text = JSON.stringify((decision.kind === 'enter' ? decision.messages : []).find(message => JSON.stringify(message).includes('model reassigned')))
+    expect(text).toContain('sz/model-x1')
+    expect(text).toContain('hh/model-x2')
+    expect(text).toContain('RATE_LIMIT')
+  })
+
+  it('notices dedupe: the same route does not re-notify on the next step', async () => {
+    const ctx = await setup()
+    const agent = plainChild()
+    await fireCreated(ctx, agent)
+    const first = await dispatchPreStep(ctx, agent, { provider: 'sz', model: 'model-x1' })
+    const second = await dispatchPreStep(ctx, agent, { provider: 'sz', model: 'model-x1' })
+    expect(JSON.stringify(first.kind === 'enter' ? first.messages : []).match(/model assigned/g)?.length).toBe(1)
+    expect(JSON.stringify(second.kind === 'enter' ? second.messages : [])).not.toContain('model assigned')
+  })
+})
