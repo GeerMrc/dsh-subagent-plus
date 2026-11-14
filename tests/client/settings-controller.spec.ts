@@ -668,39 +668,46 @@ describe('capability override import (Z4, ADR 0016 d3)', () => {
 /** An empty catalogue port for form-only tests. */
 const emptyCatalogPort: CatalogPort = { load: async () => ({ groups: [], failureCount: 0 }) }
 
-describe('research package scope (Z8 — full catalogue, configuration-independent)', () => {
-  it('buildResearchPackage marks candidates and unknowns and stays JSON-serialisable', async () => {
+describe('research package scope (Z8/Z10 — full catalogue, model-level scoring unit)', () => {
+  const fullCatalogue = [
+    { provider: 'deepseek-official', model: 'deepseek-flash', match: 'none' as const },
+    { provider: 'deepseek-account', model: 'deepseek-flash', match: 'none' as const },
+    { provider: 'sz', model: 'Qwen3.8-27B-FP8', match: 'none' as const },
+    { provider: 'hh', model: 'Qwen3.8-27B-FP8', match: 'candidate' as const },
+  ]
+
+  it('keeps EVERY catalogue route in candidates (no collapsing) while the prompt scores one row per model', async () => {
     const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
-    const pkg = buildResearchPackage([
-      { provider: 'sz', model: 'cand-a', match: 'candidate' },
-      { provider: 'zai', model: 'Qwen3.8-27B-FP8', match: 'kb' },
-      { provider: 'cm', model: 'mystery-deploy', match: 'none' },
-    ], '2026-11-14') as { schema: number; candidates: { model: string; match: string }[]; prompt_zh: string }
-    expect(pkg.schema).toBe(1)
-    expect(pkg.candidates).toHaveLength(3)
-    expect(pkg.prompt_zh).toContain('完整模型目录')
-    expect(pkg.prompt_zh).toContain('cand-a（当前候选）')
-    expect(pkg.prompt_zh).toContain('mystery-deploy（未知模型')
-    expect(() => JSON.stringify(pkg)).not.toThrow()
+    const pkg = buildResearchPackage(fullCatalogue, '2026-11-14') as { schema: number; candidates: unknown[]; prompt: string }
+    expect(pkg.schema).toBe(2)
+    expect(pkg.candidates).toHaveLength(4) // both providers of deepseek-flash and both routes of the 27B stay visible
+    // Prompt lists each distinct model exactly once.
+    expect(pkg.prompt.match(/- deepseek-flash/g)).toHaveLength(1)
+    expect(pkg.prompt.match(/- Qwen3.8-27B-FP8/g)).toHaveLength(1)
+  })
+
+  it('prompt carries the hardened output contract with live counts and route annotations', async () => {
+    const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
+    const pkg = buildResearchPackage(fullCatalogue, '2026-11-14') as { prompt: string }
+    expect(pkg.prompt).toContain('EXACTLY 2 objects')
+    expect(pkg.prompt).toContain('deepseek-flash (via deepseek-official / deepseek-account; unknown model — estimate by comparable positioning)')
+    expect(pkg.prompt).toContain('Qwen3.8-27B-FP8 (via sz / hh; current candidate)')
+    expect(pkg.prompt).toContain('same as above')
+    expect(pkg.prompt).toContain('同上')
+    expect(pkg.prompt).toContain('[reference:N]')
+    expect(pkg.prompt).toContain('exactly this many items')
+    expect(pkg.prompt).toContain('at most 120 characters')
+  })
+
+  it('single English prompt — no bilingual variants ship in the package', async () => {
+    const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
+    const pkg = buildResearchPackage([{ provider: 'p', model: 'm', match: 'kb' }], '2026-11-14') as Record<string, unknown>
+    expect(pkg.prompt).toBeTruthy()
+    expect(pkg.prompt_zh).toBeUndefined()
+    expect(pkg.prompt_en).toBeUndefined()
   })
 })
 
-describe('research package dedupes same model across providers (Z9)', () => {
-  it('lists each model id once; candidate mark survives from any provider instance', async () => {
-    const { buildResearchPackage } = await import('../../src/client/settings-controller.js')
-    const pkg = buildResearchPackage([
-      { provider: 'deepseek-official', model: 'deepseek-flash', match: 'none' },
-      { provider: 'deepseek-account', model: 'deepseek-flash', match: 'none' },
-      { provider: 'hh', model: 'Qwen3.8-27B-FP8', match: 'none' },
-      { provider: 'sz', model: 'Qwen3.8-27B-FP8', match: 'candidate' },
-    ], '2026-11-14') as { candidates: { model: string; match: string }[]; prompt_zh: string }
-    const ids = pkg.candidates.map(entry => entry.model)
-    expect(new Set(ids).size).toBe(ids.length)
-    expect(pkg.candidates.find(entry => entry.model === 'Qwen3.8-27B-FP8')?.match).toBe('candidate')
-    expect(pkg.prompt_zh.match(/- deepseek-flash/g)).toHaveLength(1)
-    expect(pkg.prompt_zh).toContain('Qwen3.8-27B-FP8（当前候选）')
-  })
-})
 
 describe('override removal persists (Za — review P-1: copyConfig aliasing bug)', () => {
   it('removing a row on a freshly loaded config produces a save op (the committed value must not mutate)', async () => {

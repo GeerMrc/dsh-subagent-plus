@@ -228,43 +228,53 @@ export interface ResearchCandidate {
  * @returns the JSON-serialisable package.
  */
 export function buildResearchPackage(candidates: readonly ResearchCandidate[], today: string): Record<string, unknown> {
-  // The full catalogue can serve the same model id through several providers —
-  // the research list dedupes by model id (one score per model), and the
-  // "current candidate" mark survives from whichever provider instance is
-  // listed. Otherwise an evaluation returning every row would trip the
-  // importer's duplicate-model rejection.
-  const seen = new Map<string, ResearchCandidate>()
+  // Export fidelity (Z10): the candidates array lists EVERY catalogue entry —
+  // the same model through several providers stays visible (the user's
+  // multi-route reality). The PROMPT list still scores one row per distinct
+  // model (capability is model-intrinsic), annotated with its access routes so
+  // nothing is hidden from the evaluator.
+  const models = new Map<string, { model: string; providers: string[]; candidate: boolean; unknown: boolean }>()
   for (const entry of candidates) {
     const key = canonicalizeModelId(entry.model)
-    const existing = seen.get(key)
-    if (existing === undefined || (existing.match !== 'candidate' && entry.match === 'candidate')) {
-      seen.set(key, existing === undefined ? entry : { ...existing, match: 'candidate' })
-    }
+    const record = models.get(key) ?? { model: entry.model, providers: [], candidate: false, unknown: entry.match === 'none' }
+    if (!record.providers.includes(entry.provider)) record.providers.push(entry.provider)
+    if (entry.match === 'candidate') record.candidate = true
+    if (entry.match === 'kb') record.unknown = false
+    models.set(key, record)
   }
-  const unique = [...seen.values()]
+  const unique = [...models.values()]
+  const line = (record: { model: string; providers: string[]; candidate: boolean; unknown: boolean }): string => {
+    const notes: string[] = []
+    if (record.providers.length > 1) notes.push(`via ${record.providers.join(' / ')}`)
+    if (record.candidate) notes.push('current candidate')
+    else if (record.unknown) notes.push('unknown model — estimate by comparable positioning')
+    return `- ${record.model}${notes.length > 0 ? ` (${notes.join('; ')})` : ''}`
+  }
+  // Hardened output contract (Z11): exact-count, order correspondence,
+  // self-contained rows, note hygiene, and a self-check — each clause grounded
+  // in the prompt-engineering evidence collected in the ADR (count constraints
+  // are the most fragile class, so the importer merges duplicates as the
+  // program-side backstop).
+  const prompt = [
+    'You are a model-capability evaluator. Score the models below 0-100 on four dimensions.',
+    'Scores express each model\'s position against the current mainstream population: 50≈median, 70≈top quartile, 90≈top decile.',
+    'Dimensions: overall / coding / webdev (frontend web development) / agentic (autonomous tool use).',
+    'The list is the distinct model inventory of this environment (the full catalogue may serve one model through several providers — score the MODEL once regardless of access routes); ground your scores in public benchmarks and community testing. Models marked "current candidate" are actively listed.',
+    `Output a JSON array with EXACTLY ${unique.length} objects — one per listed model, in the listed order. Each object: {"model": "<exact id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "${today}", "note": "..."}.`,
+    'Every object must be self-contained and independently understandable: write each field in full. Never write "same as above", "同上", "ditto", or refer to other items.',
+    'Each note is plain text, at most 120 characters, stating the concrete basis (benchmark names and scores when available). Do not emit citation markers such as [reference:N] or [1] in any field.',
+    'Before finishing, verify the array has exactly this many items and each model appears exactly once; fix it if not.',
+    'JSON only, no prose. Models:',
+    ...unique.map(line),
+  ].join('\n')
   return {
-    schema: 1,
+    schema: 2,
     exportedAt: today,
     dimensions: ['overall', 'coding', 'webdev', 'agentic'],
-    candidates: unique.map(entry => ({ provider: entry.provider, model: entry.model, match: entry.match })),
-    prompt_zh: [
-      '你是模型能力评估员。请对下列模型在四个维度上给出 0-100 的能力评分。',
-      '评分表达该模型相对当前主流模型总体的位置：50≈主流中位、70≈前四分之一、90≈前 10%。',
-      '维度：overall（综合）/ coding（编码）/ webdev（前端网页开发）/ agentic（自主任务·工具使用）。',
-      '清单为当前环境的完整模型目录（并非都在使用）；请依据公开基准与社区实测知识评分，标注了"当前候选"的模型正在使用中。',
-      '输出一个 JSON 数组，每项 {"model": "<原样模型 id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "调研执行日期(YYYY-MM-DD)", "note": "简短依据"}。',
-      '只输出 JSON，不要解释。模型列表：',
-      ...unique.map(entry => `- ${entry.model}${entry.match === 'candidate' ? '（当前候选）' : entry.match === 'none' ? '（未知模型，请按同类定位估计）' : ''}`),
-    ].join('\n'),
-    prompt_en: [
-      'You are a model-capability evaluator. Score the models below 0-100 on four dimensions.',
-      'Scores express each model\'s position against the current mainstream population: 50≈median, 70≈top quartile, 90≈top decile.',
-      'Dimensions: overall / coding / webdev (frontend web development) / agentic (autonomous tool use).',
-      'The list is the FULL model catalogue of this environment (not all are in use); ground your scores in public benchmarks and community testing. Models marked "current candidate" are actively listed.',
-      'Output a JSON array, one object per model: {"model": "<exact id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "YYYY-MM-DD research date", "note": "brief basis"}.',
-      'JSON only, no prose. Models:',
-      ...unique.map(entry => `- ${entry.model}${entry.match === 'candidate' ? ' (current candidate)' : entry.match === 'none' ? ' (unknown model — estimate by comparable positioning)' : ''}`),
-    ].join('\n'),
+    // Full catalogue, entry per provider route — this documents the
+    // environment; the prompt above is the scoring unit.
+    candidates: candidates.map(entry => ({ provider: entry.provider, model: entry.model, match: entry.match })),
+    prompt,
   }
 }
 
