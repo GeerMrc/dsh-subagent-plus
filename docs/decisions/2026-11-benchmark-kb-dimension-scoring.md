@@ -56,6 +56,16 @@
 - **归类声明**：prompt 是**导出数据**（调研任务产物），非插件 UI 文案——不属 locale 字典管辖（locale 纪律只约束产品界面文字）；其语言选择属数据格式决策（上文证据）。
 - **合并反馈**：导入 flash 文案携带合并计数（已导入 N 行·自动合并 M 行重复）；重导入遇同对 qualified 行＝草稿感知 last-wins（新行替换旧行、计入合并反馈），不产生 save-blocking 的 repeats 状态。
 
+### 3b. F 轮：模型 id 解析全面加固（2026-11-14 用户实测审计裁定）
+
+**触发**：用户加入第三候选 `deepseek-flash`（官方目录显示名 DeepSeek-V4.1-Flash）后 Team 表无重派。269 条真实世界 id 实证审计＋两路桥接源调研：**"灾难"不成立于全 unknown 形态**（列表序回退 12 行契约锁定、不崩溃不空表），**成立于混合列表静默零分配**——1 个已收录候选占满全部行、未收录候选 0 行且运行时零告警。官方裸 id 命中率 80%（deepseek-flash 世代中缀缺口＝用户案例）、用户目录 62.5%、社区形态 68%。
+
+- **d1 别名层（capability-scoring）**：`OFFICIAL_ID_STEMS` 人工核心表先于直查（`deepseek-flash→deepseek-v4.1-flash`、`k3→kimi-k3`；官方目录显示名与存储 id 分裂是匹配层隐形输入）；**版本分隔符归一** `(?<!\d)(\d)-(\d)(?![\w.])→点`（3-5≡3.5；lookaround 防 `4-32k`/`2-72b` 腐蚀与 `llama-3-8b`≠3.8）；**上下文后缀剥离** `\d+[km]`（k3-256k→k3；参数量 b 不剥——属官方 id）；**保守级联** curated→直查→全部逐层 strip-exact→变体扇出最长词干优先；**单 token 守卫**——裸厂牌永不扇出（首稿"逐层扇出"会把 deepseek 桥到 15 个族键，被独立审核否决）；KB 查找走规范化索引（WeakMap 缓存、构建期免迁移、键碰撞按最弱信号合并）。**运行期 vendor 折叠判死**：`deepseek/deepseek-r1` 官方连字符 vs `qwen/qwen-2.5-x` 官方缩并——同形输入相反正确输出，运行期不可判定；该 per-vendor 表即别名表→移交构建期（F4）。
+- **d2 可见性契约（兜住全部 inherent 类）**：`kbStatusOf` 三态单谓词（anchored/known/unknown，override 救援感知）统一驱动——候选行"未收录"徽章（title 三态说明）、defaultsHint 下"{n} 个候选未收录"汇总行、estimatedAll 互斥（含 unknown 的清单不再宣称全 estimated）、行选 title/option 标注；**运行时 one-time-per-unknown-set warn**（混合列表排除候选时记录一次，全 unknown 不警告——回退是契约非缺陷）；导入 override 立即翻盘保留。
+- **d3 槽位多样性**：B 中位撞 S 时从中位向两侧外步进取最近不同模型（等距取强侧）；**承诺仅当该槽自己的池含 ≥3 不同 canonical 模型**（2 候选/重复挂载维持撞位）；F 在去重池上重跑完整 reduce——**可互换判据＝canonical+S 族分+fast hint**（provider 限定行刻意分化的同模型双路由均存活，Zb 回归现场修复）；池归属：B 含 estimated（A-6 只辖 S/F），S/F 限定 anchored-else-known 不变。
+- **F4 构建期 OR 交叉（修订 Y-5：别名入库、分数仍不入库）**：`--aliases-only` 免源重建合并别名（dims/键/KB_AS_OF/KB_SOURCES 字节保真——text 源中断期重建会丢已提交 coding 锚，故禁止全量重建路径）；匹配激进（全分隔符 squish）桥接保守（运行期 canonicalize 已折叠的 slug 不加别名）；`~` 路由器 alias_target 与描述反引号裸 id 仅打印为 curated 候选供人工审，绝不自动入表。当前 228 条 KB 上诚实上限＝2 对（qwen/qwen-2.5-coder-32b-instruct→缩并官方键、upstage/solar-pro4）。
+- **验证**：用户真实场景纯函数钉子（三候选→review 族翻 deepseek-official/deepseek-flash max 档、三模型各占一席）＋装机终审五步。
+
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）
 
 恢复默认按钮禁用态＝**内联展开** opacity .45＋cursor default（CSS 类打不过 inline cursor——P1 教训）；五区"待保存"徽标全函数分派（清单区＝priority+strategy+钉定三件；Team＝nameMap+nameMapDefaults；兜底行＝fallback×3；高级折叠头＝5 开关；limits）且徽标判定与 fieldOps **共用 JSON 比较助手**；defaultsHint 追加"（预览随草稿实时变化，保存后生效）"；"未收录"标注＋KB 快照日期进 ⓘ help。

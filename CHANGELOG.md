@@ -66,6 +66,10 @@
 - 留待：DOM 渲染级测试仍为既有技术债；命名预设集（多套映射＋切换）与 per-workspace
   覆盖为后续方向（ADR 0014 不做面）；auto-save 页级改造不做（全页统一保存为既有架构）。
 
+- feat(resolver)!: **模型 id 解析全面加固（F 轮，ADR 0016 3b，269-id 实证审计驱动）**：官方裸 id 别名表（`deepseek-flash`→V4.1-Flash 族——用户实测第三候选加入 Team 不重派的根因：官方目录显示名 DeepSeek-V4.1-Flash 与存储 id `deepseek-flash` 分裂，而 KB 全族键带版本中缀）；版本分隔符归一（点/连字符等价，带防 `4-32k`/`2-72b` 腐蚀守卫）；上下文后缀剥离（k3-256k→k3 族）；保守扇出级联＋**单 token 守卫**（裸厂牌永不桥接）；OpenRouter 构建期别名交叉（`--aliases-only` 免源重建、只桥接运行期折叠不了的 slug、OR 署名入 NOTICES）。
+- feat(visibility): **未收录可见性契约**——kbStatusOf 三态统一驱动候选行"未收录"徽章、"N 个候选未收录"汇总行、estimatedAll 互斥、运行时混合列表一次性排除告警；导入评估对任意 id 立即翻盘（已收录并参与分配）。审计结论：全 unknown 清单照常 12 行分配（契约锁定），真正的坑是混合列表静默零分配——不再沉默。
+- feat(strategy): **槽位多样性偏好**——B 中位撞 S 时向两侧外步进（等距取强侧，≥3 不同模型门）；F 在 canonical 去重池上重跑（可互换判据保护 provider 限定双路由）；用户三候选场景实测 review 族翻 deepseek-official/deepseek-flash（max 档）、三模型各占一席。
+
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
 - feat(takeover): 启用期间官方「子智能体」设置页（纯编辑面）经 bundle patch

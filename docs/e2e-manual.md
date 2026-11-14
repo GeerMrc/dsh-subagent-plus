@@ -134,6 +134,8 @@ pnpm dsh --profile pin-test --patch apps/web/tests/pin-browse-picker.overlay.yml
 | D8 | **导入导出闭环（ADR 0016 d3，Z10/Z11）**：点「导出调研任务」→剪贴板得 JSON 包（candidates＝完整目录逐条含多供应商路由；单一英文 prompt 含恰好 N/自包含/禁同上/禁引用标记/自检条款，多路接入标注 (via A / B; current candidate)）→交任意强模型→回传粘贴→应用 | 重复行**自动合并**（反馈明示已合并）；全空维度/越界分行被拒并逐条指出；每行命中徽章（当前候选/知识库/未命中）；给某候选 90 分→立即成为审阅族目标；**手编 {"provider":"X","model":"Y"} 限定行**→列表显示 X · Y、仅影响该路由（给备份路由低分→派生表分道）；拼错 provider→"未命中任何接入路由"提示；重导入→限定行保留；导入行可删可清空；Team 徽标亮起"待保存" |
 | D9 | 分区"待保存"徽标 | 改任一 Team 相关配置（恢复默认/编辑行/导入评估）→Team 标题旁徽标即现；保存后消失；仅改候选清单（Team 无自定义行）时 Team 徽标**不**亮（派生预览非存储变更） |
 | D10 | 子窗口模型徽章 | 子 Agent 输入框右侧徽章完整显示如 `strata/Qwen3.8-Flash-Next-NVFP4 · Xhigh`（不截断；title 有全文） |
+| D11 | **F 轮判别①（别名＋多样性）：候选含官方裸 id**——`Qwen3.8-Flash-Next-NVFP4`＋`Qwen3.8-27B-FP8`＋官方路由 `deepseek-flash` 三条 →保存→重启 | 审阅族 4 行翻到 **deepseek-official · deepseek-flash（max 档）**（官方别名表命中 V4.1-Flash 族）；三模型各占至少一族（多样性生效）；无"未收录"徽章 |
+| D12 | **F 轮判别②（可见性契约）**：候选换成 1 条已收录（如 Qwen3.8-27B-FP8）＋1 条私有名（如 `my-ft-v2`）→保存→重启→看设置页与日志 | `my-ft-v2` 行出现**"未收录"徽章**（悬停三态说明）；defaultsHint 下出现"N 个候选未收录，暂不参与槽位分配"汇总行；日志出现一次性 warn（含该 id）；给 `my-ft-v2` 导一条 override →徽章消失、参与分配（翻盘路径）；换两条全私有名→12 行照常分配且**无**告警（回退契约） |
 ## 10. 版本回退/降级安装注意
 
 从更高版本（如 0.2.5）降到低版本（如 v0.0.1）时，pnpm 视为版本回退——删 `node_modules/dsh-subagent-plus` 后 `pnpm install --force`（必要时先 `pnpm store prune`），并用 grep 安装产物内容确认版本（不要只看 MD5 对比本地 lib）。
