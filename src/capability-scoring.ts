@@ -9,7 +9,7 @@
  * evidence — ADR 0016 d1); a model absent from both is UNKNOWN and is the
  * last resort for every slot (never promoted by argmin — A-1).
  */
-import { KB, KB_AS_OF, type KbDims, type KbEntry } from './capability-kb.js'
+import { KB, KB_AS_OF, type KbEntry } from './capability-kb.js'
 
 /** The KB face the resolver reads — injectable so tests pin behaviour against
  *  fixture tables instead of the live snapshot. */
@@ -50,6 +50,16 @@ export const FAMILY_WEIGHTS = {
 
 const QUANT_SUFFIX = /[-_](fp8|fp8-?hf|fp4|nvfp4|int8|int4|awq|gptq(?:-int4)?|gguf|bnb-[48]bit)$/i
 const DATE_SUFFIX = /[-_](\d{4}-\d{2}-\d{2}|\d{8}|0\d{2}|\d{4,6})$/
+/** Context-size variant tails (k3-256k, claude-…-32k): the underlying model is
+ *  the same, so the tail strips exactly like a quantisation marker. Parameter
+ *  sizes (llama-3-8b, qwen2-72b) are deliberately NOT stripped — they are part
+ *  of the official id. */
+const CONTEXT_TAIL = /^\d+[km]$/i
+/** Hyphenated single-digit version pairs fold to the dotted spelling
+ *  (3-5 ≡ 3.5, 4-8 ≡ 4.8) — Anthropic ships both forms across its ids while
+ *  the KB mixes them. The lookarounds keep size suffixes intact: `4-32k` and
+ *  `2-72b` keep their hyphen because the right digit continues into a word. */
+const VERSION_PAIR = /(?<!\d)(\d)-(\d)(?![\w.])/g
 
 /** Canonical KB key for a raw model identifier (ADR 0016 d1). Provider
  *  deployment names never take part — only the model id string does. */
@@ -69,12 +79,29 @@ export function canonicalizeModelId(raw: string): string {
   while (changed && tokens.length > 1) {
     changed = false
     const tail = tokens[tokens.length - 1] ?? ''
-    if (QUANT_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`)) {
+    if (QUANT_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`) || CONTEXT_TAIL.test(tail)) {
       tokens = tokens.slice(0, -1)
       changed = true
     }
   }
-  return tokens.join('-')
+  return tokens.join('-').replace(VERSION_PAIR, '$1.$2')
+}
+
+/** Curated official-id stems (ADR 0016 3a F1): the only reliable bridge for
+ *  official catalogue ids that carry no generation infix — the harness stores
+ *  `deepseek-flash` while every KB key of the family carries `v4.1`-style
+ *  infixes, and Moonshot's short alias `k3` fronts `kimi-k3`. Keyed by the
+ *  canonical query, valued by the canonical family stem (resolved through the
+ *  normal cascade, usually via variant fan-out). Vendor-repeat folding is
+ *  deliberately NOT here: `deepseek/deepseek-r1` is hyphenated officially
+ *  while `qwen/qwen-2.5-x` is contracted — the same input shape with opposite
+ *  correct outputs, unresolvable at runtime without a per-vendor table (that
+ *  table IS this table; the enumerable OpenRouter forms land as KB aliases at
+ *  build time instead). Maintained alongside each KB snapshot: a rebuild that
+ *  absorbs a row must delete it (guarded by a spec invariant). */
+export const OFFICIAL_ID_STEMS: Readonly<Record<string, string>> = {
+  'deepseek-flash': 'deepseek-v4.1-flash',
+  k3: 'kimi-k3',
 }
 
 /** The resolved capability view of one model id. */
@@ -89,51 +116,107 @@ export interface CapabilityView {
   source: 'override' | 'kb' | 'none'
 }
 
-/** Progressive match against the KB (ADR 0016 d1): exact → alias → strip one
- *  suffix at a time and retry — so `Qwen3.8-Flash-Next-NVFP4` finds
- *  `qwen3.8-flash-next` even when the KB also holds the older
- *  `qwen3.8-flash`. Family fallback stays a future build-script concern. */
-/** Progressive match against a KB table (ADR 0016 d1): exact → alias → strip
- *  one suffix at a time and retry — so `Qwen3.8-Flash-Next-NVFP4` finds
- *  `qwen3.8-flash-next` even when the table also holds the older
- *  `qwen3.8-flash`. */
-export function kbEntryFor(modelId: string, kb: KbTable = KB): { dims: Partial<Record<CapabilityDimension, number>>; estimated: boolean } | undefined {
-  const direct = kb[canonicalizeModelId(modelId)]
-  if (direct !== undefined) return { dims: direct.dims, estimated: direct.estimated === true }
-  let stripped = String(modelId)
-  for (let round = 0; round < 4; round += 1) {
-    const next = stripOneSuffix(stripped)
-    if (next === stripped) break
-    stripped = next
-    const hit = kb[canonicalizeModelId(stripped)]
-    if (hit !== undefined) return { dims: hit.dims, estimated: hit.estimated === true }
-  }
-  // Variant fan-out fallback (ADR 0016 d1 family fallback, snapshot-scoped):
-  // a bare family query (`deepseek-v4.1-flash`) matches its variant entries
-  // (`…-flash-max`) by key prefix; prefer the entry with more dimensions, then
-  // the higher mean — deterministic under snapshot refreshes.
-  const stem = canonicalizeModelId(modelId)
-  const fanouts = Object.keys(kb).filter(key => key.startsWith(`${stem}-`))
-  if (fanouts.length > 0) {
-    const mean = (entry: { dims: KbDims }): number => {
-      const values = Object.values(entry.dims)
-      return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
-    }
-    const best = fanouts
-      .map(key => kb[key]!)
-      .sort((left, right) => Object.keys(right.dims).length - Object.keys(left.dims).length || mean(right) - mean(left))[0]!
-    return { dims: best.dims, estimated: best.estimated === true }
-  }
-  return undefined
+/** One resolved KB row as the resolver returns it. */
+export interface KbHit {
+  dims: Partial<Record<CapabilityDimension, number>>
+  estimated: boolean
 }
 
-function stripOneSuffix(raw: string): string {
-  const key = canonicalizeModelId(raw)
-  // Single-token tails only — a '-' inside the class would let the greedy
-  // match cross dashes and strip several tokens at once.
-  const tail = /[-_]([a-z0-9.]+)$/.exec(key)
-  if (tail === null) return raw
-  return key.slice(0, Math.max(0, key.length - tail[1].length - 1))
+const toHit = (entry: KbEntry): KbHit => ({ dims: entry.dims, estimated: entry.estimated === true })
+
+/** Normalized lookup index of one KB table: canonical(key) → merged entry,
+ *  plus canonical(alias) → entry for aliases whose canonical form diverges
+ *  from every key (the OpenRouter cross-references, F4). Both sides run
+ *  through the same canonicalizer, so the shipped file needs no migration —
+ *  keys regenerate normalized at the next snapshot rebuild. WeakMap-cached:
+ *  the shipped KB and test fixtures are stable objects. */
+const lookupCache = new WeakMap<KbTable, Map<string, KbEntry>>()
+
+function kbLookup(kb: KbTable): Map<string, KbEntry> {
+  const cached = lookupCache.get(kb)
+  if (cached !== undefined) return cached
+  const index = new Map<string, KbEntry>()
+  const add = (canonical: string, entry: KbEntry): void => {
+    const existing = index.get(canonical)
+    if (existing === undefined) {
+      index.set(canonical, entry)
+      return
+    }
+    if (existing === entry) return
+    // Collision under the hardened canonicalizer (e.g. a snapshot carrying
+    // both `claude-3-5-sonnet` and `claude-3.5-sonnet`): keep the weakest
+    // observed signal per dimension, mirroring the build script's merge.
+    const merged: KbEntry = { aliases: [...existing.aliases, ...entry.aliases], dims: {} }
+    for (const dimension of ['overall', 'coding', 'webdev', 'agentic'] as const) {
+      const left = existing.dims[dimension]
+      const right = entry.dims[dimension]
+      if (left !== undefined && right !== undefined) merged.dims[dimension] = Math.min(left, right)
+      else if (left !== undefined || right !== undefined) merged.dims[dimension] = (left ?? right) as number
+    }
+    if (existing.estimated === true || entry.estimated === true) merged.estimated = true
+    index.set(canonical, merged)
+  }
+  for (const [key, entry] of Object.entries(kb)) add(canonicalizeModelId(key), entry)
+  for (const entry of Object.values(kb)) {
+    for (const alias of entry.aliases) add(canonicalizeModelId(alias), entry)
+  }
+  lookupCache.set(kb, index)
+  return index
+}
+
+/** Variant fan-out from one stem: match keys with the `stem-` prefix and keep
+ *  the entry with more dimensions, then the higher mean — deterministic under
+ *  snapshot refreshes. Callers guard single-token stems (never fan out). */
+function fanoutBest(stem: string, lookup: Map<string, KbEntry>): KbHit | undefined {
+  const fanouts = [...lookup.keys()].filter(key => key.startsWith(`${stem}-`))
+  if (fanouts.length === 0) return undefined
+  const mean = (entry: KbEntry): number => {
+    const values = Object.values(entry.dims)
+    return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
+  }
+  const best = fanouts
+    .map(key => lookup.get(key)!)
+    .sort((left, right) => Object.keys(right.dims).length - Object.keys(left.dims).length || mean(right) - mean(left))[0]!
+  return toHit(best)
+}
+
+/** Progressive match against a KB table (ADR 0016 d1 + 3a F1), strictly in
+ *  order: curated official stem → exact key/alias → strip one token at a time
+ *  (up to four) re-checking exactly → variant fan-out over the surviving
+ *  stems longest-first. Single-token stems never fan out — a bare vendor id
+ *  bridges nothing (the hazard the first F1 draft shipped). */
+export function kbEntryFor(modelId: string, kb: KbTable = KB): KbHit | undefined {
+  const lookup = kbLookup(kb)
+  const stem = canonicalizeModelId(modelId)
+  const curated = OFFICIAL_ID_STEMS[stem]
+  if (curated !== undefined) {
+    const hit = lookup.get(curated)
+    if (hit !== undefined) return toHit(hit)
+    if (curated.includes('-')) {
+      const fan = fanoutBest(curated, lookup)
+      if (fan !== undefined) return fan
+    }
+  }
+  const direct = lookup.get(stem)
+  if (direct !== undefined) return toHit(direct)
+  // Strip-exact rounds: collect every intermediate stem, longest first.
+  const stems = [stem]
+  let current = stem
+  for (let round = 0; round < 4; round += 1) {
+    const tail = /-([a-z0-9.]+)$/.exec(current)
+    if (tail === null) break
+    current = current.slice(0, current.length - tail[1].length - 1)
+    stems.push(current)
+    const hit = lookup.get(current)
+    if (hit !== undefined) return toHit(hit)
+  }
+  // Fan-out retry, longest stem first — after every strip-exact round missed.
+  for (const candidate of stems) {
+    if (!candidate.includes('-')) continue // single-token guard
+    const hit = fanoutBest(candidate, lookup)
+    if (hit !== undefined) return hit
+  }
+  return undefined
 }
 
 const asOverrideDims = (entry: CapabilityOverride): Partial<Record<CapabilityDimension, number>> => ({

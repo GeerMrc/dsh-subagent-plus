@@ -21,6 +21,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const DS = 'lmarena-ai/leaderboard-dataset'
 const HF_ROWS = (config, split, offset, length) =>
@@ -107,6 +108,12 @@ function rankFractions(items, valueOf) {
 const QUANT_SUFFIX = /[-_ ](fp8|fp8-?hf|fp4|nvfp4|int8|int4|awq|gptq(?:-int4)?|gguf|bnb-[48]bit)$/i
 const FRESH_SUFFIX = /[-_ ](next|preview|latest|exp|canary)$/i
 const DATE_SUFFIX = /[-_ ](\d{4}-\d{2}-\d{2}|\d{8}|0\d{2}|\d{4,6})$/
+const CONTEXT_TAIL = /^\d+[km]$/i
+// Hyphenated single-digit version pairs fold to the dotted spelling (3-5 ≡
+// 3.5); the lookarounds keep size suffixes (4-32k, 2-72b) intact — kept in
+// lockstep with canonicalizeModelId in src/capability-scoring.ts (parity
+// pinned by tests/capability-scoring.spec.ts).
+const VERSION_PAIR = /(?<!\d)(\d)-(\d)(?![\w.])/g
 
 /** Canonical KB key (also the progressive-match normalization, ADR 0016 d1). */
 export function canonicalize(raw) {
@@ -126,9 +133,9 @@ export function canonicalize(raw) {
   while (changed && tokens.length > 1) {
     changed = false
     const tail = tokens[tokens.length - 1]
-    if (QUANT_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`)) { strip(); changed = true }
+    if (QUANT_SUFFIX.test(`-${tail}`) || DATE_SUFFIX.test(`-${tail}`) || CONTEXT_TAIL.test(tail)) { strip(); changed = true }
   }
-  return tokens.join('-')
+  return tokens.join('-').replace(VERSION_PAIR, '$1.$2')
 }
 
 function arenaPercentiles(rows, categories) {
@@ -222,4 +229,6 @@ async function main() {
   console.log(`wrote ${outPath} with ${entries.size} entries (as_of ${asOf})`)
 }
 
-await main()
+// Import-safe: the canonicalize export is pinned by a parity spec, so main()
+// only runs when executed as a script (node scripts/build-capability-kb.mjs).
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main()

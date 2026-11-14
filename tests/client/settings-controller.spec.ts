@@ -832,15 +832,17 @@ describe('override import tolerance (Zd — real-world evaluator output)', () =>
 describe('matchOverrideRoute branches (Zg review #4)', () => {
   it('covers candidate / kb / none / route-miss', async () => {
     const { matchOverrideRoute } = await import('../../src/client/settings-controller.js')
+    // my-private-model: unknown to every layer — deepseek-flash stopped working
+    // as the unknown fixture once F1's curated stem resolved it.
     const catalogue = [
-      { provider: 'official', model: 'deepseek-flash' },
-      { provider: 'backup', model: 'deepseek-flash' },
+      { provider: 'official', model: 'my-private-model' },
+      { provider: 'backup', model: 'my-private-model' },
     ]
-    const candidates = [{ provider: 'official', model: 'deepseek-flash' }]
-    expect(matchOverrideRoute({ model: 'deepseek-flash' }, catalogue, candidates)).toBe('candidate') // generic hits any provider's candidate
-    expect(matchOverrideRoute({ provider: 'official', model: 'deepseek-flash' }, catalogue, candidates)).toBe('candidate') // exact route
-    expect(matchOverrideRoute({ provider: 'backup', model: 'deepseek-flash' }, catalogue, candidates)).toBe('none') // route exists in catalogue but not a candidate and not in KB
-    expect(matchOverrideRoute({ provider: 'typo', model: 'deepseek-flash' }, catalogue, candidates)).toBe('route-miss') // route resolves nowhere
+    const candidates = [{ provider: 'official', model: 'my-private-model' }]
+    expect(matchOverrideRoute({ model: 'my-private-model' }, catalogue, candidates)).toBe('candidate') // generic hits any provider's candidate
+    expect(matchOverrideRoute({ provider: 'official', model: 'my-private-model' }, catalogue, candidates)).toBe('candidate') // exact route
+    expect(matchOverrideRoute({ provider: 'backup', model: 'my-private-model' }, catalogue, candidates)).toBe('none') // route exists in catalogue but not a candidate and not in KB
+    expect(matchOverrideRoute({ provider: 'typo', model: 'my-private-model' }, catalogue, candidates)).toBe('route-miss') // route resolves nowhere
     expect(matchOverrideRoute({ model: 'Qwen3.8-27B' }, [], [])).toBe('kb') // KB-known, nowhere listed
   })
 })
