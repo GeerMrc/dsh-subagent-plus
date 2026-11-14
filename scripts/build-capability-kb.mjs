@@ -70,7 +70,7 @@ async function fetchArena(config) {
  *  config's config-parquet conversion FAILED upstream, no client-side path). */
 async function diagnoseTextSource() {
   try {
-    const text = await fetchWithRetry('https://datasets-server.huggingface.co/parquet?dataset=lmarena-ai/leaderboard-dataset', 2)
+    const text = await fetchWithRetry(`https://datasets-server.huggingface.co/parquet?dataset=${DS}`, 2)
     const page = JSON.parse(text)
     const failed = (page.failed ?? []).some(entry => entry.config === 'text')
     if (failed) {

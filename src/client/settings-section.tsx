@@ -367,7 +367,10 @@ function EditorRoutes(props: EditorProps) {
   const bynameInfoText = [
     t('byname.help'),
     ...(kbVisibility.estimatedAll ? [t('byname.estimatedAll')] : []),
-    ...(bandGap !== undefined ? [t('byname.bandHint').replace('{gap}', bandGap.toFixed(4)).replace('{band}', String(NOISE_BAND))] : []),
+    // The reorder advice only composes when reordering is possible — under
+    // the pinned strategy the candidate list is hidden and the advice would
+    // not be actionable.
+    ...(draft.strategy !== 'pinned' && bandGap !== undefined ? [t('byname.bandHint').replace('{gap}', bandGap.toFixed(4)).replace('{band}', String(NOISE_BAND))] : []),
   ].join('；')
   // ADR 0007 decision 3: under the pinned strategy the candidate list is not
   // shown, so the mapping's route pickers lock instead of sourcing a list the
