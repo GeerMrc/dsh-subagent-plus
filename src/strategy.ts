@@ -194,6 +194,9 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   const known = views.filter(entry => !entry.view.unknown)
   const anchored = known.filter(entry => !entry.view.estimated)
   const pool = anchored.length > 0 ? anchored : known
+  // Canonical model identity for the diversity rules (F3): the same model
+  // served by several providers is one model.
+  const canonOf = (entry: typeof views[number]): string => canonicalizeModelId(entry.candidate.model)
   // Explicit reduce scans (not sort comparators): the per-slot tie rules stay
   // readable and deterministic — S keeps the earlier candidate on ties, F the
   // later one, and a fast-named model yields to F first.
@@ -208,8 +211,22 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
         return best
       })
     : views[0]!
-  const fPick = pool.length > 0
-    ? pool.reduce((worst, entry) => {
+  // F re-runs the full reduce over the canonically deduplicated pool (F3): a
+  // model listed through several routes counts once, its first listing
+  // representing it — duplicates no longer distort the later-tie rule. Only
+  // INTERCHANGEABLE routes collapse (same canonical model, same S-score, same
+  // fast hint): a provider-qualified override deliberately differentiates two
+  // routes of one model (Z10) and both must stay in play.
+  const dedupedPool: typeof views = []
+  const seenModels = new Set<string>()
+  for (const entry of pool) {
+    const key = `${canonOf(entry)}\0${familyScore(entry.view, 'S')}\0${fastHintOf(entry.candidate)}`
+    if (seenModels.has(key)) continue
+    seenModels.add(key)
+    dedupedPool.push(entry)
+  }
+  const fPick = dedupedPool.length > 0
+    ? dedupedPool.reduce((worst, entry) => {
         const diff = familyScore(entry.view, 'S') - familyScore(worst.view, 'S')
         if (diff < 0) return entry
         if (diff > 0) return worst
@@ -242,7 +259,22 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   const bPool = known.length > 0 ? known : views
   const bRanked = [...bPool].sort(bCompare)
   const bIndex = Math.min(Math.max(1, Math.floor((bRanked.length - 1) / 2)), bRanked.length - 1)
-  return { S: sPick.candidate, B: bRanked[bIndex]!.candidate, F: fPick.candidate }
+  let bPick = bRanked[bIndex]!
+  // Diversity preference (F3): a median colliding with S's model walks outward
+  // to the nearest different model — stronger side first on equal distance.
+  // Scoped to B's own pool (estimated models included — A-6 governs S/F only)
+  // and promised only when that pool holds ≥3 distinct models; two candidates
+  // and duplicate listings keep the colliding median.
+  const sCanonical = canonOf(sPick)
+  if (canonOf(bPick) === sCanonical && new Set(bRanked.map(canonOf)).size >= 3) {
+    for (let distance = 1; bIndex - distance >= 0 || bIndex + distance < bRanked.length; distance += 1) {
+      const stronger = bIndex - distance >= 0 ? bRanked[bIndex - distance] : undefined
+      const weaker = bIndex + distance < bRanked.length ? bRanked[bIndex + distance] : undefined
+      if (stronger !== undefined && canonOf(stronger) !== sCanonical) { bPick = stronger; break }
+      if (weaker !== undefined && canonOf(weaker) !== sCanonical) { bPick = weaker; break }
+    }
+  }
+  return { S: sPick.candidate, B: bPick.candidate, F: fPick.candidate }
 }
 
 /**

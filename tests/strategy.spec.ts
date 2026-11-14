@@ -689,6 +689,101 @@ describe('KB family-scored derivation (Z3, ADR 0016 d2/d3)', () => {
   })
 })
 
+/** F3 (ADR 0016 3a): slot diversity — canonical-model dedup for F, outward
+ *  walk for a colliding B median, each slot yielding only inside its own
+ *  pool, the ≥3-distinct-models commitment gate, and the A-6 boundary.
+ *  Fixture weights are exact: S = .45c+.25o+.20a+.10w, B = .40c+.30o+.20w+.10a. */
+describe('slot diversity preference (F3)', () => {
+  // S-scores: a .575 > b .535 > d .4575 > c .325 > e .2475.
+  // B-scores: b .61 > a .56 > d .51 > c .35 > e .25.
+  const kb: import('../src/capability-scoring.js').KbTable = {
+    'model-a': { aliases: [], dims: { overall: 0.50, coding: 0.80, webdev: 0.30, agentic: 0.30 } },
+    'model-b': { aliases: [], dims: { overall: 0.70, coding: 0.40, webdev: 0.90, agentic: 0.60 } },
+    'model-c': { aliases: [], dims: { overall: 0.40, coding: 0.30, webdev: 0.40, agentic: 0.30 } },
+    'model-d': { aliases: [], dims: { overall: 0.60, coding: 0.35, webdev: 0.70, agentic: 0.50 } },
+    'model-e': { aliases: [], dims: { overall: 0.30, coding: 0.25, webdev: 0.20, agentic: 0.20 } },
+  }
+  const at = (model: string, provider = 'p'): Parameters<typeof deriveStarterRows>[0][number] =>
+    ({ provider, model, efforts: ['off', 'low', 'medium', 'xhigh'].map(id => ({ id })) })
+  const slotsOf = (candidates: Parameters<typeof deriveStarterRows>[0], table: import('../src/capability-scoring.js').KbTable = kb) =>
+    deriveStarterRows(candidates, { kb: table })
+
+  it('a colliding B median walks outward to the nearest different model', () => {
+    // [a, b, c]: S=a; B ranks b .61 > a .56 > c .35 → median a collides with
+    // S → walk to the stronger neighbour b.
+    const rows = slotsOf([at('model-a'), at('model-b'), at('model-c')])
+    expect(rows.find(r => r.name === 'review')?.model).toBe('model-a')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-b')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('model-c')
+  })
+
+  it('equal-distance neighbours resolve to the STRONGER side', () => {
+    // Five models with d re-weighted (S .53, B .58): B ranks b .61 > d .58 >
+    // a .56 > c .35 > e .25 → median a collides with S=a; d (idx1) and c
+    // (idx3) sit equidistant — the stronger side wins.
+    const walkKb: import('../src/capability-scoring.js').KbTable = {
+      ...kb,
+      'model-d': { aliases: [], dims: { overall: 0.65, coding: 0.45, webdev: 0.75, agentic: 0.55 } },
+    }
+    const rows = slotsOf([at('model-a'), at('model-b'), at('model-c'), at('model-d'), at('model-e')], walkKb)
+    expect(rows.find(r => r.name === 'review')?.model).toBe('model-a')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-d')
+  })
+
+  it('two candidates keep the colliding median (the ≥3-distinct commitment gate)', () => {
+    // [a, b]: B ranks b > a, upper median a collides with S — only 2 distinct
+    // models, no walk: two-candidate behaviour is unchanged.
+    const rows = slotsOf([at('model-a'), at('model-b')])
+    expect(rows.find(r => r.name === 'review')?.model).toBe('model-a')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-a')
+  })
+
+  it('same model via two providers still counts as one distinct model (no walk)', () => {
+    // [a@p1, a@p2, b]: B ranks b > a > a — the median collides with S but the
+    // pool holds only 2 distinct canonical models, so B keeps the collision.
+    const rows = slotsOf([at('model-a', 'p1'), at('model-a', 'p2'), at('model-b')])
+    expect(rows.find(r => r.name === 'review')?.model).toBe('model-a')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-a')
+  })
+
+  it('F re-reduces over the canonically deduplicated pool — first listing represents a model', () => {
+    // [a, c@p1, c@p2]: the two c routes are one model; F lands on the FIRST
+    // listing (list order), not the duplicate that the later-tie rule picked.
+    const rows = slotsOf([at('model-a'), at('model-c', 'p1'), at('model-c', 'p2')])
+    const testRow = rows.find(r => r.name === 'test')!
+    expect(testRow.model).toBe('model-c')
+    expect(testRow.provider).toBe('p1')
+  })
+
+  it('B may yield to an estimated model — B walks inside ITS OWN pool (A-6 governs S/F only)', () => {
+    const estKb: import('../src/capability-scoring.js').KbTable = {
+      'model-a': { aliases: [], dims: { overall: 0.50, coding: 0.80, webdev: 0.30, agentic: 0.30 } },
+      'model-e1': { aliases: [], dims: { overall: 0.90, webdev: 0.95 }, estimated: true },
+      'model-e2': { aliases: [], dims: { overall: 0.60, webdev: 0.50 }, estimated: true },
+    }
+    // B ranks e1 .71 > a .56 > e2 .53 → median a collides with S=a → walk to e1.
+    const rows = deriveStarterRows([at('model-a'), at('model-e1'), at('model-e2')], { kb: estKb })
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-e1')
+    // A-6 boundary pinned: F stays on the sole anchored candidate, colliding
+    // with S — estimated never enters the S/F pool while an anchored exists.
+    expect(rows.find(r => r.name === 'test')?.model).toBe('model-a')
+  })
+
+  it("the user's three-candidate scenario: every model holds a family (end-to-end, shipped KB)", () => {
+    const rows = deriveStarterRows([
+      { provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
+      { provider: 'deepseek-official', model: 'deepseek-flash', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
+    ])
+    // The audit's acceptance: the review family flips onto the official
+    // deepseek route (curated stem, .5582 S-score tops the all-estimated pool)
+    // and all three candidates hold at least one family.
+    expect(rows.find(r => r.name === 'review')).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' })
+    const providers = new Set(rows.map(row => row.provider))
+    expect(providers.size).toBe(3)
+  })
+})
+
 describe('resolveNameMapDefaults (X2, ADR 0014 d2 migration rule)', () => {
   it('absent field: empty stored map → defaults on; non-empty → custom', () => {
     expect(resolveNameMapDefaults(undefined, 0)).toBe(true)
