@@ -834,3 +834,17 @@ describe('provider-aware override resolution (Zb, ADR 0016 d3 Z10)', () => {
     expect(view.dims.coding).toBe(0.7)
   })
 })
+
+describe('B-slot unknown last-resort (S3, audit Y-1)', () => {
+  it('with one known and one unknown candidate, the B family stays on the KNOWN model', () => {
+    const kb = { 'known-model': { aliases: [], dims: { overall: 0.6, coding: 0.6, webdev: 0.6, agentic: 0.6 } } }
+    const known = { provider: 'p', model: 'known-model', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
+    const unknown = { provider: 'p', model: 'mystery-relay', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] }
+    for (const order of [[known, unknown], [unknown, known]]) {
+      const rows = deriveStarterRows(order, { kb })
+      expect(rows.find(r => r.name === 'review')?.model, 'S').toBe('known-model')
+      expect(rows.find(r => r.name === 'dev')?.model, 'B').toBe('known-model') // NOT the unknown
+      expect(rows.find(r => r.name === 'test')?.model, 'F').toBe('known-model') // weakest known
+    }
+  })
+})

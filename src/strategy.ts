@@ -224,7 +224,7 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
         return entry // F ties keep the LATER candidate (list order)
       })
     : views[views.length - 1]!
-  const bRanked = [...views].sort((a, b) => {
+  const bCompare = (a: typeof views[number], b: typeof views[number]): number => {
     const left = a.view.unknown ? Number.NEGATIVE_INFINITY : familyScore(a.view, 'B')
     const right = b.view.unknown ? Number.NEGATIVE_INFINITY : familyScore(b.view, 'B')
     if (left !== right) return right - left
@@ -234,7 +234,13 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
     const legacy = legacyDiff(a, b)
     if (legacy !== 0) return legacy
     return a.index - b.index
-  })
+  }
+  // A-1 holds for B too (S3, audit Y-1): unknown candidates are the last
+  // resort for EVERY slot — with any known candidate present the median is
+  // taken over the known pool, so one unknown never captures the six
+  // builder rows.
+  const bPool = known.length > 0 ? known : views
+  const bRanked = [...bPool].sort(bCompare)
   const bIndex = Math.min(Math.max(1, Math.floor((bRanked.length - 1) / 2)), bRanked.length - 1)
   return { S: sPick.candidate, B: bRanked[bIndex]!.candidate, F: fPick.candidate }
 }
