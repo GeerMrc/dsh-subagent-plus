@@ -212,6 +212,33 @@ export function addableRoutesOf(draft: PinConfig | undefined, routes: readonly R
   return routes.filter(route => !draft.priority.some(entry => entry.provider === route.provider && entry.model === route.model))
 }
 
+/** Where an override row's route resolves right now (Z10/P-3: ONE shared
+ *  predicate and ONE precedence for the import feedback, the list badge, and
+ *  the export annotation — candidate > kb > none; a qualified row matches a
+ *  candidate only on the exact provider route, and a route that resolves
+ *  nowhere in the catalogue reports 'route-miss' so a mistyped provider is
+ *  visible instead of a silent dead row). */
+export type OverrideMatch = 'candidate' | 'kb' | 'none' | 'route-miss'
+
+export function matchOverrideRoute(
+  row: { provider?: string; model: string },
+  catalogue: readonly { provider: string; model: string }[],
+  candidates: readonly { provider: string; model: string }[],
+): OverrideMatch {
+  const key = canonicalizeModelId(row.model)
+  const route = (row.provider ?? '').trim()
+  if (route !== '') {
+    const exactCandidate = candidates.some(entry => entry.provider === route && canonicalizeModelId(entry.model) === key)
+    if (exactCandidate) return 'candidate'
+    const exactRoute = catalogue.some(entry => entry.provider === route && canonicalizeModelId(entry.model) === key)
+    if (!exactRoute) return 'route-miss'
+  } else if (candidates.some(entry => canonicalizeModelId(entry.model) === key)) {
+    return 'candidate'
+  }
+  if (kbEntryFor(row.model) !== undefined) return 'kb'
+  return 'none'
+}
+
 /** One research-package candidate entry. */
 export interface ResearchCandidate {
   provider: string
@@ -423,14 +450,12 @@ export class SettingsSectionController {
 
   /** Import-time feedback for one override row: where the model resolves. */
   #overrideMatch(model: string, provider?: string): 'candidate' | 'kb' | 'none' {
-    const key = canonicalizeModelId(model)
-    const route = (provider ?? '').trim()
-    if (route !== '') {
-      // A qualified row matches a candidate only on the exact route.
-      if (this.#state.draft?.priority.some(entry => entry.provider === route && canonicalizeModelId(entry.model) === key) === true) return 'candidate'
-    } else if (this.#state.draft?.priority.some(entry => canonicalizeModelId(entry.model) === key) === true) return 'candidate'
-    if (kbEntryFor(model) !== undefined) return 'kb'
-    return 'none'
+    const match = matchOverrideRoute(
+      { provider, model },
+      this.#state.routes,
+      this.#state.draft?.priority ?? [],
+    )
+    return match === 'route-miss' ? 'none' : match
   }
 
   /**

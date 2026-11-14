@@ -23,7 +23,7 @@ import { canonicalizeModelId as _cm, kbEntryFor, KB_AS_OF } from '../capability-
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
-import { buildResearchPackage, type RouteOption, type SettingsSectionController, type SettingsUiState } from './settings-controller.ts'
+import { buildResearchPackage, matchOverrideRoute, type RouteOption, type SettingsSectionController, type SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
 import {
@@ -367,14 +367,10 @@ function EditorRoutes(props: EditorProps) {
     // configuration-independent corpus — the research package covers every
     // model the host catalogue serves, not just the current candidate list, so
     // an imported score applies whenever its model later joins the candidates.
-    const listedKeys = new Set(draft.priority.map(entry => `${entry.provider}/${entry.model}`))
-    const candidates = state.routes.map(route => ({
-      provider: route.provider,
-      model: route.model,
-      match: listedKeys.has(`${route.provider}/${route.model}`)
-        ? 'candidate' as const
-        : kbEntryFor(route.model) === undefined ? 'none' as const : 'kb' as const,
-    }))
+    const candidates = state.routes.map(route => {
+      const match = matchOverrideRoute(route, state.routes, draft.priority)
+      return { provider: route.provider, model: route.model, match: match === 'route-miss' ? 'none' as const : match as 'candidate' | 'kb' | 'none' }
+    })
     const pkg = buildResearchPackage(candidates, todayText())
     const text = JSON.stringify(pkg, null, 2)
     void navigator.clipboard?.writeText(text)
@@ -604,9 +600,15 @@ function EditorRoutes(props: EditorProps) {
                   <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
                 </span>
                 {draft.capabilityOverrides.map((row, index) => (
-                  <div key={`${row.model}\0${index}`} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                    <span style={hintStyle}>{row.model}</span>
-                    <span style={pendingBadgeStyle}>{kbEntryFor(row.model) === undefined && !listed.some(candidate => candidate.model === row.model) ? t('byname.research.matchNone') : kbEntryFor(row.model) !== undefined ? t('byname.research.matchKb') : t('byname.research.matchCandidate')}</span>
+                  <div key={`${(row.provider ?? '').trim()}\0${row.model}\0${index}`} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                    <span style={hintStyle}>{(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ${row.model}` : row.model}</span>
+                    <span style={pendingBadgeStyle}>{(() => {
+                      const match = matchOverrideRoute(row, state.routes, draft.priority)
+                      if (match === 'route-miss') return t('byname.research.routeMiss')
+                      if (match === 'candidate') return t('byname.research.matchCandidate')
+                      if (match === 'kb') return t('byname.research.matchKb')
+                      return t('byname.research.matchNone')
+                    })()}</span>
                     <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
                     <span style={{ flex: 1 }} />
                     <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} aria-label={t('byname.research.remove')} onClick={() => { controller.removeCapabilityOverride(index) }}>×</button>
