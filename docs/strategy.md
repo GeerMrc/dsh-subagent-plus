@@ -1,4 +1,4 @@
-# 子 Agent 多模型路由策略 / Child-agent multi-route strategy（v0.0.3）
+# 子 Agent 多模型路由策略 / Child-agent multi-route strategy（v0.0.4）
 
 本文件是 `strategy` 配置的完整语义说明（ADR 0005 后候选唯一来源为 `priority` 列表）。
 

@@ -52,6 +52,7 @@
 - **单一英文 prompt（语言决策证据）**：judge 语言偏置（arXiv:2505.12201, EMNLP 2025）＋指令遵循随远离英语衰减（M-IFEval/CIF-Bench/MaXIFE）＋Qwen3 英文提示下偶发中文泄漏；中文模型英文结构化提示无系统性降质——prompt_zh/prompt_en 折叠为单一 canonical 英文 prompt。输出契约硬化：恰好 N 对象（计数写死）＋清单顺序＋自包含（禁 same as above/同上/ditto）＋note ≤120 字符纯文本禁引用标记＋完成前自检（计数约束是文献公认最脆弱类，故导入合并为程序侧兜底）。schema bump 2。
 - **匹配收敛**：matchOverrideRoute 单一谓词（candidate > kb > none > route-miss）统一导入反馈/列表徽章/导出标注三处；qualified 行对完整目录精确对匹配，未命中＝route-miss 徽章（拼错 provider 可见）。
 - copyConfig 对 capabilityOverrides 行级深拷贝（Za：删除 splice 共享引用致永不落盘的既有 bug）。
+- **S 轮交付审计修复（2026-11-14）**：spread 转录通知链按 ADR 0010 M6 补实现（R-1）；pinned 默认休眠提示（R-2）；B 槽 unknown known-池中位（A-1 三槽完整）；未收录行级标注（Y-2）；五区徽标兑现（决策 4 完成）；导出包形态识别回退（Y-4）；advisory 非阻塞层（Y-5）；claimed 健康检查（Y-6）；estimated 披露＋prompt 接地/校准条款（Y-7）。**多阶段调研协议婉拒**：同模型自审＝伪独立、显著增加破坏 JSON-only 约束风险、真实回传已合规——以两条单阶段条款（benchmark recall + anti-compression）替代。
 - **归类声明**：prompt 是**导出数据**（调研任务产物），非插件 UI 文案——不属 locale 字典管辖（locale 纪律只约束产品界面文字）；其语言选择属数据格式决策（上文证据）。
 - **合并反馈**：导入 flash 文案携带合并计数（已导入 N 行·自动合并 M 行重复）；重导入遇同对 qualified 行＝草稿感知 last-wins（新行替换旧行、计入合并反馈），不产生 save-blocking 的 repeats 状态。
 

@@ -361,7 +361,11 @@ function EditorRoutes(props: EditorProps) {
   // shown, so the mapping's route pickers lock instead of sourcing a list the
   // user cannot see or edit.
   const byNameLocked = draft.strategy === 'pinned'
-  const todayText = (): string => new Date().toISOString().slice(0, 10)
+  const todayText = (): string => {
+    // Local calendar date (G-7): toISOString drifts a day early for UTC+8 evenings.
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  }
   const exportResearch = (): void => {
     // Full-catalogue scope (ADR 0016 d3, Z8): evaluations are a durable,
     // configuration-independent corpus — the research package covers every

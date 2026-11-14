@@ -39,6 +39,15 @@
 - fix(config): **respectExplicit 死开关复活（ADR 0013 d4，二审 P-18）**：0010 迁移漏接导致
   UI/locale 承诺的行为运行时零引用；现于 agent/created、步边界、inbox/claimed 三处接回
   `explicitRouteOf`——显式指派（创建路由≠父路由）优先于关键词映射与策略链（钉定除外）。
+- fix(ship): **交付级审计修复（S 轮，全面用户旅程审计 2🔴+7🟡+11🟢）**——🔴R-1 spread 转录通知链
+  补实现（策略指派/步边界换路双语文案，e2e Flow A/B 通过标准首次有运行时背书）；🔴R-2 新装默认
+  （钉定）下"未配置按名映射"反事实文案改"默认映射休眠＋激活路径"，README 补前提；Y-1 B 槽
+  unknown 例外（known 池内取中位，A-1 对三槽完整成立）；Y-2 未收录行级悬停标注（死键复活）；
+  Y-3 五区待保存徽标补齐（共享 anyFieldDirty 谓词与 fieldOps 同口径）；Y-4 导出剪贴板回退陷阱
+  （包形态识别＋本地化提示）；Y-5 nameMapDefaults+存量行从阻塞 degraded 改非阻塞 advisory；
+  Y-6 inbox/claimed 尊重路由冷却；Y-7 estimated 泛滥现状披露＋调研 prompt 增接地/校准两条款
+  （完整多阶段协议婉拒，取舍记录 ADR）。G 项：strategy.md 版本头/日志串、README 路由限定行、
+  导出日期本地化。
 - fix(ux): **交互反馈统一（事件瞬态/状态常驻分界）**——页脚"已保存"3 秒自动消失（定时器
   卫生：新保存重启窗口/dispose 清除；失败冲突仍常驻）；导出/导入/恢复默认改**按钮级动态反馈**
   （文案瞬时替换＋边框脉冲，reduced-motion 降级纯文字），移除突兀的段落式反馈行与硬编码
