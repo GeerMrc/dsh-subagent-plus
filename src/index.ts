@@ -566,6 +566,10 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     if (byName === undefined) return
     const model = agentModelOf(agent)
     if (model === undefined) return
+    // S8 (audit Y-6): the synchronous hook must not select a cooling route —
+    // skip and let the step boundary pick the next healthy candidate (the
+    // agent/created path keeps owning the async registration check).
+    if (!healthyNow(config)(byName.route)) return
     try {
       const route = byName.route
       model.select({

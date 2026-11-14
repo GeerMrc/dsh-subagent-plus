@@ -872,3 +872,41 @@ describe('spread transcript notices (S1, ADR 0010 M6 restored)', () => {
     expect(JSON.stringify(second.kind === 'enter' ? second.messages : [])).not.toContain('model assigned')
   })
 })
+
+describe('claimed health guard (S8, audit Y-6)', () => {
+  it('skips the select when the mapped route is cooling — the step boundary recovers', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('llm', {
+      listProviders: () => [{ id: 'sz' }, { id: 'hh' }, { id: 'zai' }],
+      listModels: async (provider: string) => (provider === 'zai' ? ['glm-5.3'] : ['Qwen3.8-27B-FP8']).map(id => ({ id })),
+      resolveModelInfo: (provider: string, model: string) => ({ reasoning: { efforts: ['off', 'low', 'medium', 'xhigh'].map(id => ({ id })) } }),
+    })
+    ctx.provide('agentTeams', { tryMembership: (a: object) => ({ name: teamNameOf.get(a) }) })
+    await ctx.plugin(plugin, {
+      provider: '', model: '', reasoningEffort: '', pinForkChildren: false,
+      failOpen: true, showNotice: true, strategy: 'round-robin',
+      priority: [
+        { provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+        { provider: 'hh', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' },
+      ],
+      respectExplicit: false, cooldownMs: 60_000,
+      fallbackProvider: '', fallbackModel: '', fallbackReasoningEffort: '',
+      nameMap: [{ name: 'reviewer', provider: 'sz', model: 'Qwen3.8-27B-FP8', reasoningEffort: '' }], nameMapDefaults: false,
+    })
+    const agent = memberAgent('code-reviewer')
+    // No agent/created first — exercise the claimed path directly.
+    void (ctx as unknown as { waterfall: (n: string, d: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/inbox/claimed', { agent }, async () => {})
+    await new Promise(r => setTimeout(r, 10))
+    const model = (agent as unknown as { model: MockModel }).model
+    expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz' }))
+    // Cool sz; a fresh agent's claimed hook must skip the cooling route.
+    await dispatchFailure(ctx, agent, 'sz', 'RATE_LIMIT')
+    await new Promise(r => setTimeout(r, 10))
+    const second = memberAgent('plan-reviewer')
+    const before = (second as unknown as { model: MockModel }).model.select.mock.calls.length
+    void (ctx as unknown as { waterfall: (n: string, d: unknown, next: () => Promise<void>) => Promise<void> }).waterfall('agent/inbox/claimed', { agent: second }, async () => {})
+    await new Promise(r => setTimeout(r, 10))
+    expect((second as unknown as { model: MockModel }).model.select.mock.calls.length).toBe(before) // no select on the cooling route
+  })
+})
