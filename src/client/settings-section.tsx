@@ -13,7 +13,7 @@
  *
  * @module dsh-subagent-plus/client/settings-section
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { QuestionIcon } from './host-icons.tsx'
