@@ -784,6 +784,67 @@ describe('slot diversity preference (F3)', () => {
   })
 })
 
+describe('F-slot occupancy yield (G1, ADR 0016 3c)', () => {
+  // p/q/r crafted so S-order is p .5525 > r .5465 > q .49 (argmin = q) while
+  // B-order is r .588 > q .54 > p .525 (median = q, no B-walk) — today F takes
+  // q again and r holds nothing; the fix yields F to the unoccupied r.
+  const kb: import('../src/capability-scoring.js').KbTable = {
+    'model-p': { aliases: [], dims: { overall: 0.35, coding: 0.90, webdev: 0.20, agentic: 0.20 } },
+    'model-q': { aliases: [], dims: { overall: 0.75, coding: 0.25, webdev: 0.80, agentic: 0.55 } },
+    'model-r': { aliases: [], dims: { overall: 0.65, coding: 0.42, webdev: 0.85, agentic: 0.55 } },
+  }
+  const at = (model: string, provider = 'p', efforts = ['off', 'low', 'medium', 'xhigh']): Parameters<typeof deriveStarterRows>[0][number] =>
+    ({ provider, model, efforts: efforts.map(id => ({ id })) })
+
+  it('F colliding with the B median yields to the unoccupied model', () => {
+    const rows = deriveStarterRows([at('model-p', 'p1'), at('model-q', 'p2'), at('model-r', 'p3')], { kb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('model-p')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-q')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('model-r') // was model-q — r held zero rows
+  })
+
+  it("the user's scenario B: v4-pro in, flash-next keeps a family (end-to-end, shipped KB)", () => {
+    const rows = deriveStarterRows([
+      { provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
+      { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
+      { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
+    ])
+    // S=v4-pro (.4965), B median=27b, strict F argmin=27b collides with B →
+    // F yields to the unoccupied flash-next. G2 will move S to flash-next;
+    // this pins the G1-only intermediate.
+    expect(rows.find(r => r.name === 'review')?.model).toBe('deepseek-v4-pro')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('Qwen3.8-27B-FP8')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('Qwen3.8-Flash-Next-NVFP4')
+    expect(new Set(rows.map(row => row.provider)).size).toBe(3)
+  })
+
+  it('Zb boundary at three canonicals: the demoted duplicate holds ZERO rows (occupancy beats the dividend)', () => {
+    const zkb: import('../src/capability-scoring.js').KbTable = {
+      'model-x': { aliases: [], dims: { overall: 0.50, coding: 0.80, webdev: 0.30, agentic: 0.30 } },
+      'model-y': { aliases: [], dims: { overall: 0.60, coding: 0.40, webdev: 0.60, agentic: 0.40 } },
+      'model-z': { aliases: [], dims: { overall: 0.40, coding: 0.30, webdev: 0.40, agentic: 0.30 } },
+    }
+    const overrides = [{ provider: 'backup', model: 'model-x', overall: 20, coding: 20, webdev: 20, agentic: 20, asOf: '2026-11-15' }]
+    const rows = deriveStarterRows(
+      [at('model-x', 'official'), at('model-x', 'backup'), at('model-y', 'sz'), at('model-z', 'hh')],
+      { kb: zkb, overrides },
+    )
+    // S=official/x, B median=y; the demoted backup/x wins the strict argmin
+    // but shares x's canonical with S → at ≥3 distinct canonicals F yields
+    // to the unoccupied z — the Z10 dividend survives only at 2 canonicals.
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('official')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-y')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('model-z')
+    expect(rows.some(row => row.provider === 'backup')).toBe(false)
+  })
+
+  it('below the ≥3 gate the collision stands (two-candidate pin)', () => {
+    const rows = deriveStarterRows([at('model-p', 'p1'), at('model-q', 'p2')], { kb })
+    expect(rows.find(r => r.name === 'review')?.model).toBe('model-p')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('model-q')
+  })
+})
+
 describe('resolveNameMapDefaults (X2, ADR 0014 d2 migration rule)', () => {
   it('absent field: empty stored map → defaults on; non-empty → custom', () => {
     expect(resolveNameMapDefaults(undefined, 0)).toBe(true)

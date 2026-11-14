@@ -211,36 +211,6 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
         return best
       })
     : views[0]!
-  // F re-runs the full reduce over the canonically deduplicated pool (F3): a
-  // model listed through several routes counts once, its first listing
-  // representing it — duplicates no longer distort the later-tie rule. Only
-  // INTERCHANGEABLE routes collapse (same canonical model, same S-score, same
-  // fast hint): a provider-qualified override deliberately differentiates two
-  // routes of one model (Z10) and both must stay in play.
-  const dedupedPool: typeof views = []
-  const seenModels = new Set<string>()
-  for (const entry of pool) {
-    const key = `${canonOf(entry)}\0${familyScore(entry.view, 'S')}\0${fastHintOf(entry.candidate)}`
-    if (seenModels.has(key)) continue
-    seenModels.add(key)
-    dedupedPool.push(entry)
-  }
-  const fPick = dedupedPool.length > 0
-    ? dedupedPool.reduce((worst, entry) => {
-        const diff = familyScore(entry.view, 'S') - familyScore(worst.view, 'S')
-        if (diff < 0) return entry
-        if (diff > 0) return worst
-        const entryFast = fastHintOf(entry.candidate)
-        const worstFast = fastHintOf(worst.candidate)
-        if (entryFast > worstFast) return entry
-        if (entryFast < worstFast) return worst
-        // legacyDiff(worst, entry) < 0 means entry is WEAKER on the structural
-        // chain — it replaces worst; a strictly stronger entry keeps worst.
-        if (legacyDiff(worst, entry) < 0) return entry
-        if (legacyDiff(worst, entry) > 0) return worst
-        return entry // F ties keep the LATER candidate (list order)
-      })
-    : views[views.length - 1]!
   const bCompare = (a: typeof views[number], b: typeof views[number]): number => {
     const left = a.view.unknown ? Number.NEGATIVE_INFINITY : familyScore(a.view, 'B')
     const right = b.view.unknown ? Number.NEGATIVE_INFINITY : familyScore(b.view, 'B')
@@ -272,6 +242,55 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
       const weaker = bIndex + distance < bRanked.length ? bRanked[bIndex + distance] : undefined
       if (stronger !== undefined && canonOf(stronger) !== sCanonical) { bPick = stronger; break }
       if (weaker !== undefined && canonOf(weaker) !== sCanonical) { bPick = weaker; break }
+    }
+  }
+  // F re-runs the full reduce over the canonically deduplicated pool (F3): a
+  // model listed through several routes counts once, its first listing
+  // representing it — duplicates no longer distort the later-tie rule. Only
+  // INTERCHANGEABLE routes collapse (same canonical model, same S-score, same
+  // fast hint): a provider-qualified override deliberately differentiates two
+  // routes of one model (Z10) and both must stay in play.
+  const dedupedPool: typeof views = []
+  const seenModels = new Set<string>()
+  for (const entry of pool) {
+    const key = `${canonOf(entry)}\0${familyScore(entry.view, 'S')}\0${fastHintOf(entry.candidate)}`
+    if (seenModels.has(key)) continue
+    seenModels.add(key)
+    dedupedPool.push(entry)
+  }
+  const fReduce = (entries: typeof views): typeof views[number] =>
+    entries.reduce((worst, entry) => {
+      const diff = familyScore(entry.view, 'S') - familyScore(worst.view, 'S')
+      if (diff < 0) return entry
+      if (diff > 0) return worst
+      const entryFast = fastHintOf(entry.candidate)
+      const worstFast = fastHintOf(worst.candidate)
+      if (entryFast > worstFast) return entry
+      if (entryFast < worstFast) return worst
+      // legacyDiff(worst, entry) < 0 means entry is WEAKER on the structural
+      // chain — it replaces worst; a strictly stronger entry keeps worst.
+      if (legacyDiff(worst, entry) < 0) return entry
+      if (legacyDiff(worst, entry) > 0) return worst
+      return entry // F ties keep the LATER candidate (list order)
+    })
+  let fPick: typeof views[number]
+  if (dedupedPool.length === 0) {
+    fPick = views[views.length - 1]!
+  } else {
+    // Occupancy yield (G1, completing the F3 chain): when the strict argmin's
+    // model is already held by S or B and the deduplicated pool offers ≥3
+    // distinct models, F takes the weakest S-score among the UNOCCUPIED
+    // entries — as weak as possible while distinct. Below the gate (two
+    // candidates, duplicate listings) the collision stands, and the demoted
+    // duplicate of a Z10 pair holds zero rows at three canonicals (occupancy
+    // beats the dividend).
+    const strict = fReduce(dedupedPool)
+    const occupied = new Set([sCanonical, canonOf(bPick)])
+    if (occupied.has(canonOf(strict)) && new Set(dedupedPool.map(canonOf)).size >= 3) {
+      const unoccupied = dedupedPool.filter(entry => !occupied.has(canonOf(entry)))
+      fPick = unoccupied.length > 0 ? fReduce(unoccupied) : strict
+    } else {
+      fPick = strict
     }
   }
   return { S: sPick.candidate, B: bPick.candidate, F: fPick.candidate }
