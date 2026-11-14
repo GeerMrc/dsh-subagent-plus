@@ -850,3 +850,36 @@ describe('matchOverrideRoute branches (Zg review #4)', () => {
     expect(matchOverrideRoute({ model: 'Qwen3.8-27B' }, [], [])).toBe('kb') // KB-known, nowhere listed
   })
 })
+
+/** J1: one-click paste tolerance — real evaluator output arrives fenced
+ *  (```json … ``` plus blank lines, verified from a live DSH session); a bare
+ *  JSON.parse bounces it with a misleading "not an array" error. */
+describe('parseResearchPaste (J1 — fence-tolerant one-paste import)', () => {
+  const rows = [{ model: 'glm-5.3', overall: 84, coding: 86, webdev: 72, agentic: 85, asOf: '2026-11-15', note: 'bench' }]
+
+  it('strips a ```json fence and blank lines around the array', async () => {
+    const { parseResearchPaste } = await import('../../src/client/settings-controller.js')
+    const fenced = '```json\n\n' + JSON.stringify(rows, null, 2) + '\n\n```'
+    const result = parseResearchPaste(fenced)
+    expect(result.kind).toBe('rows')
+    if (result.kind === 'rows') expect(result.rows).toEqual(rows)
+  })
+
+  it('bare arrays still parse (no regression)', async () => {
+    const { parseResearchPaste } = await import('../../src/client/settings-controller.js')
+    expect(parseResearchPaste(JSON.stringify(rows)).kind).toBe('rows')
+  })
+
+  it('a pasted export PACKAGE is detected, not parsed as rows', async () => {
+    const { parseResearchPaste } = await import('../../src/client/settings-controller.js')
+    const pkg = JSON.stringify({ schema: 2, prompt: '…', candidates: [] })
+    const result = parseResearchPaste(pkg)
+    expect(result.kind).toBe('package')
+  })
+
+  it('prose garbage stays invalid', async () => {
+    const { parseResearchPaste } = await import('../../src/client/settings-controller.js')
+    expect(parseResearchPaste('评估结果很好，谢谢').kind).toBe('invalid')
+    expect(parseResearchPaste('[{"model":"x"}').kind).toBe('invalid') // truncated JSON
+  })
+})

@@ -321,6 +321,31 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
 /**
  * Draft-editing controller for the plugin's settings section.
  */
+/**
+ * Parse a pasted research payload (J1): real evaluator output arrives as a
+ * markdown-fenced block (```json … ``` plus blank lines — verified from a
+ * live DSH session), so a bare JSON.parse bounces one-click copies with a
+ * misleading "not an array" error. The fence strips first; the export
+ * PACKAGE itself (an object carrying `prompt`) reports its own kind so the
+ * caller shows the friendly pointer instead of a parse error.
+ * @param text - the raw clipboard paste.
+ * @returns the parsed rows, the package marker, or invalid.
+ */
+export function parseResearchPaste(text: string): { kind: 'rows'; rows: unknown[] } | { kind: 'package' } | { kind: 'invalid' } {
+  let cleaned = text.trim()
+  const fence = /^```[^\n]*\n([\s\S]*?)\n?```$/.exec(cleaned)
+  if (fence !== null) cleaned = fence[1]!.trim()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(cleaned)
+  } catch {
+    return { kind: 'invalid' }
+  }
+  if (Array.isArray(parsed)) return { kind: 'rows', rows: parsed }
+  if (parsed !== null && typeof parsed === 'object' && 'prompt' in (parsed as Record<string, unknown>)) return { kind: 'package' }
+  return { kind: 'invalid' }
+}
+
 export class SettingsSectionController {
   readonly #form: SettingsFormPort
   readonly #catalog: CatalogPort

@@ -25,7 +25,7 @@ import { NOISE_BAND } from '../strategy.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
 import type { UnifiedSaveController } from './unified-save.js'
-import { anyFieldDirty, buildResearchPackage, matchOverrideRoute, type RouteOption, type SettingsSectionController, type SettingsUiState } from './settings-controller.ts'
+import { anyFieldDirty, buildResearchPackage, matchOverrideRoute, parseResearchPaste, type RouteOption, type SettingsSectionController, type SettingsUiState } from './settings-controller.ts'
 import { effortDefaultLabel, effortOptions, listedRoutesOf } from './settings-controller.ts'
 import { NS } from './locales.ts'
 import {
@@ -409,26 +409,20 @@ function EditorRoutes(props: EditorProps) {
   }
   const applyImport = (): void => {
     setImportError(undefined)
-    let parsed: unknown
     try {
-      parsed = JSON.parse(importText)
-    } catch {
-      setImportError(t('byname.research.notArray'))
-      return
-    }
-    try {
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && 'prompt' in (parsed as Record<string, unknown>)) {
-        // The user pasted the export package itself — a friendly pointer beats
-        // a raw "not an array" error.
+      // One-paste tolerance (J1): fenced evaluator output (```json … ```) and
+      // bare arrays both land here; the export package itself reports its own
+      // kind for the friendly pointer.
+      const parsed = parseResearchPaste(importText)
+      if (parsed.kind === 'package') {
         setImportError(t('byname.research.packagePasted'))
         return
       }
-      const rows = Array.isArray(parsed) ? parsed : undefined
-      if (rows === undefined) {
+      if (parsed.kind === 'invalid') {
         setImportError(t('byname.research.notArray'))
         return
       }
-      const result = controller.importCapabilityOverrides(rows as never)
+      const result = controller.importCapabilityOverrides(parsed.rows as never)
       if (result.kind === 'rejected') {
         setImportError(t('byname.research.rejected').replace('{reasons}', result.reasons.join('；')))
         return

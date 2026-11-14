@@ -76,6 +76,8 @@
 
 - feat(ux): **I 轮：设置页交互一致性＋KB 债务根因定性**——Team 标题 ⓘ 动态吸收"全缺 coding 主锚"与"噪声带分差"两行提示（正文不再占行）；候选清单 上移/下移/删除 改锚**行首序号**（与 Team 行同约定，IndexActionsCell 取代 RowNameCell，零新增视觉 token）；KB text 源中断定性修正为**上游 config-parquet 转换失败**（rows "temporary spike" 是症状）＋构建脚本空源自诊断＋每日自动守望（恢复即报）。
 
+- fix(import): **J1：一键粘贴围栏容错**——真实评估回传以 ```json 围栏＋空行包裹（DSH 实测会话取证），裸 JSON.parse 误报"不是 JSON 数组"；粘贴清洗提为纯函数 parseResearchPaste（剥围栏→数组／整包误贴→友好提示／其余→invalid），applyImport 改用——复制评估结果即可直接粘贴导入。真实回传契约核验 10/10 通过（恰好 N/顺序/字段/0-100/asOf/note≤120/无同上/无引用/未压缩/接地），提示词无需再加约束。
+
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
 - feat(takeover): 启用期间官方「子智能体」设置页（纯编辑面）经 bundle patch
