@@ -595,9 +595,11 @@ describe('effective name map & copy-on-write (X5, ADR 0014 d2)', () => {
     controller.dispose()
   })
 
-  it('defaults-on with stored rows surfaces the degraded warning', async () => {
+  it('defaults-on with stored rows surfaces the ADVISORY note and does NOT block saving (S7)', async () => {
     const controller = await x5Harness({ ...defaultsConfig(), nameMap: [{ name: 'reviewer', provider: 'sz', model: 'cand-a', reasoningEffort: '' }] })
-    expect(controller.snapshot().degraded.some(message => message.includes('nameMapDefaults'))).toBe(true)
+    expect(controller.snapshot().advisory.some(message => message.includes('nameMapDefaults'))).toBe(true)
+    expect(controller.snapshot().degraded).toEqual([])
+    await expect(controller.save()).resolves.not.toBe('blocked')
     controller.dispose()
   })
 })

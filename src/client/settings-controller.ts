@@ -109,6 +109,8 @@ export interface SettingsUiState {
   structural: string[]
   /** Cross-field combinations the host would degrade — the page blocks them too. */
   degraded: string[]
+  /** Informational validation notes — displayed, never blocking (S7). */
+  advisory: string[]
   /** The parsed cooldown is not a valid non-negative integer. */
   cooldownInvalid: boolean
   /** Catalogue routes in catalogue order. */
@@ -334,7 +336,7 @@ export class SettingsSectionController {
     this.#catalog = catalog
     this.#state = {
       status: 'loading',
-      value: undefined, valueInvalid: false, draft: undefined, structural: [], degraded: [], cooldownInvalid: false,
+      value: undefined, valueInvalid: false, draft: undefined, structural: [], degraded: [], advisory: [], cooldownInvalid: false,
       routes: [], addableRoutes: [], atLimit: false, catalogFailed: false, effectiveNameMap: [],
     }
   }
@@ -657,6 +659,7 @@ export class SettingsSectionController {
     const report = validateStrategyConfig(draft)
     this.#state.structural = report.structural
     this.#state.degraded = report.degraded
+    this.#state.advisory = report.advisory
   }
 
   #patch = (patch: Partial<SettingsUiState>): void => {

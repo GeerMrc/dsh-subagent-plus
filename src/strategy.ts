@@ -377,6 +377,8 @@ export interface ValidationReport {
   structural: string[]
   /** Cross-field combinations that load but behave as if unset: a half-filled or duplicate fallback. */
   degraded: string[]
+  /** Informational notes that neither refuse load nor block saving (S7). */
+  advisory: string[]
 }
 
 /**
@@ -394,6 +396,7 @@ export interface ValidationReport {
 export function validateStrategyConfig(config: StrategyConfigView): ValidationReport {
   const structural: string[] = []
   const degraded: string[] = []
+  const advisory: string[] = []
   if (config.priority.length > 5) {
     structural.push(`dsh-subagent-plus: priority lists ${config.priority.length} routes; at most 5 are allowed`)
   }
@@ -435,7 +438,10 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
   // ignored — a hand-edited document in that state deserves a warning, not a
   // silent disappearance.
   if (config.nameMapDefaults === true && nameMap.length > 0) {
-    degraded.push('dsh-subagent-plus: nameMapDefaults is on; the stored nameMap rows are ignored while the derived defaults are in effect')
+    // Advisory (S7, audit Y-5): informational — the defaults override the
+    // stored rows BY DESIGN; blocking the whole page's save over it (limits
+    // namespace included) punished a legal hand-edited state.
+    advisory.push('dsh-subagent-plus: nameMapDefaults is on; the stored nameMap rows are ignored while the derived defaults are in effect')
   }
   if (nameMap.length > MAX_NAME_MAP_ENTRIES) {
     structural.push(`dsh-subagent-plus: nameMap lists ${nameMap.length} entries; at most ${MAX_NAME_MAP_ENTRIES} are allowed`)
@@ -464,7 +470,7 @@ export function validateStrategyConfig(config: StrategyConfigView): ValidationRe
     }
     names.add(entry.name)
   })
-  return { structural, degraded }
+  return { structural, degraded, advisory }
 }
 
 const KEYWORD_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/

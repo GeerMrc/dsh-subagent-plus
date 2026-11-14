@@ -70,12 +70,12 @@ describe('resolveStrategyPlan (S-01)', () => {
 
 describe('validateStrategyConfig (structural vs degraded, anti-brick)', () => {
   it('accepts the defaults and a well-formed priority list', () => {
-    expect(validateStrategyConfig(base)).toEqual({ structural: [], degraded: [] })
+    expect(validateStrategyConfig(base)).toEqual({ structural: [], degraded: [], advisory: [] })
     expect(validateStrategyConfig({
       ...base,
       strategy: 'priority',
       priority: [{ provider: 'sz', model: 'a', reasoningEffort: '' }, { provider: 'hh', model: 'a', reasoningEffort: 'high' }],
-    })).toEqual({ structural: [], degraded: [] })
+    })).toEqual({ structural: [], degraded: [], advisory: [] })
   })
 
   it('reports an over-long priority list as structural (at most 5)', () => {
@@ -702,7 +702,7 @@ describe('resolveNameMapDefaults (X2, ADR 0014 d2 migration rule)', () => {
 })
 
 describe('nameMapDefaults validation (X3, ADR 0014 d2)', () => {
-  it('warns (degraded) when defaults-on ignores stored rows', () => {
+  it('advises (non-blocking) when defaults-on ignores stored rows (S7 reclassification)', () => {
     const report = validateStrategyConfig({
       ...base,
       strategy: 'round-robin',
@@ -710,7 +710,8 @@ describe('nameMapDefaults validation (X3, ADR 0014 d2)', () => {
       nameMap: [nm('dev', sz)],
       nameMapDefaults: true,
     } as Parameters<typeof validateStrategyConfig>[0])
-    expect(report.degraded.some(m => m.includes('nameMapDefaults'))).toBe(true)
+    expect(report.advisory.some(m => m.includes('nameMapDefaults'))).toBe(true)
+    expect(report.degraded).toEqual([]) // no longer blocks the page save
   })
 
   it('no warning for defaults-off with rows, or defaults-on with none', () => {

@@ -637,6 +637,7 @@ function EditorRoutes(props: EditorProps) {
               </div>
             )
             : null}
+          {state.advisory.length > 0 ? <p style={hintStyle}>{state.advisory.join('；')}</p> : null}
           {state.effectiveNameMap.length === 0
             ? (byNameLocked && draft.nameMapDefaults
                 ? <p style={hintStyle}>{t('byname.defaultsDormant')}</p>
