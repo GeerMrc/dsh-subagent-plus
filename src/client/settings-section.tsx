@@ -409,10 +409,13 @@ function EditorRoutes(props: EditorProps) {
         return
       }
       const rows = Array.isArray(parsed) ? parsed : undefined
-      if (rows === undefined) throw new Error(t('byname.research.notArray'))
+      if (rows === undefined) {
+        setImportError(t('byname.research.notArray'))
+        return
+      }
       const result = controller.importCapabilityOverrides(rows as never)
       if (result.kind === 'rejected') {
-        setImportError(result.reasons.join('；'))
+        setImportError(t('byname.research.rejected').replace('{reasons}', result.reasons.join('；')))
         return
       }
       importFlash.flash(result.mergedDuplicates.length > 0
@@ -442,6 +445,9 @@ function EditorRoutes(props: EditorProps) {
             text={draft.strategy === 'pinned' ? t('strategy.pinnedRouteHelp') : t('list.help')}
             delayMs={400}
           />
+          {anyFieldDirty(state.value, state.draft, ['priority', 'strategy', 'provider', 'model', 'reasoningEffort'])
+            ? <span style={pendingBadgeStyle}>{t('common.pending')}</span>
+            : null}
           <span style={{ flex: 1 }} />
           {draft.strategy === 'pinned'
             ? (
@@ -593,7 +599,7 @@ function EditorRoutes(props: EditorProps) {
             ? <p style={hintStyle}>{`${listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')} ${t('byname.research.sourceKb').replace('{date}', KB_AS_OF)}`}</p>
             : null}
           {!byNameLocked && draft.nameMapDefaults && listed.length > 0
-            && listed.every(route => capabilityOf(route.model, draft.capabilityOverrides ?? []).estimated)
+            && listed.every(route => capabilityOf(route.model, draft.capabilityOverrides ?? [], undefined, route.provider).estimated)
             ? <p style={hintStyle}>{t('byname.estimatedAll')}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
@@ -611,7 +617,7 @@ function EditorRoutes(props: EditorProps) {
                   aria-label={t('byname.research.importTitle')}
                   onChange={event => { setImportText(event.target.value) }}
                 />
-                {importError !== undefined ? <p style={statusTextStyle('error')}>{t('byname.research.rejected').replace('{reasons}', importError)}</p> : null}
+                {importError !== undefined ? <p style={statusTextStyle('error')}>{importError}</p> : null}
                 <span style={{ display: 'inline-flex', gap: 8 }}>
                   <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.9 }} onClick={applyImport}>{t('byname.research.apply')}</button>
                   <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.9 }} onClick={() => { setImportOpen(false); setImportError(undefined) }}>{t('byname.research.cancel')}</button>
