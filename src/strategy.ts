@@ -244,13 +244,15 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   const bRanked = [...bPool].sort(bCompare)
   const bIndex = Math.min(Math.max(1, Math.floor((bRanked.length - 1) / 2)), bRanked.length - 1)
   let bPick = bRanked[bIndex]!
-  // Diversity preference (F3): a median colliding with S's model walks outward
-  // to the nearest different model — stronger side first on equal distance.
-  // Scoped to B's own pool (estimated models included — A-6 governs S/F only)
-  // and promised only when that pool holds ≥3 distinct models; two candidates
-  // and duplicate listings keep the colliding median.
+  // Diversity preference (F3, gate ≥2 since H1): a median colliding with S's
+  // model walks outward to the nearest different model — stronger side first
+  // on equal distance. Scoped to B's own pool (estimated models included —
+  // A-6 governs S/F only) and promised whenever that pool holds ≥2 distinct
+  // models: with any second distinct model listed, B never stacks onto S
+  // (the user's two-candidate zero-rows report retired the old ≥3 gate —
+  // the most common configuration must sit INSIDE the promise).
   const sCanonical = canonOf(sPick)
-  if (canonOf(bPick) === sCanonical && new Set(bRanked.map(canonOf)).size >= 3) {
+  if (canonOf(bPick) === sCanonical && new Set(bRanked.map(canonOf)).size >= 2) {
     for (let distance = 1; bIndex - distance >= 0 || bIndex + distance < bRanked.length; distance += 1) {
       const stronger = bIndex - distance >= 0 ? bRanked[bIndex - distance] : undefined
       const weaker = bIndex + distance < bRanked.length ? bRanked[bIndex + distance] : undefined
@@ -291,16 +293,17 @@ export function assignSlotsByCapability(candidates: readonly StarterCandidate[],
   if (dedupedPool.length === 0) {
     fPick = views[views.length - 1]!
   } else {
-    // Occupancy yield (G1, completing the F3 chain): when the strict argmin's
-    // model is already held by S or B and the deduplicated pool offers ≥3
-    // distinct models, F takes the weakest S-score among the UNOCCUPIED
-    // entries — as weak as possible while distinct. Below the gate (two
-    // candidates, duplicate listings) the collision stands, and the demoted
-    // duplicate of a Z10 pair holds zero rows at three canonicals (occupancy
-    // beats the dividend).
+    // Occupancy yield (G1, completing the F3 chain; gate ≥2 since H1): when
+    // the strict argmin's model is already held by S or B and the
+    // deduplicated pool offers ≥2 distinct models, F takes the weakest
+    // S-score among the UNOCCUPIED entries — as weak as possible while
+    // distinct; at exactly two distinct models the unoccupied set is empty
+    // (pigeonhole) and the collision stands. A demoted Z10 duplicate holds
+    // zero rows whenever a second distinct model exists (occupancy beats the
+    // dividend at every cardinality).
     const strict = fReduce(dedupedPool)
     const occupied = new Set([sCanonical, canonOf(bPick)])
-    if (occupied.has(canonOf(strict)) && new Set(dedupedPool.map(canonOf)).size >= 3) {
+    if (occupied.has(canonOf(strict)) && new Set(dedupedPool.map(canonOf)).size >= 2) {
       const unoccupied = dedupedPool.filter(entry => !occupied.has(canonOf(entry)))
       fPick = unoccupied.length > 0 ? fReduce(unoccupied) : strict
     } else {

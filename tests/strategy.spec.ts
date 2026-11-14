@@ -730,20 +730,22 @@ describe('slot diversity preference (F3)', () => {
     expect(rows.find(r => r.name === 'dev')?.model).toBe('model-d')
   })
 
-  it('two candidates keep the colliding median (the ≥3-distinct commitment gate)', () => {
-    // [a, b]: B ranks b > a, upper median a collides with S — only 2 distinct
-    // models, no walk: two-candidate behaviour is unchanged.
+  it('two candidates: the colliding median walks (H1 coverage contract superseded the old ≥3 gate)', () => {
+    // [a, b]: B ranks b > a, upper median a collides with S — with a second
+    // distinct model listed, B walks to it: the user's zero-rows report
+    // retired the "two candidates keep collisions" pin.
     const rows = slotsOf([at('model-a'), at('model-b')])
     expect(rows.find(r => r.name === 'review')?.model).toBe('model-a')
-    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-a')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-b')
   })
 
-  it('same model via two providers still counts as one distinct model (no walk)', () => {
-    // [a@p1, a@p2, b]: B ranks b > a > a — the median collides with S but the
-    // pool holds only 2 distinct canonical models, so B keeps the collision.
+  it('same model via two providers counts once for the gate — but the ≥2 gate still fires', () => {
+    // [a@p1, a@p2, b]: duplicates collapse to one canonical for the distinct
+    // count (2), which now meets the H1 gate — the colliding median walks to
+    // b, so the second MODEL holds a family regardless of duplicate listings.
     const rows = slotsOf([at('model-a', 'p1'), at('model-a', 'p2'), at('model-b')])
     expect(rows.find(r => r.name === 'review')?.model).toBe('model-a')
-    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-a')
+    expect(rows.find(r => r.name === 'dev')?.model).toBe('model-b')
   })
 
   it('F re-reduces over the canonically deduplicated pool — first listing represents a model', () => {
@@ -838,7 +840,7 @@ describe('F-slot occupancy yield (G1, ADR 0016 3c)', () => {
     expect(rows.some(row => row.provider === 'backup')).toBe(false)
   })
 
-  it('below the ≥3 gate the collision stands (two-candidate pin)', () => {
+  it('two candidates: F keeps the argmin (pigeonhole — S and B already cover both models)', () => {
     const rows = deriveStarterRows([at('model-p', 'p1'), at('model-q', 'p2')], { kb })
     expect(rows.find(r => r.name === 'review')?.model).toBe('model-p')
     expect(rows.find(r => r.name === 'test')?.model).toBe('model-q')
@@ -955,6 +957,43 @@ describe('sibling route splitting — same model, several providers (G4, ADR 001
     // S=official/x wins outright; the demoted backup is a DIFFERENT scoring
     // unit (not a sibling) — the S family stays on official alone.
     expect(providersOf([at('official', 'model-x'), at('backup', 'model-x'), at('sz', 'model-y')], ['review', 'audit', 'verif', 'plan'], { kb: zkb, overrides })).toEqual(['official', 'official', 'official', 'official'])
+  })
+})
+
+describe('coverage contract at two candidates (H1, ADR 0016 3d — the user report)', () => {
+  // 27b S .4800 / B .5272; flash-next S .4905 / B .5431; gap .0105 < band →
+  // first-listed takes S in EITHER order; the coverage contract then forces
+  // B off S's model so the second model never drops to zero rows.
+  const mk = (provider: string, model: string, efforts: string[]): Parameters<typeof deriveStarterRows>[0][number] =>
+    ({ provider, model, efforts: efforts.map(id => ({ id })) })
+  const flash = (provider: string) => mk(provider, 'Qwen3.8-Flash-Next-NVFP4', ['off', 'medium', 'xhigh'])
+  const q27 = (provider: string) => mk(provider, 'Qwen3.8-27B-FP8', ['off', 'low', 'high'])
+
+  it('27B listed FIRST still leaves flash-next a family (the reported zero-rows regression)', () => {
+    const rows = deriveStarterRows([q27('hh'), flash('strata')])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('hh') // band: first-listed keeps S
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('strata') // B walks off the collision
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('hh') // F: pigeonhole at 2 models
+    expect(new Set(rows.map(r => r.provider))).toEqual(new Set(['hh', 'strata']))
+  })
+
+  it('flash-next listed first keeps the pre-H outcome (no regression the other way)', () => {
+    const rows = deriveStarterRows([flash('strata'), q27('hh')])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('strata')
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('hh')
+    expect(new Set(rows.map(r => r.provider))).toEqual(new Set(['hh', 'strata']))
+  })
+
+  it('the 27B + v4-pro report stays as ruled (band hands S to the first listing) — pinned', () => {
+    const rows = deriveStarterRows([q27('hh'), mk('deepseek-official', 'deepseek-v4-pro', ['off', 'medium', 'max'])])
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('hh')
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('deepseek-official')
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('hh')
+  })
+
+  it('same model through two providers keeps splitting (not a coverage case)', () => {
+    const rows = deriveStarterRows([q27('hh'), mk('sz', 'Qwen3.8-27B-FP8', ['off', 'medium', 'xhigh'])])
+    expect(new Set(rows.map(r => r.provider))).toEqual(new Set(['hh', 'sz'])) // G4 sibling split, 6+6
   })
 })
 
