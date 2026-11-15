@@ -227,6 +227,10 @@ export const settingsCss = `
 .dsmp-invalid { border-color: var(--dsw-alias-state-error-primary) !important; }
 .dsmp-switch:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-focus-ring); outline-offset: 2px; }
 .dsmp-pop-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+/* Open disclosure state (O2): the toggle whose panel is open — quiet fill +
+   business border/text; a CLASS so .dsmp-hover:hover keeps its own layer
+   (inline state spreads would smother the hover feedback). */
+.dsmp-open { background: var(--dsw-alias-bg-layer-4); border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
 @keyframes dsmp-flash {
   0% { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-bg-layer-0); }
   60% { border-color: var(--dsw-alias-state-business-primary); }
@@ -245,6 +249,19 @@ export const routeSelectStyle = {
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 } as const
+
+/** Label + control row (O5): one shared convention for the field rows that
+ *  pair a card heading with a right-side control (添加模型/分配策略/添加映射/
+ *  兜底模型) — row+center+wrap so narrow windows flow the control under the
+ *  label instead of clipping; the label cluster (label [+Info] [+badge])
+ *  stays nowrap. Extracted from the 分配策略/兜底 rows verbatim. */
+export const fieldLabelRowStyle: React.CSSProperties = {
+  ...fieldRowStyle,
+  gap: 8,
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+}
 
 /** One row inside the advanced fold: no divider — spacing separates rows, the
  *  fold header keeps the single boundary line above the group. */

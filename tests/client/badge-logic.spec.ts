@@ -167,3 +167,17 @@ describe('sBandGapOf (H4)', () => {
     expect(sBandGapOf([{ provider: 'a', model: 'my-ft-v2' }, { provider: 'b', model: 'private-b' }], [])).toBeUndefined()
   })
 })
+
+/** O4: the shared-date dedup behind the 评分来源 panel. */
+describe('sharedAsOfOf (O4)', () => {
+  it('all-equal rows surface the one date; mixed and empty stay undefined', async () => {
+    const { sharedAsOfOf } = await import('../../src/client/badge-logic.ts')
+    const rows = [
+      { model: 'a', asOf: '2026-11-15' },
+      { model: 'b', asOf: '2026-11-15' },
+    ]
+    expect(sharedAsOfOf(rows)).toBe('2026-11-15')
+    expect(sharedAsOfOf([...rows, { model: 'c', asOf: '2026-11-16' }])).toBeUndefined()
+    expect(sharedAsOfOf([])).toBeUndefined()
+  })
+})

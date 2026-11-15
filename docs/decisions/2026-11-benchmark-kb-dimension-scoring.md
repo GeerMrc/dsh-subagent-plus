@@ -113,6 +113,14 @@
 - 面板间距与导入面板逐值一致（gap 6＋borderTop 恢复）；sourceBundled 键退役（空态＝按钮缺席＋提示行）；sourceEmpty 移提示块。
 - **重派生链入档（用户审核确认项）**：默认映射＋spread 下——导入应用即预览重派（#patch 每编辑重算 effectiveNameMap）；保存提交→settings/document-updated→onCommit→rederive 运行时全表重评；自定义行静态（设计如此）；运行中子代理下一步边界换路（ADR 0010）。
 
+### 3h. O 轮：评分来源面板五项细节（2026-11-17 用户实测裁定）
+
+- **O1 面板标题去重**：面板内左侧「评分来源」删除——标题行开关钮即面板身份；导入面板标题保留（唯一操作说明文案，非重复，独立复审明确不归一）。
+- **O2 开关激活态**：`.dsmp-open` 类（bg-layer-4 底＋business 边框/文字，零新 token）——**类而非内联**：保留 `.dsmp-hover:hover` 悬停层级（内联会压掉）；aria-expanded 为 disclosure 正确语义；闪现与激活态无共存路径（导入成功即关面板）。
+- **O3 短标签**：清除钮 zh「一键清除」/en「Clear」（完整语义留 title）——**取代 K 轮长标签决定**（可发现性由全尺寸钮＋title 承载；K 轮 CHANGELOG 条目留史）；引用同步 settings.md:70＋e2e D8（sourceEmpty/D17 经复核不引用该标签，不在清单）。
+- **O4 评估日期去重**：sharedAsOfOf（全行同日期→底部动作行左侧「评估日期：{date}」单显；混合/空→undefined 逐行回退）——混合日期为设计内常见路径（重导入保留限定行）；行内纯分数。
+- **O5 标签行统一**：fieldLabelRowStyle（＝分配策略/兜底现状提取：row+center+wrap）＋标签簇（label[+Info][+badge] nowrap）；添加模型/添加映射补齐簇化与 wrap（不发明帮助文案）；高级折叠内部行（advancedTitleStyle 层级）不归一。
+
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）
 
 恢复默认按钮禁用态＝**内联展开** opacity .45＋cursor default（CSS 类打不过 inline cursor——P1 教训）；五区"待保存"徽标全函数分派（清单区＝priority+strategy+钉定三件；Team＝nameMap+nameMapDefaults；兜底行＝fallback×3；高级折叠头＝5 开关；limits）且徽标判定与 fieldOps **共用 JSON 比较助手**；defaultsHint 追加"（预览随草稿实时变化，保存后生效）"；"未收录"标注＋KB 快照日期进 ⓘ help。

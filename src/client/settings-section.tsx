@@ -20,7 +20,7 @@ import { QuestionIcon } from './host-icons.tsx'
 import { LimitsBlock } from './official-sections.tsx'
 import type { OfficialLimitsController } from './official-surfaces.js'
 import { kbStatusOf, KB_AS_OF } from '../capability-scoring.js'
-import { benchRouteLabelsOf, kbVisibilityOf, sBandGapOf } from './badge-logic.ts'
+import { benchRouteLabelsOf, kbVisibilityOf, sBandGapOf, sharedAsOfOf } from './badge-logic.ts'
 import { NOISE_BAND } from '../strategy.js'
 import { routeId } from '../pin.js'
 import { isValidKeyword, MAX_NAME_MAP_ENTRIES, routeKey } from '../strategy.js'
@@ -40,6 +40,7 @@ import {
   cardHeadingStyle,
   cardStyle,
   fieldRowStyle,
+  fieldLabelRowStyle,
   foldButtonStyle,
   hintStyle,
   infoButtonStyle,
@@ -362,6 +363,10 @@ function EditorRoutes(props: EditorProps) {
   // Bench candidates (G3): listed routes no effective row references — the
   // middle failover tier, surfaced so an idle candidate never reads as a bug.
   const benchLabels = benchRouteLabelsOf(listed, state.effectiveNameMap)
+  // Shared evaluation date (O4): one import stamps one asOf — surfaced once
+  // at the action row; mixed dates (a re-import beside preserved rows) keep
+  // the per-row display.
+  const sharedAsOf = sharedAsOfOf(draft.capabilityOverrides ?? [])
   // Noise-band visibility (H4): a sub-band top-two S gap means the listing
   // order decided the review family — say so before it reads as a bug.
   const bandGap = sBandGapOf(listed, draft.capabilityOverrides ?? [])
@@ -546,8 +551,10 @@ function EditorRoutes(props: EditorProps) {
                   </div>
                 ))}
               </div>
-              <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
-                <span style={cardHeadingStyle}>{t('list.add')}</span>
+              <div style={fieldLabelRowStyle}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+                  <span style={cardHeadingStyle}>{t('list.add')}</span>
+                </span>
                 <span style={{ flex: 1 }} />
                 <select
                   className="dsmp-select"
@@ -567,7 +574,7 @@ function EditorRoutes(props: EditorProps) {
             </>
             )}
 
-        <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={fieldLabelRowStyle}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
             <span style={cardHeadingStyle}>{t('strategy.label')}</span>
             <Info label={t('strategy.help')} text={t('strategy.help')} delayMs={400} />
@@ -630,7 +637,7 @@ function EditorRoutes(props: EditorProps) {
                 ? (
                   <>
                     <button type="button" className={exportFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8 }} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{exportFlash.label ?? t('byname.research.export')}</button>
-                    <button type="button" aria-expanded={importOpen} className={importFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8 }} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportError(undefined); if (!importOpen) setSourceOpen(false) }}>{importFlash.label ?? t('byname.research.import')}</button>
+                    <button type="button" aria-expanded={importOpen} className={importFlash.label === undefined ? (importOpen ? 'dsmp-hover dsmp-open' : 'dsmp-hover') : 'dsmp-hover dsmp-flash'} style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8 }} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportError(undefined); if (!importOpen) setSourceOpen(false) }}>{importFlash.label ?? t('byname.research.import')}</button>
                   </>
                 )
                 : null}
@@ -646,7 +653,7 @@ function EditorRoutes(props: EditorProps) {
                   <button
                     type="button"
                     aria-expanded={sourceOpen}
-                    className="dsmp-hover"
+                    className={sourceOpen ? 'dsmp-hover dsmp-open' : 'dsmp-hover'}
                     style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8 }}
                     title={(draft.capabilityOverrides?.length ?? 0) > 0
                       ? `${t('byname.research.sourceCount').replace('{n}', String(draft.capabilityOverrides.length))} · ${t('byname.research.cleared')}`
@@ -703,7 +710,9 @@ function EditorRoutes(props: EditorProps) {
           {sourceOpen
             ? (
               <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
-                <span style={cardHeadingStyle}>{t('byname.research.source')}</span>
+                {/* No heading here (O1): the header toggle button IS the panel's
+                    identity — the import panel keeps its own heading because
+                    that text is unique instruction copy, not a duplicate. */}
                 <p style={hintStyle}>{t('byname.research.calibration')}</p>
                 {draft.capabilityOverrides.map((row, index) => (
                   <div key={`${(row.provider ?? '').trim()}\0${row.model}\0${index}`} className="dsmp-hover" style={{ ...listRowStyle, gridTemplateColumns: 'auto minmax(0,1fr) auto auto auto' }}>
@@ -711,7 +720,7 @@ function EditorRoutes(props: EditorProps) {
                     <span style={routeNameStyle} title={`${(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ` : ''}${row.model}`}>
                       {(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ${row.model}` : row.model}
                     </span>
-                    <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
+                    <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')}{(sharedAsOf === undefined ? ` · ${row.asOf}` : '')}</span>
                     <span style={pendingBadgeStyle}>{(() => {
                       const match = matchOverrideRoute(row, state.routes, draft.priority)
                       if (match === 'route-miss') return t('byname.research.routeMiss')
@@ -724,7 +733,10 @@ function EditorRoutes(props: EditorProps) {
                 ))}
                 {/* The rollback lever (K round): ONE click forgets every imported
                     score and restores install-time default scoring. */}
-                <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  {sharedAsOf !== undefined
+                    ? <span style={hintStyle}>{t('byname.research.asOfShared').replace('{date}', sharedAsOf)}</span>
+                    : <span />}
                   <button type="button" className="dsmp-hover" style={resetButtonStyle} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
                 </span>
               </div>
@@ -807,8 +819,10 @@ function EditorRoutes(props: EditorProps) {
               </div>
               )}
           
-          <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center' }}>
-            <span style={cardHeadingStyle}>{t('byname.add')}</span>
+          <div style={fieldLabelRowStyle}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
+              <span style={cardHeadingStyle}>{t('byname.add')}</span>
+            </span>
             <span style={{ flex: 1 }} />
             <select
               className="dsmp-select"
@@ -831,7 +845,7 @@ function EditorRoutes(props: EditorProps) {
             </select>
           </div>
         </div>
-        <div style={{ ...fieldRowStyle, gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={fieldLabelRowStyle}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
             <span style={cardHeadingStyle}>{t('fallback.title')}</span>
             <Info label={t('fallback.help')} text={t('fallback.help')} delayMs={400} />

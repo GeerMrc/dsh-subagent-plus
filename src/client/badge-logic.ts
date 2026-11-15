@@ -140,3 +140,15 @@ export function sBandGapOf(
   const gap = scores[0]! - scores[1]!
   return gap > 0 && gap < NOISE_BAND ? gap : undefined
 }
+
+/** Shared evaluation date (O4): one import stamps one asOf on every row, so
+ *  the per-row date is repetition — when ALL rows carry the same date it is
+ *  surfaced once; mixed dates (a later re-import next to preserved qualified
+ *  rows) keep the per-row display.
+ *  @param rows - the imported evaluation rows.
+ *  @returns the shared date, or undefined for mixed/empty lists. */
+export function sharedAsOfOf(rows: readonly { asOf: string }[]): string | undefined {
+  if (rows.length === 0) return undefined
+  const first = rows[0]!.asOf
+  return rows.every(row => row.asOf === first) ? first : undefined
+}
