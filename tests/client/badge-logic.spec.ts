@@ -57,7 +57,9 @@ describe('settings locale dictionaries (key parity + language guard)', () => {
   it('zh values carry Han, en values carry none (language-displacement guard)', async () => {
     const { en, zh } = await import('../../src/client/locales.js')
     const han = /[\u4e00-\u9fff]/
-    const allowNoHan = new Set(['byname.research.placeholder'])
+    // 'Team' is a bilingual-identical Latin product label (N1); the
+    // placeholder is the bilingual JSON example.
+    const allowNoHan = new Set(['byname.research.placeholder', 'byname.title'])
     for (const [key, value] of Object.entries(zh)) {
       if (allowNoHan.has(key)) continue
       expect(han.test(value), `zh[${key}] = ${String(value).slice(0, 40)}`).toBe(true)
