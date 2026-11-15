@@ -22,7 +22,6 @@ import {
   hintStyle,
   inputStyle,
   invalidStyle,
-  statusTextStyle,
 } from './settings-styles.ts'
 
 /** The status branches the limits block shares (loading / unavailable / invalid). */

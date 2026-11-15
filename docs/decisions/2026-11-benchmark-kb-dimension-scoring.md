@@ -134,7 +134,7 @@
 | 列表档 | listRowStyle 6px | 候选/映射/评估行（悬停区节奏，不动） |
 
 - 面板无边框裁定：开态已由 .dsmp-open 承担（发丝线冗余）；面板替换的提示行从不带线；advanced-fold 先例。
-- statusTextStyle 补 margin:0；byname 块内 gap 6→8（一条节奏规则）。
+- statusTextStyle 补 margin:0；byname 块内 gap 6→8（一条节奏规则）；**面板内部 gap 6 为有意的子单元密度**（与列表档同拍，复审钉明——非漏改）。
 - **刻意不动**：列表行 6px、limits 行零内边距（网格 rowGap 8 覆盖）、28px limits→路由接缝、高级折叠页级位置（布局决策另行立项）。
 
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）
