@@ -614,21 +614,23 @@ function EditorRoutes(props: EditorProps) {
               ? <button
                 type="button"
                 className={resetFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'}
-                style={{ ...resetButtonStyle, ...(draft.nameMapDefaults && draft.nameMap.length === 0 ? { opacity: 0.45, cursor: 'default' } : {}) }}
+                style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8, ...(draft.nameMapDefaults && draft.nameMap.length === 0 ? { opacity: 0.45, cursor: 'default' } : {}) }}
                 disabled={draft.nameMapDefaults && draft.nameMap.length === 0}
                 title={draft.nameMapDefaults && draft.nameMap.length === 0 ? t('byname.resetIdle') : t('byname.resetHint')}
                 aria-label={t('byname.reset')}
                 onClick={() => { controller.resetNameMapDefaults(); resetFlash.flash(t('byname.resetDone')) }}
               >{resetFlash.label ?? t('byname.reset')}</button>
               : null}
-            {/* Action cluster wraps (M1): EN labels overflow one line — a
-                static second row beats clipping or hover-growing buttons. */}
+            {/* Action cluster (M1/M6): compact 8px horizontal padding keeps
+                待保存＋四钮 on one line at the zh panel width; flexWrap stays
+                as the graceful floor for narrower windows (EN) — a static
+                second row beats clipping or hover-growing buttons. */}
             <span style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {!byNameLocked
                 ? (
                   <>
-                    <button type="button" className={exportFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{exportFlash.label ?? t('byname.research.export')}</button>
-                    <button type="button" aria-expanded={importOpen} className={importFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportError(undefined); if (!importOpen) setSourceOpen(false) }}>{importFlash.label ?? t('byname.research.import')}</button>
+                    <button type="button" className={exportFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8 }} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{exportFlash.label ?? t('byname.research.export')}</button>
+                    <button type="button" aria-expanded={importOpen} className={importFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8 }} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportError(undefined); if (!importOpen) setSourceOpen(false) }}>{importFlash.label ?? t('byname.research.import')}</button>
                   </>
                 )
                 : null}
@@ -645,7 +647,7 @@ function EditorRoutes(props: EditorProps) {
                     type="button"
                     aria-expanded={sourceOpen}
                     className="dsmp-hover"
-                    style={resetButtonStyle}
+                    style={{ ...resetButtonStyle, paddingLeft: 8, paddingRight: 8 }}
                     title={(draft.capabilityOverrides?.length ?? 0) > 0
                       ? `${t('byname.research.sourceCount').replace('{n}', String(draft.capabilityOverrides.length))} · ${t('byname.research.cleared')}`
                       : t('byname.research.sourceEmpty')}
