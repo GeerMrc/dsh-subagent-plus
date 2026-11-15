@@ -401,6 +401,7 @@ function EditorRoutes(props: EditorProps) {
       // prefilled with the package so the user can copy it manually.
       setImportText(text)
       setImportOpen(true)
+      setSourceOpen(false) // the panels share one slot — the fallback honors the mutual exclusion too
       setImportError(t('byname.research.clipboardFallback'))
     }
     if (navigator.clipboard?.writeText === undefined) {
