@@ -620,14 +620,39 @@ function EditorRoutes(props: EditorProps) {
                 onClick={() => { controller.resetNameMapDefaults(); resetFlash.flash(t('byname.resetDone')) }}
               >{resetFlash.label ?? t('byname.reset')}</button>
               : null}
-            {!byNameLocked
-              ? (
-                <span style={{ display: 'inline-flex', gap: 8 }}>
-                  <button type="button" className={exportFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{exportFlash.label ?? t('byname.research.export')}</button>
-                  <button type="button" className={importFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportError(undefined) }}>{importFlash.label ?? t('byname.research.import')}</button>
-                </span>
-              )
-              : null}
+            {/* Action cluster wraps (M1): EN labels overflow one line — a
+                static second row beats clipping or hover-growing buttons. */}
+            <span style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {!byNameLocked
+                ? (
+                  <>
+                    <button type="button" className={exportFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.hint').replace('{date}', String(KB_AS_OF))} onClick={() => { void exportResearch() }}>{exportFlash.label ?? t('byname.research.export')}</button>
+                    <button type="button" aria-expanded={importOpen} className={importFlash.label === undefined ? 'dsmp-hover' : 'dsmp-hover dsmp-flash'} style={resetButtonStyle} title={t('byname.research.importTitle')} onClick={() => { setImportOpen(!importOpen); setImportError(undefined); if (!importOpen) setSourceOpen(false) }}>{importFlash.label ?? t('byname.research.import')}</button>
+                  </>
+                )
+                : null}
+              {/* 评分来源 (M1): header-row entry, rendered whenever an open
+                  panel must stay closable or evaluations exist (the stranded-
+                  panel state machine: clear/last-remove/empty-import drop the
+                  count to 0 but the toggle lives on until the user closes).
+                  Under pinned the other buttons hide, this one stays — the
+                  Team pending badge's dirty check includes capabilityOverrides
+                  and clear/remove are draft-layer ops. */}
+              {(sourceOpen || (draft.capabilityOverrides?.length ?? 0) > 0)
+                ? (
+                  <button
+                    type="button"
+                    aria-expanded={sourceOpen}
+                    className="dsmp-hover"
+                    style={resetButtonStyle}
+                    title={(draft.capabilityOverrides?.length ?? 0) > 0
+                      ? `${t('byname.research.sourceCount').replace('{n}', String(draft.capabilityOverrides.length))} · ${t('byname.research.cleared')}`
+                      : t('byname.research.sourceEmpty')}
+                    onClick={() => { setSourceOpen(!sourceOpen); if (!sourceOpen) { setImportOpen(false); setImportError(undefined) } }}
+                  >{t('byname.research.source')}</button>
+                )
+                : null}
+            </span>
           </div>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
           {!byNameLocked && draft.nameMapDefaults
@@ -638,6 +663,9 @@ function EditorRoutes(props: EditorProps) {
             : null}
           {!byNameLocked && benchLabels.length > 0
             ? <p style={hintStyle}>{t('byname.benchHint').replace('{n}', String(benchLabels.length))}</p>
+            : null}
+          {!byNameLocked && (draft.capabilityOverrides?.length ?? 0) === 0
+            ? <p style={hintStyle}>{t('byname.research.sourceEmpty')}</p>
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>
@@ -662,61 +690,33 @@ function EditorRoutes(props: EditorProps) {
               </div>
             )
             : null}
-          {/* 评分来源 fold (L2, the advanced-fold convention): always rendered —
-              including under pinned (clear/remove are draft-layer ops; hiding
-              the fold would strand the Team pending badge, whose dirty check
-              includes capabilityOverrides). The status chip answers "where am
-              I" without expanding: 内置快照 vs N 条评估. */}
-          <button
-            type="button"
-            style={{ ...foldButtonStyle, width: '100%', padding: '12px 0', borderTop: '0.5px solid var(--dsw-alias-border-l2)' }}
-            aria-expanded={sourceOpen}
-            onClick={() => { setSourceOpen(!sourceOpen) }}
-          >
-            {t('byname.research.source')}
-            <span style={pendingBadgeStyle}>
-              {(draft.capabilityOverrides?.length ?? 0) > 0
-                ? t('byname.research.sourceCount').replace('{n}', String(draft.capabilityOverrides.length))
-                : t('byname.research.sourceBundled')}
-            </span>
-            <span style={{ flex: 1 }} />
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ transform: sourceOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>
-              <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
           {sourceOpen
             ? (
-              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 8, borderTop: 'none' }}>
-                {(draft.capabilityOverrides?.length ?? 0) === 0
-                  ? <p style={hintStyle}>{t('byname.research.sourceEmpty')}</p>
-                  : (
-                    <>
-                      <p style={hintStyle}>{t('byname.research.calibration')}</p>
-                      {draft.capabilityOverrides.map((row, index) => (
-                        <div key={`${(row.provider ?? '').trim()}\0${row.model}\0${index}`} className="dsmp-hover" style={{ ...listRowStyle, gridTemplateColumns: 'auto minmax(0,1fr) auto auto auto' }}>
-                          <span style={indexChipStyle}>{index + 1}</span>
-                          <span style={routeNameStyle} title={`${(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ` : ''}${row.model}`}>
-                            {(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ${row.model}` : row.model}
-                          </span>
-                          <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
-                          <span style={pendingBadgeStyle}>{(() => {
-                            const match = matchOverrideRoute(row, state.routes, draft.priority)
-                            if (match === 'route-miss') return t('byname.research.routeMiss')
-                            if (match === 'candidate') return t('byname.research.matchCandidate')
-                            if (match === 'kb') return t('byname.research.matchKb')
-                            return t('byname.research.matchNone')
-                          })()}</span>
-                          <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} aria-label={t('byname.research.remove')} title={t('byname.research.remove')} onClick={() => { controller.removeCapabilityOverride(index) }}>×</button>
-                        </div>
-                      ))}
-                      {/* The rollback lever (K round): ONE click forgets every imported
-                          score and restores install-time default scoring — full-size,
-                          bottom-right of the expanded fold. */}
-                      <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <button type="button" className="dsmp-hover" style={resetButtonStyle} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
-                      </span>
-                    </>
-                  )}
+              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+                <span style={cardHeadingStyle}>{t('byname.research.source')}</span>
+                <p style={hintStyle}>{t('byname.research.calibration')}</p>
+                {draft.capabilityOverrides.map((row, index) => (
+                  <div key={`${(row.provider ?? '').trim()}\0${row.model}\0${index}`} className="dsmp-hover" style={{ ...listRowStyle, gridTemplateColumns: 'auto minmax(0,1fr) auto auto auto' }}>
+                    <span style={indexChipStyle}>{index + 1}</span>
+                    <span style={routeNameStyle} title={`${(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ` : ''}${row.model}`}>
+                      {(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ${row.model}` : row.model}
+                    </span>
+                    <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')} · {row.asOf}</span>
+                    <span style={pendingBadgeStyle}>{(() => {
+                      const match = matchOverrideRoute(row, state.routes, draft.priority)
+                      if (match === 'route-miss') return t('byname.research.routeMiss')
+                      if (match === 'candidate') return t('byname.research.matchCandidate')
+                      if (match === 'kb') return t('byname.research.matchKb')
+                      return t('byname.research.matchNone')
+                    })()}</span>
+                    <button type="button" className="dsmp-hover" style={{ ...resetButtonStyle, opacity: 0.85, height: 20 }} aria-label={t('byname.research.remove')} title={t('byname.research.remove')} onClick={() => { controller.removeCapabilityOverride(index) }}>×</button>
+                  </div>
+                ))}
+                {/* The rollback lever (K round): ONE click forgets every imported
+                    score and restores install-time default scoring. */}
+                <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="button" className="dsmp-hover" style={resetButtonStyle} title={t('byname.research.cleared')} onClick={() => { controller.clearCapabilityOverrides() }}>{t('byname.research.clear')}</button>
+                </span>
               </div>
             )
             : null}
