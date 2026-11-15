@@ -657,6 +657,11 @@ function EditorRoutes(props: EditorProps) {
                 : null}
             </span>
           </div>
+          {/* Hint lines stand down while a panel is open (N2): the intro copy
+              is noise next to a focused panel, and the sourceEmpty wording
+              ("导入评估后出现入口") is wrong while that very entry is open. */}
+          {(!(importOpen || sourceOpen))
+            ? (<>
           {byNameLocked ? <p style={hintStyle}>{t('byname.pinnedHint')}</p> : null}
           {!byNameLocked && draft.nameMapDefaults
             ? <p style={hintStyle}>{`${listed.length > 0 ? `${t('byname.defaultsHint')}${t('common.previewSuffix')}` : t('byname.defaultsEmpty')} ${t('byname.research.sourceKb').replace('{date}', KB_AS_OF)}`}</p>
@@ -672,6 +677,8 @@ function EditorRoutes(props: EditorProps) {
             : null}
           {!byNameLocked && !draft.nameMapDefaults && draft.nameMap.length > 0
             ? <p style={hintStyle}>{t('byname.customHint')}</p>
+            : null}
+            </>)
             : null}
           {importOpen
             ? (
