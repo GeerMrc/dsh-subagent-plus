@@ -713,8 +713,13 @@ describe('research package scope (Z8/Z10 — full catalogue, model-level scoring
     // R2: process discipline — capability-conditional search duty, two-source
     // cross-validation with a visible single-source mark, per-model order.
     expect(pkg.prompt).toContain('you have web/search tools, you MUST search each model')
-    expect(pkg.prompt).toContain('supported by at least two independent credible sources')
-    expect(pkg.prompt).toContain('(single-source)')
+    expect(pkg.prompt).toContain('two independent credible sources') // R2 original; R3 refined to per-MODEL wording below
+    expect(pkg.prompt).toContain('(1src)') // R2's (single-source) mark superseded by the R3 per-note tag
+    // R3: visible cross-validation — per-MODEL two-source basis and a MANDATORY
+    // trailing tag on every note ((2src)/(1src)); success leaves a trace too.
+    expect(pkg.prompt).toContain('at least two independent credible sources for EACH MODEL')
+    expect(pkg.prompt).toContain('End every note with a source tag: (2src)')
+    expect(pkg.prompt).toContain('every note ends with a (2src) or (1src) tag')
     expect(pkg.prompt).toContain('evidence, resolve conflicts, score, write the note')
   })
 

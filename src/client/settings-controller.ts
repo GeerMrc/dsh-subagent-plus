@@ -306,12 +306,15 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
     // each session followed its own order. Capability-conditional so
     // tool-less evaluators stay compliant.
     'If you have web/search tools, you MUST search each model for its recent public benchmarks and community tests BEFORE scoring it; if you have no search capability, score from your own knowledge and mark every note with (no-search).',
-    'Each score should be supported by at least two independent credible sources (official benchmark pages, leaderboards, reproducible community evaluations); when only one source exists, mark the note with (single-source).',
+    // R3: per-MODEL basis (per-score double-sourcing was silently economized —
+    // session fb461bc8 showed one mark across eight notes) and a MANDATORY
+    // trailing tag so compliance is visible in BOTH outcomes.
+    'Gather at least two independent credible sources for EACH MODEL (official benchmark pages, leaderboards, reproducible community evaluations); End every note with a source tag: (2src) when two or more independent sources support its scores, (1src) when only one source was found.',
     'Work through the models in the listed order — evidence, resolve conflicts, score, write the note — and output only after all are done.',
     `Output a JSON array with EXACTLY ${unique.length} objects — one per listed model, in the listed order. Each object: {"model": "<exact id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "${today}", "note": "..."}.`,
     'Every object must be self-contained and independently understandable: write each field in full. Never write "same as above", "同上", "ditto", or refer to other items.',
     'Each note is plain text, at most 120 characters, stating the concrete basis (benchmark names and scores when available). Do not emit citation markers such as [reference:N] or [1] in any field.',
-    'Before finishing, verify the array has exactly this many items and each model appears exactly once; fix it if not.',
+    'Before finishing, verify the array has exactly this many items, each model appears exactly once, and every note ends with a (2src) or (1src) tag; fix whatever fails.',
     'JSON only, no prose. Wrap the entire JSON array in a single fenced code block tagged json (starting ```json and ending ```) with nothing outside the fence — this makes the reply render as a copyable code card. Models:',
     ...unique.map(line),
   ].join('\n')
