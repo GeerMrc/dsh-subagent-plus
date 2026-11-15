@@ -725,7 +725,15 @@ function EditorRoutes(props: EditorProps) {
                       {(row.provider ?? '').trim() !== '' ? `${(row.provider ?? '').trim()} · ${row.model}` : row.model}
                     </span>
                     <span style={hintStyle}>{[row.overall, row.coding, row.webdev, row.agentic].filter(score => score !== undefined).join(' / ')}{(sharedAsOf === undefined ? ` · ${row.asOf}` : '')}</span>
-                    <span style={pendingBadgeStyle}>{(() => {
+                    {/* Q: uniform short chips — a ragged multi-length badge blew
+                        out the row; the full semantics ride the hover title. */}
+                    <span style={pendingBadgeStyle} title={(() => {
+                      const match = matchOverrideRoute(row, state.routes, draft.priority)
+                      if (match === 'route-miss') return t('byname.research.routeMissTitle')
+                      if (match === 'candidate') return t('byname.research.matchCandidateTitle')
+                      if (match === 'kb') return t('byname.research.matchKbTitle')
+                      return t('byname.research.matchNoneTitle')
+                    })()}>{(() => {
                       const match = matchOverrideRoute(row, state.routes, draft.priority)
                       if (match === 'route-miss') return t('byname.research.routeMiss')
                       if (match === 'candidate') return t('byname.research.matchCandidate')
