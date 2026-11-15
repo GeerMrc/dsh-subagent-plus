@@ -710,6 +710,12 @@ describe('research package scope (Z8/Z10 — full catalogue, model-level scoring
     // against three real sessions: fenced → card, bare → plain text.
     expect(pkg.prompt).toContain('Wrap the entire JSON array in a single fenced code block tagged json')
     expect(pkg.prompt).toContain('nothing outside the fence')
+    // R2: process discipline — capability-conditional search duty, two-source
+    // cross-validation with a visible single-source mark, per-model order.
+    expect(pkg.prompt).toContain('you have web/search tools, you MUST search each model')
+    expect(pkg.prompt).toContain('supported by at least two independent credible sources')
+    expect(pkg.prompt).toContain('(single-source)')
+    expect(pkg.prompt).toContain('evidence, resolve conflicts, score, write the note')
   })
 
   it('single English prompt — no bilingual variants ship in the package', async () => {

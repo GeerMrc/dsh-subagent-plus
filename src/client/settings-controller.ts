@@ -300,6 +300,14 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
     'The list is the distinct model inventory of this environment (the full catalogue may serve one model through several providers — score the MODEL once regardless of access routes); ground your scores in public benchmarks and community testing. Models marked "current candidate" are actively listed.',
     'Before scoring each model, recall its most recent public benchmark results; when sources conflict, prefer the more recent reproducible source and note the conflict in the note field.',
     'Avoid compressing scores into the 55-75 band; use the full 0-100 range the anchors describe.',
+    // R2 process discipline (2026-11-17): three evidence-based clauses — the
+    // session logs showed search-vs-reason drifting per run (scores swung
+    // 74-75 vs 62-64 on the same model), single-sourcing went unmarked, and
+    // each session followed its own order. Capability-conditional so
+    // tool-less evaluators stay compliant.
+    'If you have web/search tools, you MUST search each model for its recent public benchmarks and community tests BEFORE scoring it; if you have no search capability, score from your own knowledge and mark every note with (no-search).',
+    'Each score should be supported by at least two independent credible sources (official benchmark pages, leaderboards, reproducible community evaluations); when only one source exists, mark the note with (single-source).',
+    'Work through the models in the listed order — evidence, resolve conflicts, score, write the note — and output only after all are done.',
     `Output a JSON array with EXACTLY ${unique.length} objects — one per listed model, in the listed order. Each object: {"model": "<exact id>", "overall": n, "coding": n, "webdev": n, "agentic": n, "asOf": "${today}", "note": "..."}.`,
     'Every object must be self-contained and independently understandable: write each field in full. Never write "same as above", "同上", "ditto", or refer to other items.',
     'Each note is plain text, at most 120 characters, stating the concrete basis (benchmark names and scores when available). Do not emit citation markers such as [reference:N] or [1] in any field.',
