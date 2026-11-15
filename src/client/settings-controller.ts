@@ -304,7 +304,7 @@ export function buildResearchPackage(candidates: readonly ResearchCandidate[], t
     'Every object must be self-contained and independently understandable: write each field in full. Never write "same as above", "同上", "ditto", or refer to other items.',
     'Each note is plain text, at most 120 characters, stating the concrete basis (benchmark names and scores when available). Do not emit citation markers such as [reference:N] or [1] in any field.',
     'Before finishing, verify the array has exactly this many items and each model appears exactly once; fix it if not.',
-    'JSON only, no prose. Models:',
+    'JSON only, no prose. Wrap the entire JSON array in a single fenced code block tagged json (starting ```json and ending ```) with nothing outside the fence — this makes the reply render as a copyable code card. Models:',
     ...unique.map(line),
   ].join('\n')
   return {

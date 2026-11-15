@@ -705,6 +705,11 @@ describe('research package scope (Z8/Z10 — full catalogue, model-level scoring
     expect(pkg.prompt).toContain('[reference:N]')
     expect(pkg.prompt).toContain('exactly this many items')
     expect(pkg.prompt).toContain('at most 120 characters')
+    // R: deterministic WRAPPING — bare JSON renders as plain text in DSH (no
+    // copy button); the fence makes every reply a copyable code card. Verified
+    // against three real sessions: fenced → card, bare → plain text.
+    expect(pkg.prompt).toContain('Wrap the entire JSON array in a single fenced code block tagged json')
+    expect(pkg.prompt).toContain('nothing outside the fence')
   })
 
   it('single English prompt — no bilingual variants ship in the package', async () => {
