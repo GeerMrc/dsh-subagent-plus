@@ -228,9 +228,12 @@ export const settingsCss = `
 .dsmp-switch:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-focus-ring); outline-offset: 2px; }
 .dsmp-pop-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
 /* Open disclosure state (O2): the toggle whose panel is open — quiet fill +
-   business border/text; a CLASS so .dsmp-hover:hover keeps its own layer
-   (inline state spreads would smother the hover feedback). */
-.dsmp-open { background: var(--dsw-alias-bg-layer-4); border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
+   business border/text. !important is REQUIRED: these buttons carry the
+   resetButtonStyle→inputStyle background/border/color trio INLINE, and a
+   plain class loses the cascade to the style attribute (the .dsmp-invalid
+   precedent; ADR 0016 d4). Note the trio also smothers .dsmp-hover:hover's
+   fill on these buttons — pre-existing since they adopted resetButtonStyle. */
+.dsmp-open { background: var(--dsw-alias-bg-layer-4) !important; border-color: var(--dsw-alias-state-business-primary) !important; color: var(--dsw-alias-state-business-primary) !important; }
 @keyframes dsmp-flash {
   0% { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-bg-layer-0); }
   60% { border-color: var(--dsw-alias-state-business-primary); }

@@ -116,7 +116,7 @@
 ### 3h. O 轮：评分来源面板五项细节（2026-11-17 用户实测裁定）
 
 - **O1 面板标题去重**：面板内左侧「评分来源」删除——标题行开关钮即面板身份；导入面板标题保留（唯一操作说明文案，非重复，独立复审明确不归一）。
-- **O2 开关激活态**：`.dsmp-open` 类（bg-layer-4 底＋business 边框/文字，零新 token）——**类而非内联**：保留 `.dsmp-hover:hover` 悬停层级（内联会压掉）；aria-expanded 为 disclosure 正确语义；闪现与激活态无共存路径（导入成功即关面板）。
+- **O2 开关激活态**：`.dsmp-open` 类（bg-layer-4 底＋business 边框/文字，零新 token）＋**!important**——复审以真实 Chromium 实证：钮内联 background/border/color 三件套（resetButtonStyle→inputStyle）压掉普通类，激活态写了不渲染（`.dsmp-invalid` 先例）；该内联三件套同时也早已压掉这些钮的 hover 填充（resetButtonStyle 采用起即然，非本轮引入）。aria-expanded 为 disclosure 正确语义；代码路径无闪现/激活共存（导入成功即关面板），用户在 ≤2s 闪现期内重开面板则瞬时以闪现类优先、自我纠正。
 - **O3 短标签**：清除钮 zh「一键清除」/en「Clear」（完整语义留 title）——**取代 K 轮长标签决定**（可发现性由全尺寸钮＋title 承载；K 轮 CHANGELOG 条目留史）；引用同步 settings.md:70＋e2e D8（sourceEmpty/D17 经复核不引用该标签，不在清单）。
 - **O4 评估日期去重**：sharedAsOfOf（全行同日期→底部动作行左侧「评估日期：{date}」单显；混合/空→undefined 逐行回退）——混合日期为设计内常见路径（重导入保留限定行）；行内纯分数。
 - **O5 标签行统一**：fieldLabelRowStyle（＝分配策略/兜底现状提取：row+center+wrap）＋标签簇（label[+Info][+badge] nowrap）；添加模型/添加映射补齐簇化与 wrap（不发明帮助文案）；高级折叠内部行（advancedTitleStyle 层级）不归一。
