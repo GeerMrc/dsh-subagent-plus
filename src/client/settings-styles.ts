@@ -198,6 +198,7 @@ export const saveButtonStyle = (disabled: boolean) => ({
 })
 
 export const statusTextStyle = (tone: 'success' | 'error' | 'warn') => ({
+  margin: 0,
   fontSize: 12,
   lineHeight: 1.5,
   color: tone === 'success'
@@ -264,6 +265,18 @@ export const fieldLabelRowStyle: React.CSSProperties = {
   flexDirection: 'row',
   alignItems: 'center',
   flexWrap: 'wrap',
+}
+
+/** Inline-tier label row (P1, the vertical-rhythm two-tier rule): rows
+ *  nested INSIDE a section block — the advancedRowStyle rhythm (8px 0, no
+ *  divider; the block's own fieldRowStyle keeps the single hairline). */
+export const inlineLabelRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  padding: '8px 0',
 }
 
 /** One row inside the advanced fold: no divider — spacing separates rows, the

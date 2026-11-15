@@ -121,6 +121,22 @@
 - **O4 评估日期去重**：sharedAsOfOf（全行同日期→底部动作行左侧「评估日期：{date}」单显；混合/空→undefined 逐行回退）——混合日期为设计内常见路径（重导入保留限定行）；行内纯分数。
 - **O5 标签行统一**：fieldLabelRowStyle（＝分配策略/兜底现状提取：row+center+wrap）＋标签簇（label[+Info][+badge] nowrap）；添加模型/添加映射补齐簇化与 wrap（不发明帮助文案）；高级折叠内部行（advancedTitleStyle 层级）不归一。
 
+### 3i. P 轮：垂直节奏两档规范（2026-11-17 用户实测裁定，全量审计驱动）
+
+**审计修正直觉**：添加模型行其实正确（顶层）；可见不对称全部源自 byname 块内嵌套——添加映射行携区块档（双倍 12px＋块内杂散发丝线，上 24px/下 44px 不对称）、两面板同携区块档、statusTextStyle 漏 margin:0、块内 gap 6 vs 兄弟区 8。
+
+**两档规范**（先例＝advancedRowStyle 注释"区块内无分隔线"）：
+
+| 档 | 样式 | 适用 |
+|---|---|---|
+| 区块档 | fieldRowStyle/fieldLabelRowStyle（12px 0＋发丝线） | 仅卡级分区间隔行：添加模型/分配策略/Team 块/兜底/高级折叠头 |
+| 行内档 | inlineLabelRowStyle/面板基座（8px 0、无边框） | 区块内部一切行：添加映射、导入/评分面板、高级区内行 |
+| 列表档 | listRowStyle 6px | 候选/映射/评估行（悬停区节奏，不动） |
+
+- 面板无边框裁定：开态已由 .dsmp-open 承担（发丝线冗余）；面板替换的提示行从不带线；advanced-fold 先例。
+- statusTextStyle 补 margin:0；byname 块内 gap 6→8（一条节奏规则）。
+- **刻意不动**：列表行 6px、limits 行零内边距（网格 rowGap 8 覆盖）、28px limits→路由接缝、高级折叠页级位置（布局决策另行立项）。
+
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）
 
 恢复默认按钮禁用态＝**内联展开** opacity .45＋cursor default（CSS 类打不过 inline cursor——P1 教训）；五区"待保存"徽标全函数分派（清单区＝priority+strategy+钉定三件；Team＝nameMap+nameMapDefaults；兜底行＝fallback×3；高级折叠头＝5 开关；limits）且徽标判定与 fieldOps **共用 JSON 比较助手**；defaultsHint 追加"（预览随草稿实时变化，保存后生效）"；"未收录"标注＋KB 快照日期进 ⓘ help。

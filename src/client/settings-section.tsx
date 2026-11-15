@@ -41,6 +41,7 @@ import {
   cardStyle,
   fieldRowStyle,
   fieldLabelRowStyle,
+  inlineLabelRowStyle,
   foldButtonStyle,
   hintStyle,
   infoButtonStyle,
@@ -596,7 +597,7 @@ function EditorRoutes(props: EditorProps) {
             defaults mode the rows derive from the candidate list and adapt
             live (ADR 0014 d2); the first edit materialises them into ordinary
             custom rows. Pinned locks route pickers (the R1 mirror). */}
-        <div style={fieldRowStyle}>
+        <div style={{ ...fieldRowStyle, gap: 8 }}>
           <div style={cardHeaderRowStyle}>
             <h4 id="dsmp-byname" style={cardHeadingStyle}>{t('byname.title')}</h4>
             <Info label={t('byname.help')} text={bynameInfoText} delayMs={400} />
@@ -689,7 +690,7 @@ function EditorRoutes(props: EditorProps) {
             : null}
           {importOpen
             ? (
-              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6, padding: '8px 0' }}>
                 <span style={cardHeadingStyle}>{t('byname.research.importTitle')}</span>
                 <textarea
                   className="dsmp-input"
@@ -709,7 +710,10 @@ function EditorRoutes(props: EditorProps) {
             : null}
           {sourceOpen
             ? (
-              <div style={{ ...fieldRowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6, padding: '8px 0' }}>
+                {/* Inline tier (P1): a panel nested in the block carries no
+                    hairline — the .dsmp-open toggle already signposts the open
+                    state, and the hint stack it replaces never had one. */}
                 {/* No heading here (O1): the header toggle button IS the panel's
                     identity — the import panel keeps its own heading because
                     that text is unique instruction copy, not a duplicate. */}
@@ -818,8 +822,9 @@ function EditorRoutes(props: EditorProps) {
                 })}
               </div>
               )}
-          
-          <div style={fieldLabelRowStyle}>
+          {/* Inline tier (P1): nested in the Team block, this row takes the
+              block's interior rhythm — no second hairline, no doubled 12px. */}
+          <div style={inlineLabelRowStyle}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flexWrap: 'nowrap' }}>
               <span style={cardHeadingStyle}>{t('byname.add')}</span>
             </span>
