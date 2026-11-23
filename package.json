@@ -27,7 +27,11 @@
     "README.en.md",
     "LICENSE",
     "locale",
-    "docs",
+    "docs/plugin-page.zh.md",
+    "docs/plugin-page.en.md",
+    "docs/settings.md",
+    "docs/strategy.md",
+    "docs/upgrade.md",
     "NOTICES"
   ],
   "engines": {

@@ -117,6 +117,9 @@
 
 
 - 留待：DOM 渲染级测试仍为既有技术债；命名预设集（多套映射＋切换）与 per-workspace 覆盖为后续方向（ADR 0014 不做面）；auto-save 页级改造不做（全页统一保存为既有架构）；L1 远端知识库同步留位下版（ADR 0016 §7）。
+
+- fix(publish)!: **P7 files 白名单修复（治理文档泄漏）**——`"files": ["docs"]` 整目录入包把 16 份 ADR＋dont-do/e2e-manual/release-runbook/upstream-feedback 草稿全部泄漏进公开 npm 包（tarball 实证 219KB）；修复为逐文件白名单（plugin-page×2＋settings/strategy/upgrade 产品手册，包降至 151KB），契约测试补静态两半（detail 目标精确在列＋禁裸目录项＋白名单不触治理文档）＋ release.yml 增 tarball 内容物断言（pack 后、建 Release 前）——正是姊妹插件 v0.0.1 事故记录的根因闭合。
+
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
 > 版本指针：本条目内容以 **v0.0.3** 发布（npm：2026-11-05）。标题里的 `v0.3.0` 是产品线裁定（ADR 0004）前的编号；npm 上另有一次 2026-10-28 误发布的同名 `0.3.0`（已下架），与本条目无关。

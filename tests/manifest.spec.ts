@@ -93,3 +93,38 @@ describe('plugin-page detail contract (PH2, P2)', () => {
     expect(Object.keys(pkg.exports)).toContain('./locale/*.json')
   })
 })
+
+/** P7: the npm files whitelist must ship the meta.detail docs AND must not
+ *  leak internal governance docs. The sibling's incident: "files": ["docs"]
+ *  shipped every ADR/fault-report to the public registry while the contract
+ *  test only checked source-repo existence. These assertions pin BOTH halves
+ *  statically (npm files semantics: a directory entry includes recursively;
+ *  an exact file entry includes exactly). */
+describe('npm files whitelist vs governance docs (P7)', () => {
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { files: string[] }
+  /** Docs that must reach the npm consumer (product manuals the README links). */
+  const SHIPPED_DOCS = ['docs/plugin-page.zh.md', 'docs/plugin-page.en.md', 'docs/settings.md', 'docs/strategy.md', 'docs/upgrade.md']
+  /** Internal governance/ops docs — never in the public package. */
+  const INTERNAL_DOCS = ['docs/dont-do.md', 'docs/e2e-manual.md', 'docs/release-runbook.md', 'docs/upstream-feedback-llm-deepseek-id-split.md']
+  const covers = (entry: string, path: string): boolean => path === entry || path.startsWith(`${entry}/`)
+
+  it('ships every meta.detail target and product manual as an exact files entry', async () => {
+    for (const doc of SHIPPED_DOCS) {
+      expect(pkg.files, doc).toContain(doc)
+      expect(readFileSync(doc, 'utf8').length, doc).toBeGreaterThan(0)
+    }
+  })
+
+  it('never whitelists the bare docs/ directory — governance ships file-by-file only', () => {
+    expect(pkg.files, 'a bare "docs" entry recursively ships every ADR and lesson doc to npm').not.toContain('docs')
+    expect(pkg.files).not.toContain('docs/')
+  })
+
+  it('no whitelist entry reaches an internal governance doc', () => {
+    const internal = [...INTERNAL_DOCS.map(doc => [doc] as const), ['docs/decisions/', 'docs/decisions/2026-10-29-takeover-surface.md'] as const]
+    for (const [internalPath] of internal) {
+      const leaking = pkg.files.filter(entry => covers(entry, internalPath))
+      expect(leaking, `${internalPath} would ship via ${leaking.join(', ')}`).toEqual([])
+    }
+  })
+})

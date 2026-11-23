@@ -42,6 +42,22 @@ jobs:
       # dist-artifacts/ is gitignored; npm pack requires the destination to
       # exist (ENOENT on fresh checkout — dsh-websearch session-38 incident B).
       - run: mkdir -p dist-artifacts && npm pack --pack-destination dist-artifacts
+      # P7 pack verification — assert the TARBALL (not the repo) carries every
+      # meta.detail target and no internal governance doc leaked through the
+      # files whitelist (the sibling's v0.0.1 incident: contract tests checked
+      # only source-repo existence).
+      - name: verify tarball contents (P7)
+        run: |
+          set -eu
+          TARBALL=dist-artifacts/dsh-subagent-plus-*.tgz
+          LIST=$(tar -tzf $TARBALL)
+          for f in docs/plugin-page.zh.md docs/plugin-page.en.md docs/settings.md docs/strategy.md docs/upgrade.md; do
+            echo "$LIST" | grep -qx "package/$f" || { echo "P7 FAIL: $f missing from tarball"; exit 1; }
+          done
+          if echo "$LIST" | grep -qE '^package/docs/(decisions/|dont-do\.md|e2e-manual\.md|release-runbook\.md|upstream-feedback)'; then
+            echo 'P7 FAIL: internal governance docs leaked into the tarball'; exit 1
+          fi
+          echo 'P7 OK: detail targets present, no governance leak'
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes dist-artifacts/*.tgz || gh release upload "$GITHUB_REF_NAME" dist-artifacts/*.tgz --clobber
         env:
           GH_TOKEN: ${{ github.token }}
