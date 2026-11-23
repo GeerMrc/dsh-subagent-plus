@@ -43,10 +43,12 @@ describe('canonicalizeModelId hardening (F1)', () => {
 
 describe('kbEntryFor curated official stems (F1, the audited user cases)', () => {
   it("the harness bare id deepseek-flash resolves to the V4.1-Flash family (the user's real candidate)", () => {
+    // 2026-11-22 snapshot: the text source recovered — the -max entry now
+    // carries the full four dimensions (anchored, no longer estimated).
     const hit = kbEntryFor('deepseek-flash')
     expect(hit).toBeDefined()
-    expect(hit?.dims).toEqual({ webdev: 0.806, agentic: 0.638 })
-    expect(hit?.estimated).toBe(true)
+    expect(hit?.dims).toEqual({ overall: 0.904, coding: 0.948, webdev: 0.783, agentic: 0.559 })
+    expect(hit?.estimated).toBe(false)
   })
 
   it('the short family alias k3 resolves to the Kimi K3 family', () => {
@@ -55,8 +57,10 @@ describe('kbEntryFor curated official stems (F1, the audited user cases)', () =>
   })
 
   it('hyphenated official ids reach their dotted KB entries (claude-opus-4-8, claude-3.5-sonnet)', () => {
-    expect(kbEntryFor('claude-opus-4-8')?.dims.webdev).toBe(KB['claude-opus-4.8']?.dims.webdev)
-    expect(kbEntryFor('claude-3.5-sonnet')?.dims.coding).toBe(KB['claude-3-5-sonnet']?.dims.coding)
+    // 2026-11-22 snapshot: sonnet keys are dotted directly — the hyphen
+    // variant 4-8 still normalizes onto claude-opus-4.8.
+    expect(kbEntryFor('claude-opus-4-8')?.dims).toEqual(KB['claude-opus-4.8']?.dims)
+    expect(kbEntryFor('claude-3.5-sonnet')?.dims).toEqual(KB['claude-3.5-sonnet']?.dims)
     expect(kbEntryFor('claude-haiku-4-5-20251001')).toBeDefined()
   })
 })
@@ -135,8 +139,9 @@ describe('curated stems table invariants (F1)', () => {
 describe('kbStatusOf three-state visibility (F2)', () => {
   it('anchors: coding-backed entry / known: estimated entry / unknown: no layer', () => {
     expect(kbStatusOf('gpt-5 (high)')).toBe('anchored') // coding-backed in the shipped snapshot
-    expect(kbStatusOf('deepseek-flash')).toBe('known') // resolves via curated stem, estimated
-    expect(kbStatusOf('Qwen3.8-27B')).toBe('known') // snapshot-wide text-source outage: estimated
+    expect(kbStatusOf('deepseek-flash')).toBe('anchored') // 2026-11-22 snapshot: text recovered, full dims
+    expect(kbStatusOf('Qwen3.8-27B')).toBe('anchored')
+    expect(kbStatusOf('Qwen3.8-Flash-Next-NVFP4')).toBe('known') // still off the text leaderboard: estimated
     expect(kbStatusOf('my-ft-v2')).toBe('unknown')
   })
 
@@ -184,13 +189,15 @@ describe('committed OpenRouter aliases resolve end-to-end (F4)', () => {
 })
 
 describe('fan-out never absorbs an alias-derived subfamily (review 🟡#1)', () => {
-  it('qwen/qwen-2.5-72b-instruct stays unknown — the coder-32B alias bridges exact lookups only', () => {
-    // The F4 alias canonicalizes to qwen-2.5-coder-32b-instruct; the strip
-    // chain reaches stem qwen-2.5, whose only qwen-2.5-* neighbors in the
-    // index are ALIAS-derived. Fan-out considers primary keys only, so the
-    // 72B model must not inherit the coder-32B scores.
-    expect(kbEntryFor('qwen/qwen-2.5-72b-instruct')).toBeUndefined()
-    // The alias itself still bridges its exact form (F4 contract intact).
-    expect(kbEntryFor('qwen/qwen-2.5-coder-32b-instruct')?.dims.coding).toBe(KB['qwen2.5-coder-32b-instruct']?.dims.coding)
+  it('OR aliases bridge exact/strip lookups; contracted families never fan out (2026-11-22 refresh)', () => {
+    // The 72b slug is now a real OR alias of qwen2.5-72b-instruct (this
+    // snapshot carries that key) — it bridges exactly.
+    expect(kbEntryFor('qwen/qwen-2.5-72b-instruct')?.dims).toEqual(KB['qwen2.5-72b-instruct']?.dims)
+    // A slug that lands nowhere after every strip round must stay unknown:
+    // strip reaches stem qwen-2.5, but the KB keys are CONTRACTED
+    // (qwen2.5-…), so the fan-out prefix never matches — no absorption.
+    expect(kbEntryFor('qwen/qwen-2.5-instruct-999b')).toBeUndefined()
+    // The coder alias still bridges its exact form (F4 contract intact).
+    expect(kbEntryFor('qwen/qwen-2.5-coder-32b-instruct')?.dims).toEqual(KB['qwen2.5-coder-32b-instruct']?.dims)
   })
 })

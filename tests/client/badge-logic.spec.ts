@@ -95,9 +95,11 @@ describe('kbVisibilityOf (F2)', () => {
 
   it('all-estimated known candidates with no unknown claim estimatedAll', async () => {
     const { kbVisibilityOf } = await import('../../src/client/badge-logic.ts')
+    // 2026-11-22 snapshot: deepseek-flash/glm-5 gained coding anchors —
+    // use models still estimated (off the text leaderboard).
     const estimated = [
-      { provider: 'hh', model: 'deepseek-flash' },
-      { provider: 'zai', model: 'glm-5' },
+      { provider: 'hh', model: 'deepseek-v4-flash-high' },
+      { provider: 'zai', model: 'gpt-5.1-codex' },
     ]
     expect(kbVisibilityOf(estimated, [])).toEqual({ unknownModels: [], estimatedAll: true })
   })
@@ -147,11 +149,14 @@ describe('benchRouteLabelsOf (G3)', () => {
 
 /** H4: the noise-band gap the settings hint surfaces. */
 describe('sBandGapOf (H4)', () => {
-  it('reports the top-two S gap when it falls inside the band (the user scenario-B shape)', async () => {
+  it('reports the top-two S gap when it falls inside the band (an in-band pair)', async () => {
     const { sBandGapOf } = await import('../../src/client/badge-logic.ts')
+    // 2026-11-22 snapshot: the old scenario-B pair grew real coding anchors
+    // and sits far apart — k3 (.8489) vs glm-5.3 (.8346) is the in-band
+    // shape (gap .0143).
     const routes = [
-      { provider: 'hh', model: 'Qwen3.8-27B-FP8' },      // S .4800
-      { provider: 'deepseek-official', model: 'deepseek-v4-pro' }, // S .4965 — gap .0165
+      { provider: 'cm', model: 'k3-256k' },
+      { provider: 'zai', model: 'glm-5.3' },
     ]
     const gap = sBandGapOf(routes, [])
     expect(gap).not.toBeUndefined()

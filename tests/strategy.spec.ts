@@ -814,12 +814,12 @@ describe('F-slot occupancy yield (G1, ADR 0016 3c)', () => {
       { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
       { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
     ])
-    // G1: strict F argmin=27b collided with the B median → F yields to the
-    // unoccupied v4-pro. G2 then moved S to the first-listed flash-next (the
-    // .006 S-gap is noise) — the full state is pinned in the G2 describe.
-    expect(rows.find(r => r.name === 'review')?.model).toBe('Qwen3.8-Flash-Next-NVFP4')
+    // 2026-11-22 snapshot: all three carry real coding anchors — strict
+    // scores rule (v4-pro .7363 > 27b .7112 ≫ fn .4889; the noise band no
+    // longer binds this trio). Coverage holds: F = the weakest fn.
+    expect(rows.find(r => r.name === 'review')?.model).toBe('deepseek-v4-pro')
     expect(rows.find(r => r.name === 'dev')?.model).toBe('Qwen3.8-27B-FP8')
-    expect(rows.find(r => r.name === 'test')?.model).toBe('deepseek-v4-pro')
+    expect(rows.find(r => r.name === 'test')?.model).toBe('Qwen3.8-Flash-Next-NVFP4')
     expect(new Set(rows.map(row => row.provider)).size).toBe(3)
   })
 
@@ -885,15 +885,15 @@ describe('S-slot noise band, list order first (G2, ADR 0016 3c — user ruling)'
     expect(leaderKeeps.find(r => r.name === 'review')?.provider).toBe('p1') // .53 listed first keeps S
   })
 
-  it("the user's scenario B final state: S=flash-next (first-listed), B=27b, F=v4-pro", () => {
+  it("the user's scenario B final state (2026-11-22): S=v4-pro (strict), B=27b, F=flash-next", () => {
     const rows = deriveStarterRows([
       { provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
       { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
       { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
     ])
-    expect(rows.find(r => r.name === 'review')).toMatchObject({ provider: 'strata', model: 'Qwen3.8-Flash-Next-NVFP4', reasoningEffort: 'xhigh' })
+    expect(rows.find(r => r.name === 'review')).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' })
     expect(rows.find(r => r.name === 'dev')?.provider).toBe('sz')
-    expect(rows.find(r => r.name === 'test')?.provider).toBe('deepseek-official')
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('strata')
     expect(new Set(rows.map(row => row.provider)).size).toBe(3)
   })
 })
@@ -939,12 +939,12 @@ describe('sibling route splitting — same model, several providers (G4, ADR 001
       { provider: 'hh', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'xhigh' }] },
       { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
     ])
-    expect(rows.find(r => r.name === 'review')?.provider).toBe('strata') // S (noise band: first-listed)
-    expect(rows.find(r => r.name === 'test')?.provider).toBe('deepseek-official') // F (occupancy yield)
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('deepseek-official') // S: v4-pro strict (2026-11-22 anchors)
+    expect(rows.find(r => r.name === 'test')?.provider).toBe('strata') // F: the weakest, flash-next
     const bProviders = rows.filter(r => ['research', 'dev', 'build', 'execute', 'write', 'design'].includes(r.name)).map(r => r.provider)
-    // The B median winner is the hh entrance (its xhigh-topped ladder wins the
-    // structural tie) — winner leads, alternates with sz: 3+3 equal weight.
-    expect(bProviders).toEqual(['hh', 'sz', 'hh', 'sz', 'hh', 'sz'])
+    // 2026-11-22 snapshot: the B winner is the sz entrance (winner leads the
+    // rotation), alternating with hh: 3+3 equal weight.
+    expect(bProviders).toEqual(['sz', 'hh', 'sz', 'hh', 'sz', 'hh'])
   })
 
   it('a provider-qualified override breaks interchangeability: deliberately differentiated routes never split (Z10)', () => {
@@ -980,17 +980,17 @@ describe('coverage contract at two candidates (H1, ADR 0016 3d — the user repo
     expect(new Set(rows.map(r => r.provider))).toEqual(new Set(['hh', 'strata']))
   })
 
-  it('flash-next listed first keeps the pre-H outcome (no regression the other way)', () => {
+  it('flash-next listed first: strict scores put 27B on S either way (order-symmetric)', () => {
     const rows = deriveStarterRows([flash('strata'), q27('hh')])
-    expect(rows.find(r => r.name === 'review')?.provider).toBe('strata')
-    expect(rows.find(r => r.name === 'dev')?.provider).toBe('hh')
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('hh')
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('strata')
     expect(new Set(rows.map(r => r.provider))).toEqual(new Set(['hh', 'strata']))
   })
 
-  it('the 27B + v4-pro report stays as ruled (band hands S to the first listing) — pinned', () => {
+  it('the 27B + v4-pro pair: strict scores give S to v4-pro (.0251 gap > band)', () => {
     const rows = deriveStarterRows([q27('hh'), mk('deepseek-official', 'deepseek-v4-pro', ['off', 'medium', 'max'])])
-    expect(rows.find(r => r.name === 'review')?.provider).toBe('hh')
-    expect(rows.find(r => r.name === 'dev')?.provider).toBe('deepseek-official')
+    expect(rows.find(r => r.name === 'review')?.provider).toBe('deepseek-official')
+    expect(rows.find(r => r.name === 'dev')?.provider).toBe('hh')
     expect(rows.find(r => r.name === 'test')?.provider).toBe('hh')
   })
 
@@ -1005,13 +1005,13 @@ describe('coverage across the A-6 pool boundary (H7 review, ADR 0016 3d)', () =>
     ({ provider, model, efforts: [{ id: 'off' }, { id: 'low' }, { id: 'medium' }, { id: 'xhigh' }] })
 
   it('one anchored + two estimated covers ALL THREE (the reviewer counterexample, every ordering)', () => {
-    // gpt-5 (high) carries the coding anchor (anchored); 27b/v4-pro are
-    // estimated. A-6 keeps S on the anchored model; F's coverage yield may
-    // cross the anchored-only pool so no estimated model strands.
+    // 2026-11-22 snapshot: 27b/v4-pro gained anchors — the estimated pair is
+    // now flash-next + deepseek-v4-flash-high. A-6 keeps S on the sole
+    // anchored model; F's coverage yield crosses the anchored-only pool.
     for (const list of [
-      [mk('p1', 'gpt-5 (high)'), mk('hh', 'Qwen3.8-27B-FP8'), mk('ds', 'deepseek-v4-pro')],
-      [mk('hh', 'Qwen3.8-27B-FP8'), mk('p1', 'gpt-5 (high)'), mk('ds', 'deepseek-v4-pro')],
-      [mk('ds', 'deepseek-v4-pro'), mk('hh', 'Qwen3.8-27B-FP8'), mk('p1', 'gpt-5 (high)')],
+      [mk('p1', 'gpt-5 (high)'), mk('hh', 'Qwen3.8-Flash-Next-NVFP4'), mk('ds', 'deepseek-v4-flash-high')],
+      [mk('hh', 'Qwen3.8-Flash-Next-NVFP4'), mk('p1', 'gpt-5 (high)'), mk('ds', 'deepseek-v4-flash-high')],
+      [mk('ds', 'deepseek-v4-flash-high'), mk('hh', 'Qwen3.8-Flash-Next-NVFP4'), mk('p1', 'gpt-5 (high)')],
     ]) {
       const rows = deriveStarterRows(list)
       const holders = new Set(rows.map(row => `${row.provider}/${row.model}`))
@@ -1020,9 +1020,11 @@ describe('coverage across the A-6 pool boundary (H7 review, ADR 0016 3d)', () =>
     }
   })
 
-  it('two anchored + one estimated: F stays anchored when the pool covers, estimated never steals S', () => {
-    const rows = deriveStarterRows([mk('p1', 'gpt-5 (high)'), mk('p2', 'gpt-5-medium'), mk('ds', 'deepseek-v4-pro')])
-    expect(rows.find(r => r.name === 'review')?.model).toBe('gpt-5 (high)')
+  it('two anchored + one estimated: estimated never steals S; coverage hands it F', () => {
+    // 2026-11-22 snapshot: gpt-5-medium (.7042) outranks gpt-5 (high)
+    // (.6757) — S goes to the stronger anchored model regardless of listing.
+    const rows = deriveStarterRows([mk('p1', 'gpt-5 (high)'), mk('p2', 'gpt-5-medium'), mk('hh', 'Qwen3.8-Flash-Next-NVFP4')])
+    expect(rows.find(r => r.name === 'review')?.model).toBe('gpt-5-medium')
     const holders = new Set(rows.map(row => row.model))
     expect(holders.size).toBe(3)
   })

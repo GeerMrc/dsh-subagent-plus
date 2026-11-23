@@ -32,6 +32,10 @@ const AIDER_URLS = [
 ]
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
+// Inter-page throttle for the rows API (PH1): the limiter allows ~2 req/s
+// sustained with a small burst (empirical: 0.35s spacing dies at page ~3,
+// 1.4s spacing sustains); 1500ms keeps the ~113-page text crawl whole.
+const PAGE_DELAY_MS = 1500
 
 async function fetchWithRetry(url, tries = 5) {
   for (let attempt = 1; attempt <= tries; attempt += 1) {
@@ -41,8 +45,12 @@ async function fetchWithRetry(url, tries = 5) {
       return await response.text()
     } catch (error) {
       if (attempt === tries) throw error
-      console.warn(`  retry ${attempt}/${tries - 1} after error: ${String(error)}`)
-      await sleep(3000 * attempt)
+      // 429 = quota window: short linear backoff just burns the window —
+      // wait it out properly (empirical: 30s of 3s-spaced retries still
+      // 429; a single 20s hold clears it).
+      const hold = String(error).includes('429') ? 20_000 : 3000 * attempt
+      console.warn(`  retry ${attempt}/${tries - 1} after error: ${String(error)} (hold ${hold / 1000}s)`)
+      await sleep(hold)
     }
   }
   throw new Error('unreachable')
@@ -55,11 +63,16 @@ async function fetchArena(config) {
   while (offset < total) {
     // Datasets-server jobs flap under load ("temporary spike"); a config that
     // stays down is skipped by the caller so the snapshot builds partially.
-    const text = await fetchWithRetry(HF_ROWS(config, 'latest', offset, 100), 3)
+    // Full pagination is request-heavy (text ≈ 112 pages of 100): throttle
+    // between pages so the 429 limiter does not cut the config off (PH1 —
+    // the recovered text source must land whole, not partially skipped).
+    if (offset > 0) await sleep(PAGE_DELAY_MS)
+    const text = await fetchWithRetry(HF_ROWS(config, 'latest', offset, 100), 5)
     const page = JSON.parse(text)
     total = page.num_rows_total ?? rows.length
     for (const { row } of page.rows ?? []) rows.push(row)
     offset += 100
+    if (offset % 1000 === 0) console.log(`    …${config} ${offset}/${total}`)
   }
   return rows
 }
@@ -333,7 +346,12 @@ function emitKb(entries, { asOf, sources }) {
       .map(dim => `${dim}: ${entry.dims[dim].toFixed(3)}`)
       .join(', ')
     const estimated = entry.estimated ? ', estimated: true' : ''
-    lines.push(`  ${JSON.stringify(key)}: { aliases: ${JSON.stringify([...entry.aliases].sort())}, dims: { ${dims} }${estimated} },`)
+    // Alias slimming (PH1): aliases whose canonical form equals the key add
+    // nothing to the runtime lookup index (kbLookup canonicalizes aliases) —
+    // dropping them keeps the 497-entry snapshot inside the 40KB budget
+    // (51550 → ~39.7KB) with zero behavior change.
+    const liveAliases = [...entry.aliases].sort().filter(alias => canonicalize(alias) !== key)
+    lines.push(`  ${JSON.stringify(key)}: { aliases: ${JSON.stringify(liveAliases)}, dims: { ${dims} }${estimated} },`)
   }
   lines.push('}')
   lines.push('')
