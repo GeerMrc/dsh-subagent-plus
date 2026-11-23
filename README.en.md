@@ -1,6 +1,8 @@
 # dsh-subagent-plus
 
 > Language authority: this file is a mirror of [README.md](README.md) (Chinese); when the two disagree, the Chinese version is authoritative.
+>
+> **This is the developer README** (build/test/ADR references). End users: see the plugins-page detail ([docs/plugin-page.en.md](docs/plugin-page.en.md)).
 
 A standalone cordis plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) providing a **child-agent model-routing strategy engine**: assign every delegated child agent to an LLM route by configurable strategy, with a read-only model badge and a settings page. No product code is modified; immune to upstream upgrades.
 

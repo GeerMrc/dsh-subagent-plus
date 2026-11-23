@@ -15,7 +15,8 @@
     "./client": {
       "default": "./lib/client.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib",
@@ -24,6 +25,7 @@
     "README.md",
     "README.en.md",
     "LICENSE",
+    "locale",
     "docs",
     "NOTICES"
   ],

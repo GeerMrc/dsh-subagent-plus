@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "dsh-subagent-plus",
+    "description": "Route every delegated child agent by strategy: pin one LLM route, or spread children over candidates (round-robin / random / priority); a Team keyword map derives by model capability and re-ranks live, with evaluation import, three-tier health takeover, and a fallback route.",
+    "detail": "docs/plugin-page.en.md"
+  }
+}

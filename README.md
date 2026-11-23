@@ -1,6 +1,8 @@
 # dsh-subagent-plus（子Agent增强）
 
 > 语言权威声明：本文件为中文正本；[README.en.md](README.en.md) 是英文镜像，两者不一致时以中文为准。
+>
+> **本文是开发者文档**（构建/测试/ADR 引用）。终端用户请看插件页详情（[docs/plugin-page.zh.md](docs/plugin-page.zh.md)）。
 
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）提供**子智能体模型路由策略引擎**的独立 cordis 插件：把所有委派产生的子 Agent 按可配置策略指派到 LLM 路由，并附只读模型徽章与设置页面。不修改任何产品代码，随上游升级免疫。
 

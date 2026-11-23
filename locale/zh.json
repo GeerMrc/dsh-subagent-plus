@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "dsh-subagent-plus",
+    "description": "按策略为所有子智能体指派 LLM 路由：钉定单一路由，或在候选清单间轮询/随机/优先级分配；Team 角色关键词映射按模型能力自动派生并随候选实时重评，支持评估导入、健康降级三层接管与兜底路由。",
+    "detail": "docs/plugin-page.zh.md"
+  }
+}

@@ -51,3 +51,36 @@ describe('plugin identity manifest (R-02)', () => {
     expect(Number(pkg.version.split('.')[2])).toBeGreaterThan(2)
   })
 })
+
+/** PH2 (P2 pattern): the plugins-page detail is a named locale file — a
+ *  missing named file is a HARD error upstream (no README fallback), so the
+ *  contract locks path validity, file existence, and tarball inclusion. */
+describe('plugin-page detail contract (PH2, P2)', () => {
+  const readMeta = async (lang: string): Promise<{ meta?: { title?: unknown; description?: unknown; detail?: unknown } }> =>
+    JSON.parse(await import('node:fs').then(fs => fs.readFileSync(new URL(`../locale/${lang}.json`, import.meta.url), 'utf8')))
+
+  it('zh/en meta carry title/description and a legal detail path that exists', async () => {
+    for (const lang of ['zh', 'en']) {
+      const { meta } = await readMeta(lang)
+      expect(meta, lang).toBeDefined()
+      expect(typeof meta!.title, lang).toBe('string')
+      expect(typeof meta!.description, lang).toBe('string')
+      const detail = meta!.detail
+      expect(typeof detail, lang).toBe('string')
+      // P2 path rules: '/'-separated, .md suffix, no ./.. segments, no
+      // backslash, no URL scheme.
+      expect(detail, lang).toMatch(/^[^/].*\.md$/)
+      expect(detail, lang).not.toMatch(/(^|\/)\.{1,2}(\/|$)/)
+      expect(String(detail)).not.toMatch(/[\\]/)
+      expect(String(detail)).not.toMatch(/^[a-z]+:\/\//i)
+      const fs = await import('node:fs')
+      expect(fs.existsSync(new URL(`../${detail}`, import.meta.url)), `${lang}: ${String(detail)}`).toBe(true)
+    }
+  })
+
+  it('package.json ships the locale dir and exports it', async () => {
+    const pkg = JSON.parse(await import('node:fs').then(fs => fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')))
+    expect(pkg.files).toContain('locale')
+    expect(Object.keys(pkg.exports)).toContain('./locale/*.json')
+  })
+})

@@ -110,6 +110,8 @@
 
 - feat(kb)!: **PH1 能力知识库全量重建（2026-11-22 快照）**——text 源恢复后重建：497 条（原 228）、coding 锚 447（原 65）、overall 408（原 0）、estimated 降至 50；"全候选缺 coding 主锚"提示自然消退、多数模型回归锚定严格排序；构建脚本增页间限速＋429 专用退避（全量分页不再被限流掐断）＋别名瘦身（预算 39686/40000B）；快照钉子测试随新锚全量更新（含场景 B 严格分序、覆盖矩阵不变量全绿）。
 
+- feat(ux)!: **PH2 插件页文档分离（P2 模式）**——新增 locale/zh.json＋en.json（meta.title/description/detail）指向用户向双语插件页文档 docs/plugin-page.{zh,en}.md（定位/设置项/三层接管/**插件页开关＝唯一关闭入口**）；package.json exports ./locale/*.json＋files 含 locale；README 双语顶部加开发者/用户分工注记；契约测试锁定 detail 路径合法性（P2 规则）＋文件存在性＋发布清单（命名文件缺失＝上游硬错不回退）。
+
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
 - feat(takeover): 启用期间官方「子智能体」设置页（纯编辑面）经 bundle patch
