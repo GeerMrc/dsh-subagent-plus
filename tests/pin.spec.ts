@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   childDepthOf,
   isForkedChild,
-  pinnedRoute,
   resolvePinRoute,
   type AgentLike,
   type PinConfigView,
@@ -90,33 +89,3 @@ describe('resolvePinRoute', () => {
   })
 })
 
-describe('pinnedRoute', () => {
-  it('returns undefined when the route and effort already match', () => {
-    expect(pinnedRoute(
-      { provider: 'sz', model: 'm1', reasoningEffort: 'low' },
-      { provider: 'sz', model: 'm1', reasoningEffort: 'low' },
-    )).toBeUndefined()
-    expect(pinnedRoute({ provider: 'sz', model: 'm1' }, { provider: 'sz', model: 'm1' })).toBeUndefined()
-  })
-
-  it('reports effort-only when the route matches but the effort differs', () => {
-    expect(pinnedRoute(
-      { provider: 'sz', model: 'm1', reasoningEffort: 'low' },
-      { provider: 'sz', model: 'm1', reasoningEffort: 'high' },
-    )).toEqual({ kind: 'effort-only', reasoningEffort: 'high' })
-  })
-
-  it('overrides an inherited route and names the pinned effort', () => {
-    expect(pinnedRoute(
-      { provider: 'strata', model: 'flash', reasoningEffort: 'medium' },
-      { provider: 'sz', model: 'm1', reasoningEffort: 'low' },
-    )).toEqual({ kind: 'route', provider: 'sz', model: 'm1', reasoningEffort: 'low' })
-  })
-
-  it('drops the inherited effort on a route change without a pinned effort', () => {
-    expect(pinnedRoute(
-      { provider: 'strata', model: 'flash', reasoningEffort: 'medium' },
-      { provider: 'sz', model: 'm1' },
-    )).toEqual({ kind: 'route', provider: 'sz', model: 'm1' })
-  })
-})

@@ -897,6 +897,78 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     expect(model.select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'p2', model: 'model-a' }))
   })
 
+  it('a pinned child on the fallback gets the pin-fallback notice (PH4, wiring the orphaned helper)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({
+      strategy: 'pinned', provider: 'sz', model: 'model-x1', reasoningEffort: '',
+      cooldownMs: 60_000,
+      fallbackProvider: 'zai', fallbackModel: 'glm-5.3', fallbackReasoningEffort: '',
+    }, { llm })
+    const agent = memberAgent('courier-bot')
+    await fireCreated(ctx, agent)
+    await dispatchFailure(ctx, agent, 'sz', 'RATE_LIMIT', 429)
+    await dispatchFailure(ctx, agent, 'hh', 'RATE_LIMIT', 429)
+    const decision = await dispatchPreStep(ctx, agent, { provider: 'zai', model: 'glm-5.3' })
+    const text = JSON.stringify(decision.kind === 'enter' ? decision.messages : [])
+    expect(text).toContain('模型钉定兜底')
+    expect(text).toContain('runs fallback')
+  })
+
+  it('a keyword child stuck on an unregistered mapped route with no fallback gets the skipped notice (PH4)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    // A custom-mode row pointing at a provider the catalogue never lists:
+    // routeRegistered fails, no candidate can take over, no fallback — the
+    // child keeps its resolved (inherited) route, which we present AS the
+    // mapped route so the skipped branch fires at pre-step.
+    const { ctx } = await derivedContext({
+      nameMapDefaults: false,
+      nameMap: [{ name: 'reviewer', provider: 'ghost', model: 'model-x1', reasoningEffort: '' }],
+      priority: [
+        { provider: 'ghost', model: 'model-x1', reasoningEffort: '' },
+        { provider: 'ghost', model: 'model-x2', reasoningEffort: '' },
+      ],
+    }, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    // Every candidate sits on the unregistered ghost provider: no takeover,
+    // no fallback — the child keeps the mapped route and fails loudly.
+    const decision = await dispatchPreStep(ctx, reviewer, { provider: 'ghost', model: 'model-x1' })
+    const text = JSON.stringify(decision.kind === 'enter' ? decision.messages : [])
+    expect(text).toContain('按角色跳过')
+    expect(text).toContain('fails loudly')
+  })
+
+  it('a pinned child stuck on an unregistered pin with no fallback gets the pin-skipped notice (PH4)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    // The pin and every candidate sit on the unregistered ghost provider:
+    // failOpen finds nothing usable, the child keeps the pin it is running
+    // and fails loudly — the notice names that instead of "assigned".
+    const { ctx } = await derivedContext({
+      strategy: 'pinned', provider: 'ghost', model: 'model-x1', reasoningEffort: '',
+      priority: [
+        { provider: 'ghost', model: 'model-x1', reasoningEffort: '' },
+        { provider: 'ghost', model: 'model-x2', reasoningEffort: '' },
+      ],
+    }, { llm })
+    const agent = memberAgent('courier-bot')
+    await fireCreated(ctx, agent)
+    const decision = await dispatchPreStep(ctx, agent, { provider: 'ghost', model: 'model-x1' })
+    const text = JSON.stringify(decision.kind === 'enter' ? decision.messages : [])
+    expect(text).toContain('模型钉定跳过')
+    expect(text).toContain('fails loudly')
+  })
+
+  it('a registered mapped route reports a normal assignment — the skip gate re-checks, never sticks (PH4)', async () => {
+    const { llm } = tieredLlm(qwenTiers)
+    const { ctx } = await derivedContext({}, { llm })
+    const reviewer = memberAgent('plan-reviewer')
+    await fireCreated(ctx, reviewer)
+    const decision = await dispatchPreStep(ctx, reviewer, { provider: 'sz', model: 'model-x1' })
+    const text = JSON.stringify(decision.kind === 'enter' ? decision.messages : [])
+    expect(text).toContain('按角色指派')
+    expect(text).not.toContain('按角色跳过')
+  })
+
   it('a takeover candidate carries the takeover notice; the fallback hand-off carries the byName fallback notice (G3)', async () => {
     const { llm } = tieredLlm(qwenTiers)
     const { ctx } = await derivedContext({

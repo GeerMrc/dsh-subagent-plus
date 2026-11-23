@@ -351,9 +351,6 @@ export const nameInputStyle: React.CSSProperties = {
   ...inputStyle, width: 96, minWidth: 88, flex: '0 1 auto', height: 30,
 }
 
-/** Index-chip trigger of a mapping row (ADR 0015 d3): the delete popover
- *  anchors on the FIRST track and expands right; an unstyled button face so
- *  the chip keeps its own geometry. */
 /** Restore-defaults button (ADR 0015 d2, 2026-11-14 fix): a PLAIN bordered
  *  button — never the select style, whose caret background made it look like
  *  a dropdown and whose affordance belied the no-op click in defaults mode. */

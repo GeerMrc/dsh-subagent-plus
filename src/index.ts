@@ -42,6 +42,7 @@ import {
   assignedNotice,
   byNameFallbackNotice,
   byNameNotice,
+  byNameSkippedNotice,
   byNameTakeoverNotice,
   candidateRoutes,
   classifyFailure,
@@ -53,6 +54,8 @@ import {
   isValidKeyword,
   matchByKeyword,
   pinnedNotice,
+  pinFallbackNotice,
+  pinSkippedNotice,
   reassignedNotice,
   resolveStrategyPlan,
   routeKey,
@@ -694,8 +697,20 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const byName = byNameDecisions.get(agent)
     const spread = decisions.get(agent)
     let text: string | undefined
+    // Select-time registration verdict for the route a child is running
+    // (PH4): queried HERE, not memoized in a plugin-lifetime set — a set
+    // would keep calling a route "unregistered" after it registers again.
+    // Registered routes resolve from the routeRegistered cache; only an
+    // actually-unregistered route costs a catalogue lookup per step, on the
+    // path that is failing anyway.
+    const unregisteredNow = async (route: PinRoute): Promise<boolean> =>
+      config.failOpen && !await routeRegistered(ctx, route.provider, route.model)
     if (byName !== undefined && byName.route.provider === currentRoute.provider && byName.route.model === currentRoute.model) {
-      text = byNameNotice(byName.name, routeId(currentRoute))
+      // An unregistered mapped route still running (no takeover, no fallback
+      // took over) is the loud-fail skip, not a normal assignment.
+      text = await unregisteredNow(byName.route)
+        ? byNameSkippedNotice(byName.name, routeId(byName.route))
+        : byNameNotice(byName.name, routeId(currentRoute))
     } else if (byName !== undefined) {
       // Off its mapped route (G3): name the takeover candidate or the
       // fallback hand-off — the byName chain's own vocabulary, not the
@@ -712,7 +727,18 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
       const plan = resolveStrategyPlan(config)
       const pin = plan.kind === 'pinned' ? resolvePin(config) : undefined
       if (pin !== undefined && pin.provider === currentRoute.provider && pin.model === currentRoute.model) {
-        text = pinnedNotice(routeId(currentRoute))
+        // Same verdict for pins: unregistered and still running = the skip.
+        text = await unregisteredNow(pin)
+          ? pinSkippedNotice(routeId(pin))
+          : pinnedNotice(routeId(currentRoute))
+      } else if (pin !== undefined) {
+        // PH4: the pinned child left its pin for the fallback — name the
+        // pin → fallback hand-off in the pin vocabulary, not the generic
+        // fallback notice.
+        const fallback = fallbackRouteOf(config)
+        if (fallback !== undefined && fallback.provider === currentRoute.provider && fallback.model === currentRoute.model) {
+          text = pinFallbackNotice(routeId(pin), routeId(currentRoute))
+        }
       } else if (spread !== undefined && spread.kind === 'assigned' && spread.via === 'strategy'
         && spread.route.provider === currentRoute.provider && spread.route.model === currentRoute.model) {
         // The strategy-assigned route is running as assigned — say so once.

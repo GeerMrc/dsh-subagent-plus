@@ -446,7 +446,8 @@ function EditorRoutes(props: EditorProps) {
         ? t('byname.research.importedMerged').replace('{n}', String(result.rows.length)).replace('{m}', String(result.mergedDuplicates.length))
         : t('byname.research.imported').replace('{n}', String(result.rows.length)))
       // The paste box is a conveyance, not storage — a stale payload lingering
-      // on reopen reads as "the imported content lives here" (user confusion
+      // on reopen reads as "the imported content lives here"; the imported
+      // rows live in the 评分来源 panel instead.
       setImportText('')
       setImportOpen(false)
       setSourceOpen(true)
@@ -605,12 +606,6 @@ function EditorRoutes(props: EditorProps) {
               ? <span style={pendingBadgeStyle}>{t('common.pending')}</span>
               : null}
             <span style={{ flex: 1 }} />
-            {/* ADR 0015 d2 + 2026-11-14 fix: one persistent control in both
-                modes, styled as the plain action button it is (the select style
-                made it look like a dropdown). In pure defaults mode there is
-                nothing to reset — the button disables with an explanatory
-                title instead of firing a silent no-op; with stored rows being
-                ignored (degraded) it stays armed. */}
             {/* ADR 0015 d2 + 2026-11-14 fix: one persistent control in both
                 modes, styled as the plain action button it is (the select style
                 made it look like a dropdown). In pure defaults mode there is

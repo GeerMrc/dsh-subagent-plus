@@ -128,32 +128,3 @@ export function isForkedChild(agent: AgentLike): boolean {
   return typeof data === 'object' && data !== null && 'inherited' in data && data.inherited === true
 }
 
-/** One pin decision for a resolved route. */
-export type PinOverride =
-  | { kind: 'effort-only'; reasoningEffort: string }
-  | { kind: 'route'; provider: string; model: string; reasoningEffort?: string }
-
-/**
- * Apply the pin to one resolved route.
- * @param resolved - route the agent loop resolved (agent options plus any
- * deeper model-selection listener).
- * @param pin - configured pin route.
- * @returns the override to apply, or undefined when nothing changes.
- *  `route` without `reasoningEffort` drops the inherited effort so the
- *  selected model resolves its own default, mirroring delegation semantics;
- *  `effort-only` keeps the route and aligns the effort.
- */
-export function pinnedRoute(resolved: RouteFields, pin: PinRoute): PinOverride | undefined {
-  if (resolved.provider === pin.provider && resolved.model === pin.model) {
-    if (pin.reasoningEffort === undefined || resolved.reasoningEffort === pin.reasoningEffort) {
-      return undefined
-    }
-    return { kind: 'effort-only', reasoningEffort: pin.reasoningEffort }
-  }
-  return {
-    kind: 'route',
-    provider: pin.provider,
-    model: pin.model,
-    ...(pin.reasoningEffort === undefined ? {} : { reasoningEffort: pin.reasoningEffort }),
-  }
-}

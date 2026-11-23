@@ -147,6 +147,7 @@
 - **PH2 插件页文档分离（P2）**：locale/zh.json＋en.json（meta.detail → docs/plugin-page.{zh,en}.md 用户向双语文档，含"插件页开关＝唯一关闭入口"）；package.json exports/files 增 locale；README 双语顶部分工注记；契约测试锁 P2 路径规则＋存在性＋清单。
 - **P1 kind 命名空间化（PH3）**：注入行 `source.kind` 由官方 `'model-selection'` 改为 `'dsh-subagent-plus/model-selection'`——原值属 harness 核心 producer（插件注入被归因于官方）；rc.5 起 custom kind 一等渲染。**落地方式＝MessageSourceMap 声明合并**（映射自带文档"merge-extensible sum type…each producer declares its own kind"，即本仓既有惯例），零 cast；直接改字串会被 dsh-llm 闭联合拒绝（977e5b6 曾提交坏 tsc，9d9eb3a 修正）。
 - **PH1 KB 全量重建**：见 3d 债务闭环条目（497 条/锚 447/overall 408）。
+- **PH4 死代码清零**：①三个孤儿通知函数接入 pre-step（docs 早已承诺而运行时从未发出）——`pinFallbackNotice`（钉定子智能体落到兜底）、`pinSkippedNotice`／`byNameSkippedNotice`（路由未注册且无接管/兜底、仍运行并预期响亮失败）；②删除 `pinnedRoute`／`PinOverride` 遗留面（ADR 0010 已由 agent.model.select 取代，零运行时调用方）。**实现教训**：未注册判定必须在通知点**现查**（`routeRegistered` 对已注册路由走缓存）——首版用插件生命周期级 Set 记"未注册"且永不清理，路由恢复注册后会持续误报"跳过"；同一次接线还留了两处不可达子分支，均已在提交前拆除。
 
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）
 

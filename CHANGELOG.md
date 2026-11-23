@@ -112,6 +112,8 @@
 
 - feat(ux)!: **PH2 插件页文档分离（P2 模式）**——新增 locale/zh.json＋en.json（meta.title/description/detail）指向用户向双语插件页文档 docs/plugin-page.{zh,en}.md（定位/设置项/三层接管/**插件页开关＝唯一关闭入口**）；package.json exports ./locale/*.json＋files 含 locale；README 双语顶部加开发者/用户分工注记；契约测试锁定 detail 路径合法性（P2 规则）＋文件存在性＋发布清单（命名文件缺失＝上游硬错不回退）。
 
+- fix(notices): **PH4 通知接线与死代码清零**——三个文档已承诺却从未发出的转录通知接入运行时：钉定子智能体落到兜底→「模型钉定兜底」；钉定/角色映射路由未注册且无接管与兜底→「模型钉定跳过」/「按角色跳过」（此前前者显示通用兜底文案、后者静默）；删除 ADR 0010 后无调用方的 `pinnedRoute`/`PinOverride` 遗留导出；未注册判定在通知点现查（不缓存，路由恢复注册后不粘连）。
+
 ## v0.3.0 (2026-10-29) — 官方设置页接管（takeover surface）
 
 - feat(takeover): 启用期间官方「子智能体」设置页（纯编辑面）经 bundle patch
