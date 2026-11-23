@@ -142,6 +142,12 @@
 - statusTextStyle 补 margin:0；byname 块内 gap 6→8（一条节奏规则）；**面板内部 gap 6 为有意的子单元密度**（与列表档同拍，复审钉明——非漏改）。
 - **刻意不动**：列表行 6px、limits 行零内边距（网格 rowGap 8 覆盖）、28px limits→路由接缝、高级折叠页级位置（布局决策另行立项）。
 
+### 3j. PH 轮：发布前加固（2026-11-23，对照姊妹插件 P1-P6 模式审计）
+
+- **PH2 插件页文档分离（P2）**：locale/zh.json＋en.json（meta.detail → docs/plugin-page.{zh,en}.md 用户向双语文档，含"插件页开关＝唯一关闭入口"）；package.json exports/files 增 locale；README 双语顶部分工注记；契约测试锁 P2 路径规则＋存在性＋清单。
+- **P1 kind 命名空间化（PH3）**：注入行 `source.kind` 由官方 `'model-selection'` 改为 `'dsh-subagent-plus/model-selection'`——原值属 harness 核心 producer（插件注入被归因于官方）；rc.5 起 custom kind 一等渲染。**落地方式＝MessageSourceMap 声明合并**（映射自带文档"merge-extensible sum type…each producer declares its own kind"，即本仓既有惯例），零 cast；直接改字串会被 dsh-llm 闭联合拒绝（977e5b6 曾提交坏 tsc，9d9eb3a 修正）。
+- **PH1 KB 全量重建**：见 3d 债务闭环条目（497 条/锚 447/overall 408）。
+
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）
 
 恢复默认按钮禁用态＝**内联展开** opacity .45＋cursor default（CSS 类打不过 inline cursor——P1 教训）；五区"待保存"徽标全函数分派（清单区＝priority+strategy+钉定三件；Team＝nameMap+nameMapDefaults；兜底行＝fallback×3；高级折叠头＝5 开关；limits）且徽标判定与 fieldOps **共用 JSON 比较助手**；defaultsHint 追加"（预览随草稿实时变化，保存后生效）"；"未收录"标注＋KB 快照日期进 ⓘ help。

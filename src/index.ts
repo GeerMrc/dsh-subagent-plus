@@ -71,6 +71,17 @@ import { attachSettingsSection, LivePinConfig } from './settings.js'
 
 export type { PinConfigRuntime } from './config.js'
 
+// P1 (PH3): the transcript inject row's producer kind. MessageSourceMap is a
+// merge-extensible sum type — each producer declares its own kind in its own
+// module (the map's own doc); declaring ours here retires the 0.1.2 reuse of
+// the harness core's 'model-selection' kind, which attributed plugin-injected
+// notices to the official producer.
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-subagent-plus/model-selection': { kind: 'dsh-subagent-plus/model-selection' }
+  }
+}
+
 export const name = 'dsh-subagent-plus'
 
 export const usage = [
