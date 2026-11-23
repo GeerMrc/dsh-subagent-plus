@@ -31,13 +31,13 @@ pinForkChildren 出路）。空表＝休眠（ADR 0014→0016：默认映射开�
 
 | 失败码（`LlmFailure.code`） | 分类 | 冷却范围 | 当前子 Agent | 后续子 Agent |
 |---|---|---|---|---|
-| RATE_LIMIT / SERVER / TIMEOUT / TRANSPORT / EMPTY_RESPONSE | 瞬态 | 该路由 | 官方重试机制发起重试时，插件把重试直接落到下一健康路由（`request/header` 记 `change`）——记账监听器注册在重试器**外层**，第一次失败即入冷却，重试发起时换路已生效 | 避开冷却中的路由 |
-| AUTH / INVALID_CREDENTIAL / QUOTA / ACCOUNT_QUOTA | 粘性（provider 级） | 该 provider 全部路由 | 按官方行为失败结束（方案 A） | 避开该 provider |
+| RATE_LIMIT / SERVER / TIMEOUT / TRANSPORT / EMPTY_RESPONSE | 瞬态 | 该路由 | 第一次失败即入冷却，并为**下一步** `select()` 健康路由（步边界生效）；同一步内的官方重试沿用本步已捕获的路由（§五.2） | 避开冷却中的路由 |
+| AUTH / INVALID_CREDENTIAL / QUOTA / ACCOUNT_QUOTA | 粘性（provider 级） | 该 provider 全部路由 | 步内按官方重试策略（粘性码通常不重试，按官方行为失败结束——方案 A）；若仍有下一步，边界处换到其他 provider 的健康路由 | 避开该 provider |
 | NO_ADAPTER / UNSUPPORTED_REASONING_EFFORT | 粘性（路由级） | 该路由 | 按官方行为失败结束（注意：NO_ADAPTER 多数在流构造期同步抛出、不经失败事件，见 §五.5；运行期到达失败事件的照常记账） | 避开该路由 |
 | CONTEXT_WINDOW_EXCEEDED / IMAGE_OFFLOAD_REQUIRED / ABORTED / 其它未知码 | 忽略 | — | 不变 | 不变 |
 | UNKNOWN 且 HTTP 429 / 5xx | 瞬态 | 该路由 | 同瞬态 | 同瞬态 |
 
-冷却时长 = `max(providerRetryAfterMs, cooldownMs)`，重复失败只延长不缩短。`cooldownMs: 0` 完全关闭健康跟踪。插件在 `agent/request-error` 上**只记账、永远 `next()` 委派**且以 `prepend` 注册在官方 `dsh-llm-retry` 外层——重试与否完全由官方决定，但**每次失败（含将被重试的失败）都先入账**，重试再进请求瀑布时换路逻辑即刻可见。
+冷却时长 = `max(providerRetryAfterMs, cooldownMs)`，重复失败只延长不缩短。`cooldownMs: 0` 完全关闭健康跟踪。插件在 `agent/request-error` 上**只记账、永远 `next()` 委派**，以 `prepend` 注册——重试与否完全由官方决定，但**每次失败（含将被重试的失败）都先入账**并为下一步 `select()` 健康路由。换路在**下一步边界**生效：步内重试沿用本步进入提示组装时捕获的路由（`select()` 只影响后续步骤——宿主不变量，见 §五.2）。
 
 ## 三、配置示例
 
@@ -72,18 +72,18 @@ pinForkChildren 出路）。空表＝休眠（ADR 0014→0016：默认映射开�
 ## 四、可观测性
 
 - 子窗口琥珀色徽章显示该子 Agent **实际**路由（读 `request/header`），分配与 failover 自动跟随，无需客户端改动。
-- 转录提示（**中英双语单行**，v0.0.3）：`[模型指派 model assigned: 本子智能体所有请求运行 sz/…（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]`；failover 后追加 `[模型切换 model reassigned: sz/… 冷却中（RATE_LIMIT），本子智能体继续使用 hh/…｜sz/… cooling (RATE_LIMIT), continues hh/… — dsh-subagent-plus]`。钉定/兜底/failOpen 跳过为同格式变体。每子 Agent 每条文案只出现一次。
-- Host 日志：`assigned (round-robin) child agent onto hh/… (was zai/…)`、`route "sz/…" failed (RATE_LIMIT); cooling down for 120000ms`、`route "sz/…" is cooling down (…); child agent continues with "hh/…"`。
+- 转录提示（**中英双语单行**，以折叠的上下文注入行呈现）：策略指派 `[模型指派 model assigned: …（策略：轮询｜strategy: round-robin）— dsh-subagent-plus]`；钉定 `[模型钉定 model pinned: …]`；角色映射 `[按角色指派 model assigned by keyword: …]`；无可用候选 `[模型兜底 model fallback: …]`。路由失效后：策略链 `[模型切换 model reassigned: sz/… 冷却中（RATE_LIMIT），本子智能体继续使用 hh/…｜…]`；钉定 `[模型钉定兜底 …]`；角色映射 `[按角色接管 …]`（候选接管）或 `[按角色兜底 …]`。路由未注册且无接管、无兜底时 `[模型钉定跳过 …]`／`[按角色跳过 …]`（仍运行该路由，预期响亮失败）。同一子 Agent 对同一路由只提示一次，换到别的路由再提示。
+- Host 日志（`dsh-subagent-plus: …` 前缀）：`selected route "hh/…" for child agent at creation (ADR 0010)`、`selected route "…" for "<角色名>" at inbox/claimed (ADR 0012)`、`route "sz/…" failed (RATE_LIMIT); cooling down for 120000ms`、`provider "sz" failed (INVALID_CREDENTIAL); every route of it cools down for …ms`、`step-boundary route swap to "hh/…" for the next step (ADR 0010 d3)`。
 - 转录 notice 的两个边角：同一步内连续多次重试触发多次 failover（A→B→C）时，转录只报告最后一跳（中间跳见 Host 日志）；子 Agent 最后一步之后才发生的 failover 不会落转录 notice（Host 日志仍在）。
 
 ## 五、已知限制
 
 1. 主 Agent 显式指派默认被策略覆盖（`respectExplicit: true` 可改）。开启尊重后，显式指派**恰好等于**父会话当前路由时识别不出（判别靠"子创建路由 ≠ 父当前路由"）；父会话未加载或无 `sessions` 服务（headless）时一律按继承处理。
-2. 粘性失败（凭据/配额）当前子 Agent 无法救回，只影响后续指派（方案 A）。瞬态失败的记忆与换路不依赖官方重试器的在场形态：记账监听器以 `prepend` 注册在其外层，每次失败（含将被重试的失败）都先入账；官方重试器发起的重试再进请求瀑布即触发换路。若 provider 的 `retryPolicy` 不重试（不可重试码或额度耗尽），当前子 Agent 按官方行为失败结束，后续指派避开。
+2. 粘性失败（凭据/配额）当前子 Agent 通常无法救回，只影响后续指派（方案 A）。每次失败（含将被重试的失败）都先入账；换路在**下一步边界**生效——步内重试沿用本步进入提示组装时捕获的路由（宿主不变量：`agent.model.select()` 只影响后续步骤，插件不在步中改写请求）。若 provider 的 `retryPolicy` 不重试（不可重试码或额度耗尽），当前子 Agent 按官方行为失败结束，后续指派避开。
 3. 健康表与轮询游标是进程内存态：Host 重启 / 插件重载清零；多窗口共享同一 Host 进程，顺序与健康态跨窗口共享。
 4. 插件热重载后既有子 Agent 的粘住记忆丢失，其下一请求重新决策可能换路由（前缀重算一次、徽章跳变）。
 5. 流构造期的同步失败不经 `agent/request-error`，健康表学不到；未注册路由由 `failOpen` 预检跳过。
-6. `retryPolicy.mode: 'always'` 的 provider 会持续重试，重试的 `agent/request` 仍会被换到健康路由，无饿死。
+6. `retryPolicy.mode: 'always'` 的 provider 上若路由持续失败（如硬宕机持续返回 5xx），步内重试会一直沿用已捕获的故障路由——插件无法在步中换路，该步不结束，换路就到不了下一步边界。对此类 provider 请使用有界重试策略。
 7. 子 Agent 中途 failover 需对已积累前缀重新 prefill；若首请求即失败则零代价。
 8. `respectExplicit=true` 时官方授权清单仍管辖**父模型的显式指派**（会话组合时的快照，官方 spawn 前校验）——被拒的委派不产生子 Agent；插件候选不受官方清单约束（ADR 0005 零引用），只需在 LLM 目录注册。
-9. 失败事件只带 provider 不带 model：模型取该子 Agent 的记忆路由（provider 一致时；钉定子代无记忆，取钉定路由的 model）或其会话最新 `request/header`；两者都取不到则不记账（debug 日志）。
+9. 失败事件只带 provider 不带 model：模型取该子 Agent 的记忆路由（映射行、接管路由或策略指派路由，provider 一致时；钉定子代无记忆，取钉定路由或兜底路由的 model）或其会话最新 `request/header`；两者都取不到则不记账。
