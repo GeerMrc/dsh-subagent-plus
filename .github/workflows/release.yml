@@ -37,8 +37,8 @@ jobs:
       - run: node scripts/release-preflight.mjs "$GITHUB_REF_NAME"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
-      - run: pnpm test
       - run: pnpm run build
+      - run: pnpm test
       # dist-artifacts/ is gitignored; npm pack requires the destination to
       # exist (ENOENT on fresh checkout — dsh-websearch session-38 incident B).
       - run: mkdir -p dist-artifacts && npm pack --pack-destination dist-artifacts
