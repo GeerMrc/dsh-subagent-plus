@@ -814,9 +814,10 @@ describe('F-slot occupancy yield (G1, ADR 0016 3c)', () => {
       { provider: 'sz', model: 'Qwen3.8-27B-FP8', efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] },
       { provider: 'deepseek-official', model: 'deepseek-v4-pro', efforts: [{ id: 'off' }, { id: 'medium' }, { id: 'max' }] },
     ])
-    // 2026-11-22 snapshot: all three carry real coding anchors — strict
-    // scores rule (v4-pro .7363 > 27b .7112 ≫ fn .4889; the noise band no
-    // longer binds this trio). Coverage holds: F = the weakest fn.
+    // 2026-11-22 snapshot: v4-pro and 27b carry real coding anchors, fn stays
+    // estimated — strict scores rule among the anchored pool (v4-pro .7363 >
+    // 27b .7112 ≫ fn .4889; the noise band no longer binds this trio; fn
+    // never wins S while an anchored candidate exists). Coverage: F = fn.
     expect(rows.find(r => r.name === 'review')?.model).toBe('deepseek-v4-pro')
     expect(rows.find(r => r.name === 'dev')?.model).toBe('Qwen3.8-27B-FP8')
     expect(rows.find(r => r.name === 'test')?.model).toBe('Qwen3.8-Flash-Next-NVFP4')
