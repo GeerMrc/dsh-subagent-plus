@@ -723,7 +723,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     noticedLabel.set(agent, targetLabel)
     const notice = createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'model-selection', form: 'notice', summary: boundContextSummary(targetLabel) },
+      source: { kind: 'dsh-subagent-plus/model-selection', form: 'notice', summary: boundContextSummary(targetLabel) },
     })
     return { ...decision, messages: [...decision.messages, notice] }
   })
