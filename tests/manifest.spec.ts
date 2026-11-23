@@ -32,6 +32,15 @@ describe('plugin identity manifest (R-02)', () => {
     expect(build).toContain("JSON.stringify('dsh-subagent-plus')")
   })
 
+  it('stays private until the release commit (P6 tripwire)', () => {
+    // Remove "private" from package.json AND this assertion in the SAME
+    // release commit (docs/release-runbook.md). release.yml's pre-flight
+    // refuses to publish a private tree, so a half-done flip fails before
+    // any side effect instead of at `npm publish`.
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { private?: boolean }
+    expect(pkg.private).toBe(true)
+  })
+
   it('bumped past the 0.1.x install surface (file: reinstalls skip same versions)', () => {
     expect(pkg.version).not.toMatch(/^0\.1\./)
   })

@@ -147,6 +147,9 @@
 - **PH2 插件页文档分离（P2）**：locale/zh.json＋en.json（meta.detail → docs/plugin-page.{zh,en}.md 用户向双语文档，含"插件页开关＝唯一关闭入口"）；package.json exports/files 增 locale；README 双语顶部分工注记；契约测试锁 P2 路径规则＋存在性＋清单。
 - **P1 kind 命名空间化（PH3）**：注入行 `source.kind` 由官方 `'model-selection'` 改为 `'dsh-subagent-plus/model-selection'`——原值属 harness 核心 producer（插件注入被归因于官方）；rc.5 起 custom kind 一等渲染。**落地方式＝MessageSourceMap 声明合并**（映射自带文档"merge-extensible sum type…each producer declares its own kind"，即本仓既有惯例），零 cast；直接改字串会被 dsh-llm 闭联合拒绝（977e5b6 曾提交坏 tsc，9d9eb3a 修正）。
 - **PH1 KB 全量重建**：见 3d 债务闭环条目（497 条/锚 447/overall 408）。
+- **PH6 发布守卫与 P6 对齐**：①`private: true` 回归（发布提交同批移除＋契约绊线测试同步移除——姊妹插件 runbook 阶段 B 纪律）；②**release-preflight**（纯函数＋薄 CLI）插入 release.yml **建 Release 之前**：tag↔版本一致、非 private、该版本未在 npm——误打 tag 在产生任何副作用前被拒（此前要到 `npm publish` 步才失败，而 Release/已建）；注册表不可读时**fail-closed**；CLI 端到端对真实树与真实注册表验证（private 树推 v0.0.4 → 拒；已发布 0.0.3 → 拒；干净 0.0.4 → 放行）；③旧宿主（无 agent.model）静默无路由 → 一次性 warn（P6 warn-only 补口）；④wall-clock 敏感测试（280ms 对 200ms 去抖仅 80ms 余量）改 vi.waitFor 轮询。
+- **whileServed 偏差（P6 无条件注册纪律）＝接受并记录**：settings.section 包裹在 `configForms.whileServed([NS])` 中，与 P6"无条件注册"相左。保留理由：本插件的设置卡**吸收了官方运行限制命名空间**（接管面，ADR 0003）——插件自身 ns 故障时若仍渲染整卡，已隐藏的官方页面数据将以 unavailable/陈旧态露出，违反接管语义；徽章位（conversation.input.right）**无条件注册**（不受影响）；逃生口始终存在（插件页开关＝唯一关闭入口；用户层 `disabled: false` patch）。官方面控制器自带 per-namespace T7 降级（ns 停止服务仅翻 unavailable 行，不闪回官方页）。
+
 - **PH4 死代码清零**：①三个孤儿通知函数接入 pre-step（docs 早已承诺而运行时从未发出）——`pinFallbackNotice`（钉定子智能体落到兜底）、`pinSkippedNotice`／`byNameSkippedNotice`（路由未注册且无接管/兜底、仍运行并预期响亮失败）；②删除 `pinnedRoute`／`PinOverride` 遗留面（ADR 0010 已由 agent.model.select 取代，零运行时调用方）。**实现教训**：未注册判定必须在通知点**现查**（`routeRegistered` 对已注册路由走缓存）——首版用插件生命周期级 Set 记"未注册"且永不清理，路由恢复注册后会持续误报"跳过"；同一次接线还留了两处不可达子分支，均已在提交前拆除。
 
 ### 4. UI 反馈修正（承接 0015 轮 P1/P2）

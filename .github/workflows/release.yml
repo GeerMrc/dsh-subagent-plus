@@ -29,6 +29,12 @@ jobs:
           node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
+      # Pre-flight BEFORE any side effect (PH6): the tag must name the version
+      # in this tree, the tree must not be private (the release commit removes
+      # "private"), and that version must not already be on npm. Without this
+      # gate a bad tree fails only at `npm publish` — after the GitHub Release
+      # and its tag already exist.
+      - run: node scripts/release-preflight.mjs "$GITHUB_REF_NAME"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm test

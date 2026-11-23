@@ -240,16 +240,21 @@ describe('agent/created route selection (ADR 0010 M3)', () => {
     expect(warns.mock.calls.some(c => String(c[0]).includes('failed'))).toBe(true)
   })
 
-  it('agent without model property (pre-0.2.2 host) is silently skipped', async () => {
+  it('agent without model property (pre-0.2.2 host): routing is inactive — said ONCE, not silently (PH6)', async () => {
     const { ctx } = await byNameContext()
-    const agent = mockAgent({
+    const warns = vi.spyOn(ctx.logger, 'warn')
+    const legacyChild = () => mockAgent({
       options: { subagentDepth: 1 },
       session: { header: { delegationDepth: 1 }, inheritedEventCount: 0, eventAt: () => undefined },
       // No model property at all
     })
-    await fireCreated(ctx, agent)
-    await new Promise(r => setTimeout(r, 10))
-    // No error, no select — silently skipped.
+    await fireCreated(ctx, legacyChild())
+    await fireCreated(ctx, legacyChild())
+    const hostWarns = () => warns.mock.calls.filter(c => String(c[0]).includes('agent.model'))
+    // Every other degradation path warns once; a host where the whole plugin
+    // does nothing must not be the one exception (P6 warn-only).
+    expect(hostWarns()).toHaveLength(1)
+    expect(String(hostWarns()[0]![0])).toContain('routing is inactive')
   })
 })
 
@@ -776,10 +781,15 @@ describe('derived defaults (X4, ADR 0014 d2)', () => {
     // the S family's top intent on the NEW ladder.
     mutable.setTiers({ ...qwenTiers, 'sz/model-x1': ['off', 'low', 'high'] })
     void (ctx as unknown as { emit: (name: string, ...args: unknown[]) => void }).emit('llm/adapters-updated')
-    await new Promise(r => setTimeout(r, 280))
-    const after = memberAgent('plan-reviewer')
-    await fireCreated(ctx, after)
-    expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1', reasoningEffort: 'high' }))
+    // Poll instead of a fixed 280ms sleep: the debounce is 200ms, so the old
+    // margin was 80ms under CI load. Each probe is a fresh child — before the
+    // debounced cache invalidation it still materialises the OLD ladder, so
+    // the probe is side-effect-free with respect to what it measures.
+    await vi.waitFor(async () => {
+      const after = memberAgent('plan-reviewer')
+      await fireCreated(ctx, after)
+      expect(((after as unknown as { model: MockModel }).model).select).toHaveBeenCalledWith(expect.objectContaining({ provider: 'sz', model: 'model-x1', reasoningEffort: 'high' }))
+    }, { timeout: 3000, interval: 40 })
   })
 
   it('mixed known/unknown candidates warn once per unknown-set — the E2 silent-exclusion case (F2)', async () => {

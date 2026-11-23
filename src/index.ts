@@ -306,6 +306,7 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
   let unregisteredPinWarned = false
   let agentTeamsAbsentWarned = false
   let forkNameWarned = false
+  let agentModelAbsentWarned = false
   const unregisteredNameRoutes = new Set<string>()
 
   const resolvePin = (config: PinConfig): PinRoute | undefined => resolvePinRoute(config)
@@ -516,7 +517,16 @@ export function apply(ctx: Context, entry: PinConfigRuntime): void {
     const agent = payload.agent
     if (childDepthOf(agent) <= 0) return
     const model = agentModelOf(agent)
-    if (model === undefined) return
+    if (model === undefined) {
+      // A host without agent.model (pre-0.2.2) leaves the whole plugin inert.
+      // Say so once: every other degradation path warns, and silence here
+      // reads as "the plugin is broken" (P6 warn-only).
+      if (!agentModelAbsentWarned) {
+        agentModelAbsentWarned = true
+        ctx.logger.warn('dsh-subagent-plus: this host exposes no agent.model API (DSH < 0.2.2); child routing is inactive — upgrade the host to route children')
+      }
+      return
+    }
     let config = live.current()
     // Fork children are excluded unless pinForkChildren (same semantics as before).
     if (!config.pinForkChildren && isForkedChild(agent)) {
